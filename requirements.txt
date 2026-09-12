@@ -1,0 +1,3 @@
+Pillow>=10.0
+pillow-heif>=0.15
+Jinja2>=3.0
