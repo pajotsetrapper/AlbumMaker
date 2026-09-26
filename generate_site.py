@@ -439,13 +439,45 @@ def fast_fingerprint(path: Path, sample_size: int = 65536) -> Optional[tuple]:
         return None
 
 
+def is_multi_stream_jpeg(path: Path) -> bool:
+    """Detects MPO-style files: a genuine second complete JPEG image
+    directly concatenated after the first, with no gap — the actual
+    on-disk structure of real MPO files (dual-camera capture, portrait/
+    depth mode, panorama, some HDR modes), as opposed to the ordinary
+    embedded EXIF preview thumbnail that's already tucked inside almost
+    every camera JPEG's own header. Looking for a JPEG end-of-image marker
+    immediately followed by another start-of-image marker, with nothing in
+    between, is specific enough that it doesn't false-positive on an EXIF
+    thumbnail or on ordinary compressed image/metadata bytes — a looser
+    "is there a second start-of-image marker anywhere later in the file"
+    check turned out to trigger even on completely ordinary photos, purely
+    by coincidence, once you're scanning several megabytes of binary data.
+    Reads in bounded chunks rather than loading the whole file into memory,
+    since photos can be 50MB+."""
+    chunk_size = 2 * 1024 * 1024  # 2MB
+    pattern = b"\xff\xd9\xff\xd8"
+    try:
+        with open(path, "rb") as f:
+            overlap = b""
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    return False
+                window = overlap + chunk
+                if pattern in window:
+                    return True
+                overlap = window[-(len(pattern) - 1):]
+    except Exception:
+        return False
+
+
 def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: str,
                             thumb_size: int, force: bool):
     """Create the small day-grid thumbnail, and decide what to use as the
     full-screen 'display' copy:
-      - formats a browser can show directly (jpg/png/webp/bmp) are used
-        completely unchanged — a byte-for-byte copy of the original file,
-        under its original name, no resizing or recompression at all.
+      - formats a browser can show directly (jpg/png/webp/bmp) are normally
+        used completely unchanged — a byte-for-byte copy of the original
+        file, under its original name, no resizing or recompression at all.
       - formats no mainstream browser can show inline (HEIC/HEIF, TIFF) get
         BOTH: the original file itself, copied bit-perfect and completely
         untouched, AND a full-resolution near-lossless JPEG generated
@@ -455,16 +487,30 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
         works natively in Safari) and only falls back to the JPEG copy for
         the ones that can't (Chrome, Firefox, Edge) — so nothing is ever
         thrown away, and everyone can still see the photo.
+      - a .jpg that turns out to be a multi-stream/MPO file (see
+        is_multi_stream_jpeg) gets the same original-plus-fallback
+        treatment as HEIC/TIFF, since serving that kind of file to a
+        browser as-is is exactly what causes some photos to render only
+        partially.
 
     Returns (display_filename, original_filename_or_None). The second value
-    is only set when a genuine original copy was kept alongside a fallback,
-    i.e. for HEIC/HEIF and TIFF.
+    is only set when a genuine original copy was kept alongside a fallback.
     """
     ext = src.suffix                 # preserve exact original case for output filenames
     ext_lower = ext.lower()          # lowercased only for format-matching checks below
     native = ext_lower in BROWSER_NATIVE_IMAGE_EXTS
+    if native and ext_lower in (".jpg", ".jpeg") and is_multi_stream_jpeg(src):
+        native = False
 
-    display_file = f"{base}{ext}" if native else f"{base}.jpg"
+    if native:
+        display_file = f"{base}{ext}"
+    elif ext_lower in (".jpg", ".jpeg"):
+        # already a jpg extension, but flagged non-native (multi-stream) --
+        # the fallback needs a name distinct from the kept original below,
+        # which uses this same extension
+        display_file = f"{base}_display.jpg"
+    else:
+        display_file = f"{base}.jpg"
     display_path = media_dir / display_file
     original_file = None
 
@@ -842,7 +888,14 @@ img,video{max-width:100%; display:block;}
 .day-header .stamp{position:static; transform:rotate(-6deg); display:inline-flex; margin-bottom:1rem;}
 .day-header h1{font-family:var(--serif); font-size:clamp(1.8rem,4.5vw,2.8rem); margin:.2rem 0;}
 .day-header .date{font-family:var(--mono); color:var(--teal); font-size:.85rem;}
-.day-nav{display:flex; justify-content:space-between; font-family:var(--mono); font-size:.8rem; margin-top:1.2rem;}
+.day-nav{display:flex; justify-content:space-between; gap:1rem; font-family:var(--mono); font-size:.8rem; margin-top:1.2rem;}
+.day-nav a{
+  display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .9rem;
+  border:1px solid rgba(237,230,214,.25); border-radius:8px;
+  transition:border-color .15s ease, background .15s ease;
+}
+.day-nav a:hover{border-color:var(--gold); background:rgba(227,168,87,.08); text-decoration:none;}
+.day-nav-hint{text-align:center; font-family:var(--mono); font-size:.68rem; opacity:.4; margin-top:.6rem;}
 
 .description{
   max-width:1100px; margin:1rem auto 2rem; padding:1.6rem 1.8rem; background:var(--parchment);
@@ -994,6 +1047,47 @@ function initThumbSizeControl(){
   buttons.forEach(b => b.addEventListener('click', () => applyThumbSize(b.dataset.size)));
 }
 
+// ---------- prev/next day navigation (keyboard + swipe) ----------
+function initDayNav(prevHref, nextHref){
+  function slideshowOpen(){
+    const el = document.getElementById('slideshow');
+    return !!(el && el.classList.contains('open'));
+  }
+  function inMap(el){
+    return !!(el && el.closest && el.closest('.leaflet-container'));
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(slideshowOpen()) return;                  // the slideshow has its own arrow-key handling
+    if(inMap(document.activeElement)) return;     // let Leaflet's own keyboard map-panning work
+    if(e.key === 'ArrowLeft' && prevHref) window.location.href = prevHref;
+    else if(e.key === 'ArrowRight' && nextHref) window.location.href = nextHref;
+  });
+
+  let touchStartX = null, touchStartY = null, touchInMap = false;
+  document.addEventListener('touchstart', (e) => {
+    if(slideshowOpen() || e.touches.length !== 1) return;
+    touchInMap = inMap(e.target);
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, {passive: true});
+
+  document.addEventListener('touchend', (e) => {
+    if(slideshowOpen() || touchInMap || touchStartX === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    touchStartX = null;
+    // a map drag can also be a long horizontal touch, so this only fires for
+    // touches that didn't originate inside the map (checked above) and are
+    // clearly horizontal, deliberate swipes rather than a scroll or a tap
+    if(Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.8){
+      if(dx < 0 && nextHref) window.location.href = nextHref;
+      else if(dx > 0 && prevHref) window.location.href = prevHref;
+    }
+  }, {passive: true});
+}
+
 function initOverviewMap(elId, days){
   const map = L.map(elId, {scrollWheelZoom:false});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1074,13 +1168,13 @@ function buildSlideStage(item){
     const poster = item.poster ? ` poster="${item.poster}"` : '';
     return `<video src="${item.display}" controls autoplay muted playsinline${poster}></video>`;
   }
-  if(item.heicSrc){
-    // offer the real, untouched original to any browser that can actually
-    // decode HEIC inline (currently Safari) via <picture> — everything
-    // else automatically falls back to the JPEG in item.display instead,
-    // with no JS feature-detection needed; the browser picks itself.
-    return `<picture><source srcset="${item.heicSrc}" type="image/heic"><img src="${item.display}" alt=""></picture>`;
-  }
+  // always the converted JPEG here (item.display), even for HEIC — an
+  // earlier version offered the real original to any browser that claimed
+  // it could decode HEIC natively via <picture>, but some platforms' HEIC
+  // decoders (notably some Windows OS-level codec packs) handle orientation
+  // inconsistently, which could render worse than the verified-correct
+  // converted copy. The true original file is still on disk untouched in
+  // media/, just not referenced for inline display anymore.
   return `<img src="${item.display}" alt="">`;
 }
 
@@ -1489,6 +1583,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
     <span>{% if prev_href %}<a href="{{ prev_href }}">&larr; {{ prev_label }}</a>{% endif %}</span>
     <span>{% if next_href %}<a href="{{ next_href }}">{{ next_label }} &rarr;</a>{% endif %}</span>
   </div>
+  {% if prev_href or next_href %}<div class="day-nav-hint">&larr; &rarr; keys or swipe also work</div>{% endif %}
 </div>
 
 <div class="description {{ 'empty' if not description else '' }}">
@@ -1537,6 +1632,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow({{ slides_json }});
 initThumbSizeControl();
+initDayNav({{ prev_href_json }}, {{ next_href_json }});
 {% if route %}
 try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
@@ -1638,13 +1734,6 @@ def render_site(days: list, content: dict, output_dir: Path):
             }
             if it.media_type == "video":
                 slide["poster"] = f"../thumbs/{it.thumb_file}"
-            if it.original_file and Path(it.original_file).suffix.lower() in (".heic", ".heif"):
-                # offer the real original to any browser that can actually
-                # decode HEIC (Safari) via <picture>; everyone else
-                # transparently gets the JPEG in "display" instead. TIFF
-                # isn't offered this way since no mainstream browser can
-                # display it either way, so there'd be nothing to gain.
-                slide["heicSrc"] = f"../media/{it.original_file}"
             slides.append(slide)
             if it.has_gps:
                 route_thumbs.append(f"../thumbs/{it.thumb_file}")
@@ -1675,8 +1764,10 @@ def render_site(days: list, content: dict, output_dir: Path):
             items=items_ctx,
             slides_json=json.dumps(slides),
             prev_href=prev_href,
+            prev_href_json=json.dumps(prev_href),
             prev_label=days[i-1].date_key if i > 0 else "",
             next_href=next_href,
+            next_href_json=json.dumps(next_href),
             next_label=days[i+1].date_key if i < len(days) - 1 else "",
         )
         (output_dir / "days" / f"{d.date_key}.html").write_text(day_html, encoding="utf-8")
