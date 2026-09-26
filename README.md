@@ -122,6 +122,7 @@ When either script runs for the first time, it scans all EXIF dates and generate
 ## 📁 Directory Structures
 
 ### Static Site Output (`generate_site.py`)
+```text
 site_output/
 ├── index.html            # Main trip overview, stats, and complete route map
 ├── trip_content.json     # Editable metadata source file
@@ -133,7 +134,7 @@ site_output/
 │   └── 2026-05-11.html
 ├── media/                # Full-size browser-compatible images & videos
 └── thumbs/               # Low-bandwidth grid thumbnails
-
+```
 ---
 
 ## ⌨️ Interactive Slideshow Controls
