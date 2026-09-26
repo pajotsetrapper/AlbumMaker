@@ -98,6 +98,7 @@ class MediaItem:
     height: Optional[int] = None
     detail: dict = field(default_factory=dict)
     is_heic: bool = False
+    needs_jpeg_fallback: bool = False  # HEIC/HEIF, TIFF, or a multi-stream/MPO .jpg
 
     @property
     def has_gps(self) -> bool:
@@ -413,6 +414,38 @@ def fast_fingerprint(path: Path, sample_size: int = 65536) -> Optional[tuple]:
         return None
 
 
+def is_multi_stream_jpeg(path: Path) -> bool:
+    """Detects MPO-style files: a genuine second complete JPEG image
+    directly concatenated after the first, with no gap — the actual
+    on-disk structure of real MPO files (dual-camera capture, portrait/
+    depth mode, panorama, some HDR modes), as opposed to the ordinary
+    embedded EXIF preview thumbnail that's already tucked inside almost
+    every camera JPEG's own header. Looking for a JPEG end-of-image marker
+    immediately followed by another start-of-image marker, with nothing in
+    between, is specific enough that it doesn't false-positive on an EXIF
+    thumbnail or on ordinary compressed image/metadata bytes — a looser
+    "is there a second start-of-image marker anywhere later in the file"
+    check turned out to trigger even on completely ordinary photos, purely
+    by coincidence, once you're scanning several megabytes of binary data.
+    Reads in bounded chunks rather than loading the whole file into memory,
+    since photos can be 50MB+."""
+    chunk_size = 2 * 1024 * 1024  # 2MB
+    pattern = b"\xff\xd9\xff\xd8"
+    try:
+        with open(path, "rb") as f:
+            overlap = b""
+            while True:
+                chunk = f.read(chunk_size)
+                if not chunk:
+                    return False
+                window = overlap + chunk
+                if pattern in window:
+                    return True
+                overlap = window[-(len(pattern) - 1):]
+    except Exception:
+        return False
+
+
 def group_by_day(items: list) -> list:
     days = {}
     for it in items:
@@ -515,6 +548,12 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool) -> li
                 width=w, height=h,
                 detail=detail,
                 is_heic=(media_type == "image" and path.suffix.lower() in (".heic", ".heif")),
+                needs_jpeg_fallback=(
+                    media_type == "image" and (
+                        path.suffix.lower() in (".heic", ".heif", ".tif", ".tiff")
+                        or (path.suffix.lower() in (".jpg", ".jpeg") and is_multi_stream_jpeg(path))
+                    )
+                ),
             ))
         except Exception as e:
             print(f"  ! failed to index {path.name}: {e}", file=sys.stderr)
@@ -768,7 +807,14 @@ img,video{max-width:100%; display:block;}
 .day-header .stamp{position:static; transform:rotate(-6deg); display:inline-flex; margin-bottom:1rem;}
 .day-header h1{font-family:var(--serif); font-size:clamp(1.8rem,4.5vw,2.8rem); margin:.2rem 0;}
 .day-header .date{font-family:var(--mono); color:var(--teal); font-size:.85rem;}
-.day-nav{display:flex; justify-content:space-between; font-family:var(--mono); font-size:.8rem; margin-top:1.2rem;}
+.day-nav{display:flex; justify-content:space-between; gap:1rem; font-family:var(--mono); font-size:.8rem; margin-top:1.2rem;}
+.day-nav a{
+  display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .9rem;
+  border:1px solid rgba(237,230,214,.25); border-radius:8px;
+  transition:border-color .15s ease, background .15s ease;
+}
+.day-nav a:hover{border-color:var(--gold); background:rgba(227,168,87,.08); text-decoration:none;}
+.day-nav-hint{text-align:center; font-family:var(--mono); font-size:.68rem; opacity:.4; margin-top:.6rem;}
 
 .description{
   max-width:1100px; margin:1rem auto 2rem; padding:1.6rem 1.8rem; background:var(--parchment);
@@ -923,6 +969,44 @@ function initThumbSizeControl(){
   buttons.forEach(b => b.addEventListener('click', () => applyThumbSize(b.dataset.size)));
 }
 
+// ---------- prev/next day navigation (keyboard + swipe) ----------
+function initDayNav(prevHref, nextHref){
+  function slideshowOpen(){
+    const el = document.getElementById('slideshow');
+    return !!(el && el.classList.contains('open'));
+  }
+  function inMap(el){
+    return !!(el && el.closest && el.closest('.leaflet-container'));
+  }
+
+  document.addEventListener('keydown', (e) => {
+    if(slideshowOpen()) return;                  // the slideshow has its own arrow-key handling
+    if(inMap(document.activeElement)) return;     // let Leaflet's own keyboard map-panning work
+    if(e.key === 'ArrowLeft' && prevHref) window.location.href = prevHref;
+    else if(e.key === 'ArrowRight' && nextHref) window.location.href = nextHref;
+  });
+
+  let touchStartX = null, touchStartY = null, touchInMap = false;
+  document.addEventListener('touchstart', (e) => {
+    if(slideshowOpen() || e.touches.length !== 1) return;
+    touchInMap = inMap(e.target);
+    touchStartX = e.touches[0].clientX;
+    touchStartY = e.touches[0].clientY;
+  }, {passive: true});
+
+  document.addEventListener('touchend', (e) => {
+    if(slideshowOpen() || touchInMap || touchStartX === null) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - touchStartX;
+    const dy = t.clientY - touchStartY;
+    touchStartX = null;
+    if(Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.8){
+      if(dx < 0 && nextHref) window.location.href = nextHref;
+      else if(dx > 0 && prevHref) window.location.href = prevHref;
+    }
+  }, {passive: true});
+}
+
 function initOverviewMap(elId, days){
   const map = L.map(elId, {scrollWheelZoom:false});
   L.tileLayer('https://tile.openstreetmap.org/{z}/{x}/{y}.png', {
@@ -1001,13 +1085,13 @@ function buildSlideStage(item){
     const poster = item.poster ? ` poster="${item.poster}"` : '';
     return `<video src="${item.display}" controls autoplay muted playsinline${poster}></video>`;
   }
-  if(item.heicSrc){
-    // offer the real, untouched original to any browser that can actually
-    // decode HEIC inline (currently Safari) via <picture> — everything
-    // else automatically falls back to the JPEG in item.display instead,
-    // with no JS feature-detection needed; the browser picks itself.
-    return `<picture><source srcset="${item.heicSrc}" type="image/heic"><img src="${item.display}" alt=""></picture>`;
-  }
+  // always the converted JPEG here (item.display), even for HEIC — an
+  // earlier version offered the real original to any browser that claimed
+  // it could decode HEIC natively via <picture>, but some platforms' HEIC
+  // decoders (notably some Windows OS-level codec packs) handle orientation
+  // inconsistently, which could render worse than the verified-correct
+  // converted copy. The true original is still available via the download
+  // link, just not used for inline display anymore.
   return `<img src="${item.display}" alt="">`;
 }
 
@@ -1409,6 +1493,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
     <span>{% if prev_href %}<a href="{{ prev_href }}">&larr; {{ prev_label }}</a>{% endif %}</span>
     <span>{% if next_href %}<a href="{{ next_href }}">{{ next_label }} &rarr;</a>{% endif %}</span>
   </div>
+  {% if prev_href or next_href %}<div class="day-nav-hint">&larr; &rarr; keys or swipe also work</div>{% endif %}
 </div>
 
 <div class="description {{ 'empty' if not description else '' }}">
@@ -1456,6 +1541,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
 <script>
 initSlideshow({{ slides_json }});
 initThumbSizeControl();
+initDayNav({{ prev_href_json }}, {{ next_href_json }});
 {% if route %}
 try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
@@ -1564,8 +1650,6 @@ def render_day(date_key: str) -> Optional[str]:
         }
         if it.media_type == "video":
             slide["poster"] = f"/thumb/{it.id}"
-        if it.is_heic:
-            slide["heicSrc"] = f"/original/{it.id}"
         slides.append(slide)
         if it.has_gps:
             route_thumbs.append(f"/thumb/{it.id}")
@@ -1591,8 +1675,10 @@ def render_day(date_key: str) -> Optional[str]:
         items=items_ctx,
         slides_json=json.dumps(slides),
         prev_href=prev_href,
+        prev_href_json=json.dumps(prev_href),
         prev_label=DAYS[idx-1].date_key if idx > 0 else "",
         next_href=next_href,
+        next_href_json=json.dumps(next_href),
         next_label=DAYS[idx+1].date_key if idx < len(DAYS) - 1 else "",
     )
 
@@ -1781,10 +1867,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         if item.media_type == "video":
             self._send_file(item.path, guess_mime(item.path))
             return
-        if item.path.suffix.lower() in BROWSER_NATIVE_IMAGE_EXTS:
+        if not item.needs_jpeg_fallback:
             self._send_file(item.path, guess_mime(item.path))
             return
-        # HEIC/HEIF or TIFF: on-the-fly JPEG fallback, cached in memory only
+        # HEIC/HEIF, TIFF, or a multi-stream/MPO .jpg: on-the-fly JPEG
+        # fallback, cached in memory only
         try:
             mtime = item.path.stat().st_mtime
         except OSError:
