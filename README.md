@@ -150,7 +150,7 @@ When viewing any image grid, click a thumbnail to open the lightbox viewer:
 - **Close Lightbox**: Press `Escape` or click **Close**
 
 
-# Limitations worth knowing
+# Trip Server limitations worth knowing
 
 - **New photos need a restart.** The folder is scanned once when the
   server starts. Add more photos, restart the server (`trip_content.json`
@@ -164,7 +164,3 @@ When viewing any image grid, click a thumbnail to open the lightbox viewer:
   lot of photos will take a bit of CPU work up front (still fast — well
   under a second per thumbnail — but noticeable compared to a static
   file). Revisiting the same day is fast, thanks to the in-memory cache.
-- Everything else — formats supported, EXIF/GPS extraction, day grouping,
-  the "Unsorted" bucket for undated files, zoom/pan, fullscreen — works
-  exactly like `generate_site.py`. See that README for the details; they
-  all apply here too.
