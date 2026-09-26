@@ -1,97 +1,155 @@
-# TripServer
-Hosts a trip website, rendering all content on demand
+# 🗺️ Static & Dynamic Trip Site Generator
 
-# Trip Server — the same trip site, served live
+A lightweight, high-performance Python toolkit to turn folders of trip photos and videos into fully interactive, browsable web galleries with route maps, responsive lightboxes, and EXIF metadata views.
 
-`trip_server.py` is a sister script to `generate_site.py`. Same look, same
-day-by-day layout, same maps, same full-screen slideshow — but instead of
-building a folder of HTML/thumbnail files, it runs a small local web server
-that generates every page and every image **on the fly**, per request, and
-writes nothing to disk except the one file you'd want it to keep:
-`trip_content.json`, your titles and descriptions.
+Whether you want to build a completely self-contained static web bundle to host anywhere or dynamically serve a photos directory on the fly with **zero disk footprint**, this repository provides a full end-to-end solution.
 
-Pick whichever fits how you want to view your trip:
+---
 
-- **`generate_site.py`** — builds a folder of static files you can open
-  without Python running, copy to a USB drive, or put anywhere. Costs disk
-  space (thumbnails + copies of your media) and a build step whenever your
-  photos change.
-- **`trip_server.py`** (this one) — nothing is written to disk at all. Run
-  it whenever you want to browse; stop it and there's no trace. Costs a bit
-  of CPU per page load instead (generating thumbnails on the spot) and
-  needs Python running the whole time you're viewing it.
+## ✨ Key Features
 
-Both scripts share the same `requirements.txt` — if you already set up
-`generate_site.py`, you don't need to install anything new for this one.
+- 📸 **Universal Format Support**: Automatically processes standard web formats (`JPG`, `PNG`, `WebP`, `BMP`), raw images (`TIFF`), videos (`MP4`, `MOV`, `MKV`, `AVI`, `3GP`), and Apple High-Efficiency formats (`HEIC`/`HEIF`).
+- 🗺️ **Interactive Route Mapping**: Extracts embedded GPS coordinates via EXIF and `ffprobe` to render interactive OpenStreetMap route trails (via Leaflet.js) on both macro (trip summary) and micro (daily timeline) levels.
+- 🎞️ **Full-Screen Keyboard Lightbox**: 
+  - Rich slideshow experience supporting image panning, mouse/touch pinch-to-zoom, and autoplay video playback.
+  - Interactive EXIF / metadata drawer showing camera gear, aperture, shutter speed, ISO, focal length, altitude, video codecs, and exact capture coordinates.
+- 👯 **Smart De-duplication**: Uses multi-point byte hashing (`fast_fingerprint`) to spot exact file duplicates—even if renamed—without wasting time or resources hashing multi-gigabyte video files line-by-line.
+- 🚨 **Multi-Stream & MPO Repair**: Detects dual-stream photos (such as iPhone portrait mode, 3D/MPO, or panorama files) and automatically builds web-native fallbacks so images never render half-loaded in modern browsers.
+- ⚡ **Multi-Core Processing**: Scales thumbnail and derivative image processing across CPU cores using concurrent worker pools.
+- 📝 **Additive Content Editing**: Custom day titles and trip descriptions live in an editable JSON file (`trip_content.json`). Re-running the generator or refreshing the server will **never overwrite** your custom text.
 
-## Run it
+---
 
-```bash
-python trip_server.py -i /path/to/your/photos
-```
+## 🛠️ Architecture & Workflow Options
 
-Then open the URL it prints — by default **http://127.0.0.1:8000/**.
+This suite gives you two distinct workflows for presenting your media collections:
 
-That's it. No output folder, no `--force`, no regenerating anything when
-you add more photos — just stop the server (Ctrl+C) and start it again.
+| Feature / Goal | `generate_site.py` (Static Builder) | `trip_server.py` (On-the-Fly Server) |
+| :--- | :--- | :--- |
+| **Output Type** | Generates flat static files (`HTML`, `CSS`, `JS`, converted media). | Fully in-memory rendering HTTP server. |
+| **Disk Footprint** | Writes thumbnails and display JPEGs to disk. | **0 bytes written to disk**. |
+| **Deployment** | Perfect for GitHub Pages, Netlify, S3, or offline USB drives. | Perfect for quick local browsing, NAS streaming, or instant checks. |
+| **Dependencies** | Standard Python libraries + `Pillow` (+ optional `pillow-heif`). | Standard Python libraries + `Pillow` (+ optional `pillow-heif`). |
 
-## Options
+---
 
-- `-i / --input` — folder with your photos & videos (default: current
-  folder, so you can also just drop the script *in* your photos folder and
-  run it with no arguments)
-- `-c / --content` — where titles/descriptions are stored (default:
-  `./trip_content.json`) — see below
-- `--port` — default `8000`
-- `--lan` — let other devices on your network open the site too (binds to
-  all network interfaces instead of just your own computer). **There's no
-  login of any kind** — anyone on your Wi-Fi/network can browse your
-  photos while the server is running with this on. Leave it off unless you
-  want that.
-- `--thumb-size` — max thumbnail dimension in px (default 400)
-- `--tz-offset` — fixed UTC offset in hours (e.g. `2` or `-5.5`) for
-  correcting **video** timestamps to your trip's local time — same
-  reasoning as in `generate_site.py`'s README
-- `--no-dedupe` — include exact-duplicate files instead of skipping them
+## 🚀 Installation & Prerequisites
 
-## Descriptions, and the one file it does write
+### 1. System Dependencies (Required for Videos & Audio)
+Video timestamp extraction, frame grabbing, and duration indexing rely on `ffmpeg` and `ffprobe`.
 
-Exactly like `generate_site.py`: the first run creates `trip_content.json`
-with a blank entry for every day it found, and only ever *adds* new entries
-to it — your text is never overwritten. The nice part of the live-server
-version: **just save the file and refresh the page.** No re-running
-anything; the server checks whether the file changed and picks up edits on
-the next request.
+- **macOS** (via Homebrew):
+  `brew install ffmpeg`
+- **Ubuntu/Debian**:
+  `sudo apt update && sudo apt install -y ffmpeg`
+- **Windows** (via Winget or Chocolatey):
+  `winget install FFmpeg`
 
-## What's different from generate_site.py, under the hood
+### 2. Python Dependencies
+Install `Pillow` (for image manipulation) and `pillow-heif` (for Apple `.heic`/`.heif` decoding):
 
-Everything you see is identical — I reused the same design, CSS, and
-JavaScript — but a few things work differently because nothing is
-pre-built:
+`pip install Pillow pillow-heif jinja2`
 
-- **Your original files are used directly**, streamed straight off disk on
-  request — not copied anywhere, not renamed. Full-size photo and video
-  requests support HTTP range requests, so video seeking works properly in
-  the browser.
-- **HEIC/HEIF photos** work the same clever way: Safari gets the real
-  original file streamed directly (via `<picture>`, the same
-  progressive-enhancement trick as the static version), and a JPEG version
-  is generated *in memory* — never written to disk — for browsers that
-  can't decode HEIC (Chrome, Firefox, Edge).
-- **Thumbnails are generated per-request** the first time they're needed,
-  then kept briefly in an in-memory cache (not a file — it's gone the
-  moment you stop the server) so scrolling back to a day you've already
-  visited doesn't redo the work.
-- **A bonus the live version can do that the static one can't:** every
-  photo/video has a "Download original file" link in its details panel
-  (press `I` on a full-screen photo), since there's no downside to
-  offering the raw file on request when nothing has to be pre-copied for it.
-- One small architecture simplification: since URLs use a plain internal ID
-  (`/thumb/42`, `/media/42`) rather than filenames, there's no need to
-  rename files to avoid collisions the way the static version sometimes
-  does — that whole concern doesn't exist here.
+---
 
-## Limitations worth knowing
+## 🖥️ Usage & Command Line Options
+
+### Option A: Static Site Builder (`generate_site.py`)
+
+Scans an input directory, processes all derivatives into an output directory, and exports ready-to-publish `.html` pages.
+
+`python generate_site.py -i /path/to/photos -o /path/to/site_output`
+
+#### CLI Options for `generate_site.py`:
+- `-i, --input PATH`: [Required] Directory containing input photos and videos.
+- `-o, --output PATH`: Output directory for the static site (default: `./site`).
+- `-c, --content PATH`: JSON metadata file for trip titles/descriptions (default: `./trip_content.json`).
+- `--thumb-size INT`: Max height/width in pixels for generated thumbnails (default: `400`).
+- `--force`: Force re-generation of existing thumbnails/derivatives.
+- `--tz-offset FLOAT`: Fixed UTC hour offset (e.g., `2` or `-5.5`) for video timestamps.
+- `--workers INT`: Limit worker process count (defaults to total CPU cores).
+- `--no-dedupe`: Disable automatic exact-duplicate file filtering.
+
+---
+
+### Option B: Zero-Disk On-the-Fly Server (`trip_server.py`)
+
+Run an instant HTTP server directly against your photos folder. Thumbnails, responsive display conversions, and page structures are calculated purely on demand in-memory.
+
+`python trip_server.py -i /path/to/photos -p 8000`
+
+Once running, open your browser to `http://127.0.0.1:8000/`.
+
+#### CLI Options for `trip_server.py`:
+- `-i, --input PATH`: [Required] Directory containing photos and videos to serve.
+- `-p, --port INT`: Port number to bind the HTTP server to (default: `8000`).
+- `-b, --bind ADDRESS`: IP address to bind the server to (default: `127.0.0.1`; set to `0.0.0.0` for network sharing).
+- `-c, --content PATH`: JSON metadata file for trip titles/descriptions (default: `./trip_content.json`).
+- `--thumb-size INT`: Max height/width in pixels for dynamically generated thumbnails (default: `400`).
+- `--tz-offset FLOAT`: Fixed UTC hour offset (e.g., `2` or `-5.5`) for video timestamps.
+- `--workers INT`: Limit worker process count for dynamic image decoding (defaults to total CPU cores).
+- `--no-dedupe`: Disable automatic exact-duplicate file filtering.
+
+---
+
+## ✍️ Customizing Trip Titles & Day Descriptions
+
+When either script runs for the first time, it scans all EXIF dates and generates a `trip_content.json` file structured like this:
+
+{
+  "title": "My European Adventure",
+  "subtitle": "2,400km across mountain passes and coastal highways.",
+  "days": {
+    "2026-05-10": {
+      "title": "Arrival in Zurich",
+      "description": "Landed early in the morning. Picked up the rental car and drove toward the lakeshore.\n\nStopped for lunch near the water."
+    },
+    "2026-05-11": {
+      "title": "Crossing the Pass",
+      "description": "Drove up into the mountains through dense morning fog."
+    }
+  }
+}
+
+### How to use `trip_content.json`:
+1. Open `trip_content.json` in any text editor.
+2. Edit the main `"title"` and `"subtitle"`.
+3. Add custom titles and descriptions for each day key (`YYYY-MM-DD`). Separate paragraphs using double line breaks (`\n\n`).
+4. **Re-run or refresh**: The script reads your edits, updates the site display, and safe-appends any newly discovered dates without clearing existing descriptions.
+
+---
+
+## 📁 Directory Structures
+
+### Static Site Output (`generate_site.py`)
+site_output/
+├── index.html            # Main trip overview, stats, and complete route map
+├── trip_content.json     # Editable metadata source file
+├── assets/
+│   ├── style.css         # Dark-themed custom styles
+│   └── script.js         # Map renderers & interactive slideshow engine
+├── days/
+│   ├── 2026-05-10.html   # Dedicated daily log with day route map & media grid
+│   └── 2026-05-11.html
+├── media/                # Full-size browser-compatible images & videos
+└── thumbs/               # Low-bandwidth grid thumbnails
+
+---
+
+## ⌨️ Interactive Slideshow Controls
+
+When viewing any image grid, click a thumbnail to open the lightbox viewer:
+
+- **Next / Previous Slide**: `Right Arrow` / `Left Arrow` or Horizontal Touch Swipe
+- **Toggle Details Drawer**: Press `I` or click the **Info** button
+- **Toggle Fullscreen Mode**: Press `F` or click **Fullscreen**
+- **Zoom In / Out**: Mouse Wheel scroll, Touch Pinch, or Press `+` / `-`
+- **Reset Zoom Scale**: Double-click media frame or press `0`
+- **Pan Zoomed Photo**: Click & Drag or Single-finger touch pan
+- **Close Lightbox**: Press `Escape` or click **Close**
+
+
+# Limitations worth knowing
 
 - **New photos need a restart.** The folder is scanned once when the
   server starts. Add more photos, restart the server (`trip_content.json`
