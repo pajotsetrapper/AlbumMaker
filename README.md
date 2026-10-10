@@ -16,7 +16,7 @@ features; they differ only in how it's delivered:
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
 | Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` |
-| After adding photos | Re-run the script | Restart the server |
+| After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
 | After editing descriptions | Re-run the script | Save the file and refresh the page |
 | Cost | A build step | A little CPU on first view of each day |
 
@@ -55,16 +55,16 @@ Options:
 - `-i / --input`: folder with your photos and videos. Subfolders are
   scanned too. Required.
 - `-o / --output`: where the website is written (default: `./site`).
-  **Keep this outside your photos folder.** Otherwise the next run scans
-  the generated thumbnails as if they were photos.
+  It can be inside your photos folder; it's excluded from the scan. It
+  can't be the photos folder itself, or a folder that contains it.
 - `-c / --content`: where titles and descriptions are stored (default:
   `./trip_content.json`). See section 3.
 - `--thumb-size`: maximum thumbnail dimension in px (default 400). For
   video thumbnails this sets the width, so portrait videos get taller
   thumbnails.
-- `--force`: regenerate all thumbnails and media copies, even ones that
-  already exist. See "Re-running the static build" below for when you
-  need this.
+- `--force`: regenerate all thumbnails and media copies, even for files
+  that haven't changed. Normally not needed; see "Re-running the static
+  build" below.
 - `--tz-offset`: fixed UTC offset in hours (e.g. `2` or `-5.5`) for video
   timestamps. See "Video timestamps" below.
 - `--workers`: how many files to process in parallel (default: one per
@@ -72,6 +72,8 @@ Options:
   runs.
 - `--no-dedupe`: include exact-duplicate files instead of skipping them.
   See "Duplicates" below.
+- `--no-live-photos`: show iPhone Live Photo clips as separate videos
+  instead of attaching them to their photos. See "Live Photos" below.
 
 ## 2b. Serve it live: `trip_server.py`
 
@@ -104,6 +106,7 @@ Options:
 - `--thumb-size`: same as for `generate_site.py`.
 - `--tz-offset`: same as for `generate_site.py`.
 - `--no-dedupe`: same as for `generate_site.py`.
+- `--no-live-photos`: same as for `generate_site.py`.
 
 The server writes nothing to disk except `trip_content.json`.
 Thumbnails and converted images are built in memory and kept in a small
@@ -182,6 +185,9 @@ Your text is safe:
     controls. Everything else still works.
   - `Esc`: close the details panel if it's open, otherwise close the
     viewer.
+  - `L` (or the Live button): play a Live Photo's motion clip. The
+    button only appears on Live Photos, which are also marked LIVE in
+    the grid. See "Live Photos" below.
   - Neighbouring photos preload in the background, so navigation feels
     instant. Videos play inline with normal video controls.
 - **Responsive layout:** the maps and thumbnail grid scale with the
@@ -224,6 +230,23 @@ orientation wrong.
 - **Live server:** the JPEG is built in memory on request. The real
   original is available through the "Download original file" link.
 
+**Live Photos.** An iPhone exports a Live Photo as a photo
+(`IMG_1234.HEIC` or `.JPG`) plus a short `IMG_1234.MOV`. Instead of
+listing that clip as a separate video, both scripts attach it to the
+photo, so it plays from the slideshow with `L` or the Live button and
+then returns to the photo. A video is treated as a Live Photo clip only
+when all of these hold:
+
+- A photo with the same name sits in the same folder.
+- The video carries Apple's Live Photo marker, or is at most 4 seconds
+  long.
+
+So a real video that just happens to share a photo's name is left alone.
+The clips are HEVC, which Safari plays everywhere. Other browsers only
+play them where the system has an HEVC decoder; where it doesn't,
+pressing Live just stays on the photo. Use `--no-live-photos` to list
+the clips as ordinary videos instead.
+
 **Thumbnails** are small separate images (`--thumb-size`), since loading
 full-resolution files just to show a preview would be slow.
 
@@ -237,8 +260,11 @@ so none of this applies there. The exceptions:
 - On a collision, a suffix is added. Collisions are checked ignoring
   upper/lower case and the file extension, so `IMG_0001.jpg` from two
   phones, or `IMG_1.jpg` next to `IMG_1.heic`, count as one. The first
-  file in alphabetical path order keeps the plain name; the others get
-  `_2`, `_3` and so on.
+  file in alphabetical path order keeps the plain name, with photos
+  going before videos (so in a Live Photo pair, the photo keeps it).
+  The others get `_2`, `_3` and so on.
+- Once a file has an output name, it keeps it on later runs, even if
+  new files would now sort before it.
 - For a multi-image JPEG, the converted display version is named
   `IMG_1234_display.jpg`, so it doesn't clash with the original's copy.
 
@@ -256,6 +282,9 @@ so none of this applies there. The exceptions:
     `$RECYCLE.BIN`
   - files that can't actually be opened as an image or video (skipped
     with a warning, instead of showing up as broken tiles)
+  - folders holding a site built by `generate_site.py`, recognized by
+    its build record (`.trip_site_manifest.json`), so a generated site
+    inside your photos folder is never mistaken for photos
 - **Duplicates.** Files with identical content (the same photo imported
   from two devices, a folder synced twice) are detected and only the
   first is kept. Detection compares file size plus the first and last
@@ -288,16 +317,20 @@ so none of this applies there. The exceptions:
     asks you to use a dedicated provider (e.g. MapTiler, Stadia Maps,
     Mapbox). For a personal site shared with family and friends, the
     default is fine.
-- **Re-running the static build.** Without `--force`, files whose
-  thumbnail and media copy already exist are skipped, so adding a few
-  photos to a big trip and regenerating is fast. The flip side:
-  - Changing `--thumb-size` only affects newly processed files until you
-    run once with `--force`.
-  - The same goes for a photo you edited after it was first processed.
-  - Photos you remove from the input folder leave their old copies
-    behind in the output folder. Day pages for days that no longer have
-    any photos stay behind too. Delete the output folder for a clean
-    rebuild.
+- **Re-running the static build.** The output folder holds a build
+  record, `.trip_site_manifest.json`, so a re-run only redoes what's
+  needed:
+  - New photos, and photos whose size or modification time changed
+    (edited or re-exported), get fresh thumbnails and copies. Unchanged
+    files are reused, so regenerating a big trip is fast.
+  - Changing `--thumb-size` rebuilds all thumbnails automatically.
+  - Outputs of photos you removed, and pages for days that no longer
+    have any photos, are deleted. Only files the build record lists are
+    ever deleted, and only inside the output folder.
+  - The scan still reads every file's metadata on each run, which takes
+    a moment on large trips.
+  - Deleting the build record is safe: the next run just regenerates
+    thumbnails and converted images, and re-checks the copies.
 - **Live server: new photos need a restart.** The folder is scanned once
   at startup. Your `trip_content.json` is untouched by a restart; new
   days just get a blank entry added.
@@ -306,11 +339,15 @@ so none of this applies there. The exceptions:
 - **Live server: first view of a day is slower.** Thumbnails are built
   the first time a day is opened, which takes a moment for days with
   many photos. Revisiting is fast, thanks to the in-memory cache.
-- **Upgrading from an older version.** Earlier versions of
-  `generate_site.py` made several resized copies per photo (filenames
-  ending in `-1280.jpg`, `-1920.jpg`, etc.). These are no longer used
-  and aren't cleaned up automatically. Delete the output folder before
-  regenerating so they don't linger.
+- **Upgrading from an older version.** A site built before the build
+  record existed has no record of its files. The first run after
+  upgrading regenerates thumbnails and converted images once; copies of
+  originals are kept if they're still up to date. Files that only older
+  versions made aren't in the record, so they are never cleaned up
+  automatically. This includes the resized copies very old versions
+  made (filenames ending in `-1280.jpg`, `-1920.jpg`, etc.), and
+  leftovers from photos removed before upgrading. For a clean result,
+  delete the output folder and regenerate.
 
 ## Customizing the look
 
