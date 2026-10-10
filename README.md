@@ -31,6 +31,10 @@ You need Python 3.9+, plus:
 pip install -r requirements.txt
 ```
 
+Keep the three Python files together in one folder: `generate_site.py`,
+`trip_server.py`, and `trip_common.py`. The last one holds the code both
+scripts share, and neither runs without it.
+
 You also need **ffmpeg** installed and on your PATH. It's used to read
 video metadata and grab a thumbnail frame from each video:
 
@@ -358,16 +362,29 @@ so none of this applies there. The exceptions:
   leftovers from photos removed before upgrading. For a clean result,
   delete the output folder and regenerate.
 
+## Running the tests
+
+The `tests/` folder has a test suite covering both scripts. It builds
+small photos and videos on the fly, runs the generator, and starts the
+server on a free port. It needs nothing beyond `requirements.txt`. From
+the project folder:
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+Video tests are skipped automatically if ffmpeg isn't installed. pytest
+runs the same tests too, if you prefer it (`pytest tests`).
+
 ## Customizing the look
 
-The design lives in two places in each script:
+The whole design lives in `trip_common.py` and is shared by both
+scripts, so a change there shows up in the static site and the live
+server alike:
 
 - **The `CSS` string.** Colours are CSS variables at the top (`--navy`,
   `--gold`, `--teal`, etc.), so they're easy to swap.
 - **The `DAY_COLORS` list.** This is the palette used for each day on the
   overview map.
-
-The page layout is plain Jinja2 templates in the same files. Both scripts
-currently contain their own copy of the CSS, JavaScript and templates.
-If you change the look and want both to match, make the same change in
-both files.
+- **The templates.** The page layout is plain Jinja2 templates
+  (`INDEX_TEMPLATE`, `DAY_TEMPLATE`) in the same file.
