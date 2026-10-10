@@ -23,8 +23,10 @@ See README.md for the full walkthrough.
 from __future__ import annotations
 
 import argparse
+import filecmp
 import hashlib
 import json
+import math
 import os
 import re
 import shutil
@@ -215,16 +217,67 @@ def is_live_photo_clip(meta: dict) -> bool:
     return duration is not None and duration <= LIVE_CLIP_MAX_SECONDS
 
 
+def valid_gps(lat: float, lon: float) -> bool:
+    """Reject coordinates that can't be real: NaN/inf (EXIF rationals with
+    a zero denominator), out of range, or exactly 0,0 (the usual "no fix"
+    placeholder). Bad values would otherwise break the maps."""
+    return (math.isfinite(lat) and math.isfinite(lon)
+            and -90 <= lat <= 90 and -180 <= lon <= 180
+            and not (lat == 0 and lon == 0))
+
+
+def _parse_iso_datetime(s: str) -> Optional[datetime]:
+    """ISO 8601 timestamps as written by cameras and ffprobe, including
+    offsets without a colon (+0200) that Python 3.9's parser rejects."""
+    s = str(s).strip().replace("Z", "+00:00")
+    s = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", s)
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def check_ffmpeg():
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    if missing:
+        print(f"Note: {' and '.join(missing)} not found. Videos will still be included, but "
+              f"without date, location or preview frame. Install ffmpeg to fix this.",
+              file=sys.stderr)
+
+
+def placeholder_thumbnail(thumb_size: int) -> Image.Image:
+    """Plain dark tile used when a video's preview frame can't be extracted
+    (no ffmpeg, or an undecodable stream), so the grid never shows a broken
+    image. The grid draws its play icon on top, as for any video."""
+    return Image.new("RGB", (thumb_size, thumb_size * 3 // 4), (34, 50, 82))
+
+
+def same_file_content(a: Path, b: Path) -> bool:
+    """Byte-for-byte comparison, used to confirm a fingerprint match."""
+    try:
+        return filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
+def positive_thumb_size(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number: {value!r}")
+    if not 16 <= n <= 4096:
+        raise argparse.ArgumentTypeError("must be between 16 and 4096")
+    return n
+
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp"}
 
-# Formats a normal browser can display directly via <img> — these get used
+# Formats a normal browser can display directly via <img>. These are used
 # completely untouched (a byte-for-byte copy of the original file) as the
-# full-screen "display" version. Formats outside this set (HEIC/HEIF, TIFF)
-# can't be shown inline in Chrome/Firefox/Edge at all, so there's no way to
-# view them in the generated site without converting them to something a
-# browser understands; that conversion is done at full original resolution
-# and near-lossless quality to stay as close to "unchanged" as possible.
+# full-screen "display" version. Other formats (HEIC/HEIF, TIFF), and
+# multi-image JPEGs, get a full-resolution, near-lossless JPEG for display
+# instead, plus an untouched copy of the original for the download link.
 BROWSER_NATIVE_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
 
 DAY_COLORS = ["#E3A857", "#4FA5A0", "#C97B84", "#7C9473", "#8C7BC9", "#D9B24C"]
@@ -245,6 +298,7 @@ class MediaItem:
     thumb_file: str            # filename inside output/thumbs/
     display_file: str          # filename inside output/media/ (always browser-viewable)
     original_file: Optional[str] = None  # set only when a genuine original copy is kept
+    thumb_is_placeholder: bool = False   # video preview couldn't be extracted
                                           # alongside a converted display_file (HEIC/HEIF, TIFF)
     width: Optional[int] = None
     height: Optional[int] = None
@@ -305,7 +359,7 @@ def _gps_from_exif(gps_ifd: dict) -> Optional[tuple]:
         lon = _to_deg(gps_ifd["GPSLongitude"])
         if str(gps_ifd.get("GPSLongitudeRef", "E")).upper().startswith("W"):
             lon = -lon
-        if lat == 0 and lon == 0:
+        if not valid_gps(lat, lon):
             return None
         return (round(lat, 6), round(lon, 6))
     except Exception:
@@ -427,6 +481,10 @@ def read_image_metadata(path: Path) -> dict:
         try:
             exif = img.getexif()
             if exif:
+                # orientations 5-8 mean the camera stored the image sideways;
+                # report the size as it's actually displayed
+                if exif.get(0x0112) in (5, 6, 7, 8):
+                    meta["width"], meta["height"] = meta["height"], meta["width"]
                 exif_ifd = {}
                 try:
                     exif_ifd = dict(exif.get_ifd(0x8769))
@@ -486,13 +544,12 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
     """Pull capture time, GPS, dimensions, codec, frame rate and duration out
     of a video via ffprobe. Missing fields are simply absent.
 
-    Video containers store `creation_time` as absolute UTC. If tz_offset_hours
-    is given, that fixed offset is applied to convert it to the trip's local
-    time. Otherwise it falls back to whatever timezone this script happens to
-    be running in, which is only correct if you're generating the site from
-    the same timezone the trip was in. Photos aren't affected by this at all:
-    camera EXIF timestamps are recorded in local time already, with no
-    timezone conversion involved."""
+    Capture time: if tz_offset_hours is given, the container's UTC
+    `creation_time` is converted with that fixed offset. Otherwise an
+    iPhone's local `com.apple.quicktime.creationdate` is used when present,
+    and plain `creation_time` is converted using the timezone this script
+    runs in (only right if that's the trip's timezone). Photos aren't
+    affected: camera EXIF timestamps are already local."""
     meta = {}
     try:
         result = subprocess.run(
@@ -502,8 +559,7 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         )
     except FileNotFoundError:
         # ffprobe isn't installed: keep the video, just without metadata
-        print(f"  ! ffprobe not found, so {path.name} has no date/GPS metadata "
-              f"(install ffmpeg to fix this)", file=sys.stderr)
+        # (main() already explained this once; don't repeat it per file)
         return meta
     except subprocess.TimeoutExpired:
         print(f"  ! ffprobe timed out on {path.name}", file=sys.stderr)
@@ -526,8 +582,18 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         if s.get("codec_type") == "video" and video_stream is None:
             video_stream = s
 
+    # iPhones also store the local capture time with its UTC offset (e.g.
+    # 2024-05-02T14:00:00+0200). Unless --tz-offset says otherwise, that's
+    # the best source: the clock time where the video was shot, the same
+    # thing a photo's EXIF time records, with no timezone guesswork.
+    local_ct = tags.get("com.apple.quicktime.creationdate")
+    if local_ct and tz_offset_hours is None:
+        parsed = _parse_iso_datetime(local_ct)
+        if parsed is not None:
+            meta["dt"] = parsed.replace(tzinfo=None)
+
     ct = tags.get("creation_time")
-    if ct:
+    if ct and "dt" not in meta:
         try:
             ct_clean = ct.replace("Z", "+00:00")
             parsed = datetime.fromisoformat(ct_clean)
@@ -548,13 +614,27 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         m = re.match(r"([+-]\d+\.?\d*)([+-]\d+\.?\d*)", loc)
         if m:
             try:
-                meta["gps"] = (round(float(m.group(1)), 6), round(float(m.group(2)), 6))
+                lat, lon = float(m.group(1)), float(m.group(2))
+                if valid_gps(lat, lon):
+                    meta["gps"] = (round(lat, 6), round(lon, 6))
             except Exception:
                 pass
 
     if video_stream:
         meta["width"] = video_stream.get("width")
         meta["height"] = video_stream.get("height")
+        # phones record portrait video as landscape plus a rotation flag
+        # (a "rotate" tag in older ffprobe, a display matrix in newer)
+        rotation = 0
+        try:
+            rotation = int(float((video_stream.get("tags") or {}).get("rotate", 0)))
+            for side_data in video_stream.get("side_data_list") or []:
+                if "rotation" in side_data:
+                    rotation = int(float(side_data["rotation"]))
+        except (TypeError, ValueError):
+            pass
+        if rotation % 180 and meta["width"] and meta["height"]:
+            meta["width"], meta["height"] = meta["height"], meta["width"]
         codec = video_stream.get("codec_name")
         if codec:
             meta["codec"] = codec.upper()
@@ -713,14 +793,11 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
 
 
 def fast_fingerprint(path: Path, sample_size: int = 65536) -> Optional[tuple]:
-    """A cheap-but-reliable fingerprint for spotting exact duplicate files:
-    file size plus a hash of the first and last chunk of bytes. Reads at
-    most ~2x sample_size regardless of file size, so it stays fast even for
-    large videos, instead of hashing entire multi-GB files. This catches
-    byte-identical duplicates (the same photo imported from two devices, a
-    folder synced twice, etc.) — it will not catch a photo re-exported or
-    re-compressed differently, which is a much harder "perceptually similar"
-    problem and out of scope here."""
+    """Cheap first-pass fingerprint for spotting duplicate files: file size
+    plus a hash of the first and last chunk of bytes, so it stays fast even
+    for multi-GB videos. Files that match are then compared byte-for-byte
+    (same_file_content) before one is skipped. Re-exported or re-compressed
+    copies of a photo are different files and are not detected."""
     try:
         size = path.stat().st_size
         with open(path, "rb") as f:
@@ -754,7 +831,8 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
         unchanged: a byte-for-byte copy under the original name.
       - formats browsers can't show reliably (HEIC/HEIF, TIFF, and
         multi-image/MPO JPEGs) get a full-resolution, near-lossless JPEG
-        version for display, plus an untouched copy of the original.
+        version for display, plus an untouched copy of the original, which
+        the slideshow offers through its "Download original file" link.
 
     regen_thumb / regen_converted: rebuild those even if they exist (the
     source changed, or --thumb-size did). force_copy: re-copy originals
@@ -830,7 +908,9 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
 
 
 def make_video_derivatives(src: Path, thumb_path: Path, display_path: Path,
-                            thumb_size: int, regen_thumb: bool, force_copy: bool):
+                            thumb_size: int, regen_thumb: bool, force_copy: bool) -> bool:
+    """Copy the video and extract a preview frame. Returns True if a
+    placeholder had to be used for the preview."""
     if force_copy or not _copy_is_current(src, display_path):
         shutil.copy2(src, display_path)
 
@@ -844,14 +924,17 @@ def make_video_derivatives(src: Path, thumb_path: Path, display_path: Path,
             try:
                 subprocess.run(
                     ["ffmpeg", "-y", "-ss", seek, "-i", str(src),
-                     "-frames:v", "1", "-vf", f"scale={thumb_size}:-1",
+                     "-frames:v", "1", "-vf", f"scale={thumb_size}:{thumb_size}:force_original_aspect_ratio=decrease",
                      str(thumb_path)],
                     capture_output=True, timeout=30,
                 )
                 if thumb_path.exists() and thumb_path.stat().st_size > 0:
-                    break
+                    return False
             except Exception:
                 continue
+        placeholder_thumbnail(thumb_size).save(thumb_path, "JPEG", quality=82)
+        return True
+    return False
 
 
 # --------------------------------------------------------------------------
@@ -869,6 +952,7 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
     `base` and the regen flags are worked out up front in scan_media, since
     they depend on every file at once and on the previous build record."""
     original_file = None
+    thumb_is_placeholder = False
     thumb_file = f"{base}.jpg"
 
     if media_type == "image":
@@ -880,7 +964,7 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
     else:
         meta = read_video_metadata(path, tz_offset)
         display_file = f"{base}{path.suffix}"  # preserve original extension case (e.g. .MOV)
-        make_video_derivatives(
+        thumb_is_placeholder = make_video_derivatives(
             path, thumbs_dir / thumb_file, media_dir / display_file,
             thumb_size, regen_thumb, force_copy,
         )
@@ -925,6 +1009,7 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
         width=w, height=h,
         detail=detail,
         is_live_clip=(media_type == "video" and is_live_photo_clip(meta)),
+        thumb_is_placeholder=thumb_is_placeholder,
     )
 
 
@@ -961,8 +1046,10 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
         for path, media_type in candidates:
             fp = fast_fingerprint(path)
             original = seen.get(fp) if fp is not None else None
-            if original is not None:
-                print(f"  ~ skipping {path.name}: duplicate of {original.name}", file=sys.stderr)
+            # the fingerprint only samples each file, so confirm a match
+            # byte-for-byte before skipping anything
+            if original is not None and same_file_content(original, path):
+                print(f"  ~ skipping {path.name}: exact duplicate of {original.name}", file=sys.stderr)
                 skipped += 1
                 continue
             if fp is not None:
@@ -991,7 +1078,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
         stats[path] = (st.st_size, st.st_mtime_ns)
         prev = previous.get(rel_paths[path])
         unchanged = (isinstance(prev, dict) and prev.get("base") == bases[path]
-                     and prev.get("size") == st.st_size and prev.get("mtime_ns") == st.st_mtime_ns)
+                     and prev.get("size") == st.st_size and prev.get("mtime_ns") == st.st_mtime_ns
+                     and not prev.get("retry"))  # e.g. a video preview that failed last time
         regen_converted = force or not unchanged
         regen_thumb = regen_converted or thumb_size_changed
         plan[path] = (regen_thumb, regen_converted, force)
@@ -1031,6 +1119,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
             records[rel_paths[path]] = {
                 "base": bases[path], "size": size, "mtime_ns": mtime_ns, "outputs": outputs,
             }
+            if item.thumb_is_placeholder:
+                records[rel_paths[path]]["retry"] = True
 
     return items, records
 
@@ -1262,6 +1352,9 @@ img,video{max-width:100%; display:block;}
 .thumb .live-badge{position:absolute; top:.35rem; left:.35rem; background:rgba(14,23,41,.75); color:var(--cream);
   font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; padding:.1rem .35rem; border-radius:4px; pointer-events:none;}
 .slideshow-btn[hidden]{display:none;}
+.info-download{display:block; margin-top:1rem; font-family:var(--mono); font-size:.78rem; text-align:center;
+  padding:.6rem; border:1px solid rgba(31,42,61,.25); border-radius:8px; color:var(--ink);}
+.info-download:hover{background:rgba(31,42,61,.06); text-decoration:none;}
 
 .site-footer{text-align:center; padding:2.5rem 1.5rem 3.5rem; font-family:var(--mono); font-size:.72rem; opacity:.5;}
 
@@ -1701,6 +1794,16 @@ function renderInfoPanel(){
   document.getElementById('info-title').textContent = item.time ? fmtTime(item.time) : 'Details';
   fillInfoRows(document.getElementById('info-rows'), detail);
 
+  const downloadLink = document.getElementById('info-download');
+  if(downloadLink){
+    if(item.downloadUrl){
+      downloadLink.href = item.downloadUrl;
+      downloadLink.style.display = '';
+    } else {
+      downloadLink.style.display = 'none';
+    }
+  }
+
   const mapWrap = document.getElementById('info-map-wrap');
   const noGps = document.getElementById('info-no-gps');
   if(item.lat != null && item.lon != null){
@@ -1884,6 +1987,7 @@ SLIDESHOW_HTML = """
         <div class="info-map" id="info-map"></div>
       </div>
       <div class="info-no-gps" id="info-no-gps">No location data for this file.</div>
+      <a class="info-download" id="info-download" href="#" download>Download original file</a>
     </div>
   </div>
 </div>
@@ -2124,6 +2228,9 @@ def render_site(days: list, content: dict, output_dir: Path) -> list:
                 "lat": it.lat,
                 "lon": it.lon,
                 "detail": it.detail,
+                # the untouched original: its own copy for converted
+                # formats, otherwise the display copy, which is byte-for-byte
+                "downloadUrl": f"../media/{quote(it.original_file or it.display_file)}",
             }
             if it.media_type == "video":
                 slide["poster"] = f"../thumbs/{quote(it.thumb_file)}"
@@ -2185,17 +2292,17 @@ def main():
     parser.add_argument("-o", "--output", default=Path("site"), type=Path, help="Output folder for the generated site")
     parser.add_argument("-c", "--content", default=Path("trip_content.json"), type=Path,
                          help="JSON file holding the trip title and per-day descriptions (default: ./trip_content.json)")
-    parser.add_argument("--thumb-size", type=int, default=400, help="Max thumbnail dimension in px")
+    parser.add_argument("--thumb-size", type=positive_thumb_size, default=400,
+                         help="Max thumbnail dimension in px (16-4096)")
     parser.add_argument("--force", action="store_true",
                          help="Regenerate all thumbnails and media, even for files that haven't changed")
     parser.add_argument("--tz-offset", type=float, default=None,
                          help="Fixed UTC offset in hours (e.g. 2 or -5.5) used to convert VIDEO "
-                              "timestamps to your trip's local time. Video files store an absolute "
-                              "UTC creation time; without this flag it's converted using whatever "
-                              "timezone this script happens to run in, which is only correct if "
-                              "you're generating the site from the same timezone the trip was in. "
-                              "Photos are unaffected — camera EXIF timestamps are already local, "
-                              "with no timezone conversion involved.")
+                              "timestamps to your trip's local time. Without it, iPhone videos use "
+                              "the local time they recorded, and other videos (which only store "
+                              "UTC) are converted using this computer's timezone. With it, every "
+                              "video uses this offset. Photos are unaffected: camera EXIF "
+                              "timestamps are already local.")
     parser.add_argument("--workers", type=int, default=None,
                          help="Number of files to process in parallel (default: one per CPU core). "
                               "Lower this if you want to keep using your computer for other things "
@@ -2234,6 +2341,7 @@ def main():
             print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
             sys.exit(1)
 
+    check_ffmpeg()
     print(f"Scanning {args.input} ...")
     manifest = load_manifest(args.output)
     items, records = scan_media(args.input, args.output, args.thumb_size, args.force,
