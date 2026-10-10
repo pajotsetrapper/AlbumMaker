@@ -27,8 +27,10 @@ from __future__ import annotations
 import argparse
 import hashlib
 import io
+import ipaddress
 import json
 import mimetypes
+import os
 import re
 import socket
 import subprocess
@@ -41,11 +43,12 @@ from datetime import datetime, timedelta, timezone
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Optional
-from urllib.parse import urlparse, unquote
+from urllib.parse import parse_qs, quote, unquote, urlparse, urlsplit
 
 from PIL import Image, ImageOps
 from PIL.ExifTags import GPSTAGS
-from jinja2 import Template
+from jinja2 import Environment
+from markupsafe import Markup
 
 try:
     import pillow_heif
@@ -53,6 +56,122 @@ try:
     HEIF_SUPPORT = True
 except ImportError:
     HEIF_SUPPORT = False
+
+
+# --------------------------------------------------------------------------
+# Shared safety helpers: which files to scan, reading/writing
+# trip_content.json without ever losing the user's text, and emitting data
+# into HTML/<script> safely.
+# --------------------------------------------------------------------------
+
+# Folders that hold system/NAS/recycle-bin clutter rather than trip media.
+IGNORED_DIR_NAMES = {"@eaDir", "#recycle", "$RECYCLE.BIN", "System Volume Information"}
+
+
+def is_ignored_path(path: Path, root: Path) -> bool:
+    """Skip hidden files/folders (anything starting with '.') and known
+    system folders. Most importantly this skips macOS '._IMG_1234.JPG'
+    AppleDouble files, which carry a photo extension but aren't images."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        parts = path.parts
+    return any(p.startswith(".") or p in IGNORED_DIR_NAMES for p in parts)
+
+
+class ContentFileError(Exception):
+    """trip_content.json exists but can't be used as-is. Never write to the
+    file when this is raised; the user's text must stay untouched."""
+
+
+def default_content() -> dict:
+    return {"title": "My Trip", "subtitle": "", "days": {}}
+
+
+def parse_content_file(path: Path) -> dict:
+    """Read and validate trip_content.json. Raises ContentFileError with a
+    human-readable message (including line/column for JSON syntax errors)
+    instead of silently falling back to defaults."""
+    try:
+        # utf-8-sig: tolerate the BOM that Windows Notepad adds on save
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ContentFileError(f"could not read {path}: {e}") from e
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ContentFileError(
+            f"{path} is not valid JSON: {e.msg} at line {e.lineno}, column {e.colno}. "
+            f"(A trailing comma after the last entry, or a missing comma between "
+            f"entries, are the usual suspects.)"
+        ) from e
+    if not isinstance(loaded, dict):
+        raise ContentFileError(f"{path}: the top level must be an object, i.e. {{ ... }}")
+    days = loaded.get("days")
+    if days is None:
+        days = {}
+    if not isinstance(days, dict):
+        raise ContentFileError(f'{path}: "days" must be an object mapping dates to entries')
+    content = default_content()
+    content.update({k: v for k, v in loaded.items() if k != "days"})
+    content["days"] = days
+    return content
+
+
+def atomic_write_text(path: Path, text: str):
+    """Write via a temp file + rename, so a crash or full disk can never
+    leave a half-written trip_content.json behind."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _text(v) -> str:
+    """Coerce a value from the hand-edited JSON into display text, so a
+    null or a number in the file can't crash page rendering."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, list):  # tolerate a list of paragraphs
+        return "\n\n".join(_text(x) for x in v)
+    return str(v)
+
+
+def trip_title(content: dict) -> str:
+    return _text(content.get("title")).strip() or "My Trip"
+
+
+def day_text(content: dict, date_key: str) -> tuple:
+    """(title, description) for a day, both plain strings."""
+    entry = content.get("days", {}).get(date_key)
+    if not isinstance(entry, dict):
+        entry = {}
+    return _text(entry.get("title")).strip(), _text(entry.get("description")).strip()
+
+
+def script_json(obj) -> Markup:
+    """JSON that's safe to drop inside a <script> block: escapes the
+    characters that could otherwise close the script tag or start an HTML
+    comment/entity. json.dumps alone is NOT safe there."""
+    s = (json.dumps(obj)
+         .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
+    return Markup(s)
+
+
+# Autoescaping on: every {{ value }} is HTML-escaped unless explicitly
+# marked safe (script_json does that, after escaping for script context).
+_JINJA = Environment(autoescape=True)
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".webp"}
@@ -271,9 +390,12 @@ def _route_distance_km(points) -> float:
 
 def read_image_metadata(path: Path) -> dict:
     meta = {}
-    try:
-        with Image.open(path) as img:
-            meta["width"], meta["height"] = img.size
+    # Opening the file is deliberately NOT inside the try below: if Pillow
+    # can't open it at all, it isn't a usable image, and the exception lets
+    # the caller skip it instead of indexing a broken tile with a guessed date.
+    with Image.open(path) as img:
+        meta["width"], meta["height"] = img.size
+        try:
             exif = img.getexif()
             if exif:
                 exif_ifd = {}
@@ -324,8 +446,8 @@ def read_image_metadata(path: Path) -> dict:
                     fl = format_focal(exif_ifd[37386], exif_ifd.get(41989))
                     if fl:
                         meta["focal_length"] = fl
-    except Exception as e:
-        print(f"  ! could not read EXIF from {path.name}: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"  ! could not read EXIF from {path.name}: {e}", file=sys.stderr)
     return meta
 
 
@@ -335,11 +457,24 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         result = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, errors="replace", timeout=30,
         )
-        data = json.loads(result.stdout)
-    except Exception as e:
-        print(f"  ! ffprobe failed on {path.name}: {e}", file=sys.stderr)
+    except FileNotFoundError:
+        # ffprobe isn't installed: keep the video, just without metadata
+        print(f"  ! ffprobe not found, so {path.name} has no date/GPS metadata "
+              f"(install ffmpeg to fix this)", file=sys.stderr)
+        return meta
+    except subprocess.TimeoutExpired:
+        print(f"  ! ffprobe timed out on {path.name}", file=sys.stderr)
+        return meta
+    if result.returncode != 0:
+        # ffprobe ran but couldn't parse the file: not a usable video, so
+        # let the caller skip it rather than show a broken tile
+        raise ValueError("ffprobe could not read this file (not a valid video?)")
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError as e:
+        print(f"  ! unexpected ffprobe output for {path.name}: {e}", file=sys.stderr)
         return meta
 
     fmt = data.get("format", {}) or {}
@@ -471,7 +606,8 @@ def group_by_day(items: list) -> list:
 
 def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool) -> list:
     candidates = []
-    for path in sorted(p for p in input_dir.rglob("*") if p.is_file()):
+    for path in sorted(p for p in input_dir.rglob("*")
+                       if p.is_file() and not is_ignored_path(p, input_dir)):
         ext = path.suffix.lower()
         if ext in IMAGE_EXTS:
             if ext in (".heic", ".heif") and not HEIF_SUPPORT:
@@ -629,6 +765,24 @@ def render_fallback_jpeg_bytes(path: Path) -> Optional[bytes]:
         return None
 
 
+def item_version(item: MediaItem) -> str:
+    """Short token that changes whenever the file behind an ID changes,
+    whether it was edited or, after a restart with new photos, the ID now
+    points at a different file. It goes into every media URL (?v=...), so
+    browser-cached responses can never be shown for the wrong photo."""
+    try:
+        st = item.path.stat()
+    except OSError:
+        return "missing"
+    h = hashlib.sha1(os.fsencode(item.path))
+    h.update(f"\0{st.st_mtime_ns}\0{st.st_size}".encode())
+    return h.hexdigest()[:12]
+
+
+def item_url(kind: str, item: MediaItem, version: Optional[str] = None) -> str:
+    return f"/{kind}/{item.id}?v={version or item_version(item)}"
+
+
 class LRUCache:
     """A small in-memory (never on disk) bounded cache so scrolling back to
     a day you already visited doesn't redo image work, without unbounded
@@ -666,53 +820,67 @@ FALLBACK_CACHE = LRUCache(maxsize=80)   # full-res, so kept smaller
 # --------------------------------------------------------------------------
 
 class ContentStore:
+    """trip_content.json, hot-reloaded on change. It never overwrites the
+    user's text: at startup a file that fails to parse aborts with a clear
+    message (nothing written), and at runtime a broken save is reported once
+    while the last version that loaded fine keeps being served."""
+
     def __init__(self, path: Path, day_keys: list):
         self.path = path
         self._lock = threading.Lock()
-        self._mtime = None
         self._cache = None
+        self._sig = None
+        self._warned_sig = object()
         self._ensure_keys(day_keys)
 
-    def _read(self) -> dict:
-        content = {"title": "My Trip", "subtitle": "", "days": {}}
-        if self.path.exists():
-            try:
-                loaded = json.loads(self.path.read_text(encoding="utf-8"))
-                content.update({k: v for k, v in loaded.items() if k != "days"})
-                content["days"] = loaded.get("days", {})
-            except Exception as e:
-                print(f"! could not parse {self.path}, using defaults ({e})", file=sys.stderr)
-        return content
-
-    def _write(self, content: dict):
-        self.path.write_text(json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8")
-
-    def _mtime_now(self):
+    def _sig_now(self):
+        # mtime_ns + size: catches edits even on filesystems with coarse
+        # (1-2 s) mtime resolution, as long as the length changed
         try:
-            return self.path.stat().st_mtime
+            st = self.path.stat()
+            return (st.st_mtime_ns, st.st_size)
         except OSError:
             return None
 
     def _ensure_keys(self, day_keys: list):
-        content = self._read()
-        changed = not self.path.exists()
+        """Add blank entries for days not yet in the file. Raises
+        ContentFileError, without writing anything, if the existing file
+        can't be parsed."""
+        exists = self.path.exists()
+        content = parse_content_file(self.path) if exists else default_content()
+        changed = not exists
         for key in day_keys:
             if key not in content["days"]:
                 content["days"][key] = {"title": "", "description": ""}
                 changed = True
         if changed:
-            self._write(content)
-            print(f"-> wrote {self.path} (fill in titles/descriptions any time — "
+            atomic_write_text(self.path, json.dumps(content, indent=2, ensure_ascii=False) + "\n")
+            print(f"-> wrote {self.path} (fill in titles/descriptions any time; "
                   f"just refresh the page after saving, no restart needed)")
         self._cache = content
-        self._mtime = self._mtime_now()
+        self._sig = self._sig_now()
 
     def get(self) -> dict:
         with self._lock:
-            mtime = self._mtime_now()
-            if mtime != self._mtime:
-                self._cache = self._read()
-                self._mtime = mtime
+            sig = self._sig_now()
+            if sig == self._sig:
+                return self._cache
+            if sig is None:
+                problem = f"{self.path} has disappeared"
+            else:
+                try:
+                    self._cache = parse_content_file(self.path)
+                    self._sig = sig
+                    self._warned_sig = object()
+                    return self._cache
+                except ContentFileError as e:
+                    problem = str(e)
+            # don't advance self._sig: the next request retries, so the fix
+            # shows up as soon as the file is saved correctly
+            if sig != self._warned_sig:
+                print(f"! {problem}\n  Still showing the last version that loaded fine. "
+                      f"Fix the file and refresh. (Nothing was written to it.)", file=sys.stderr)
+                self._warned_sig = sig
             return self._cache
 
 
@@ -1044,14 +1212,19 @@ function initDayMap(elId, route, thumbs, slideIndices){
     route.forEach((p, i) => {
       const marker = L.circleMarker(p, {radius:6, color:'#E3A857', fillColor:'#16233B', fillOpacity:1, weight:2}).addTo(map);
       if(thumbs[i]){
-        marker.bindPopup(
-          `<img src="${thumbs[i]}" class="map-popup-thumb">` +
-          `<div class="map-popup-hint">Click photo to view full-size</div>`
-        );
-        marker.on('popupopen', () => {
-          const img = document.querySelector('.leaflet-popup-content .map-popup-thumb');
-          if(img) img.addEventListener('click', () => openSlideshow(slideIndices[i]));
-        });
+        // built as DOM nodes rather than an HTML string, so nothing in the
+        // URL can ever be interpreted as markup
+        const popup = document.createElement('div');
+        const img = document.createElement('img');
+        img.src = thumbs[i];
+        img.className = 'map-popup-thumb';
+        img.alt = '';
+        img.addEventListener('click', () => openSlideshow(slideIndices[i]));
+        const hint = document.createElement('div');
+        hint.className = 'map-popup-hint';
+        hint.textContent = 'Click photo to view full-size';
+        popup.append(img, hint);
+        marker.bindPopup(popup);
       }
     });
     map.fitBounds(route, {padding:[30,30]});
@@ -1077,22 +1250,29 @@ const INFO_ORDER = ['filename','dimensions','filesize','camera','lens','aperture
                     'iso','focal_length','codec','fps','duration','gps_display','altitude'];
 
 function buildSlideStage(item){
+  // Returns a DOM element (not an HTML string): URLs and filenames are set
+  // as properties, so they can never be interpreted as markup.
   if(item.type === 'video'){
-    // muted is required for autoplay to actually work under browser
-    // autoplay policies — without it, browsers silently block autoplay
-    // and the video just sits paused on a blank frame. poster gives it a
-    // real starting frame either way; native controls let people unmute.
-    const poster = item.poster ? ` poster="${item.poster}"` : '';
-    return `<video src="${item.display}" controls autoplay muted playsinline${poster}></video>`;
+    // muted is required for autoplay to work under browser autoplay
+    // policies; poster gives a real starting frame either way, and native
+    // controls let people unmute.
+    const v = document.createElement('video');
+    v.src = item.display;
+    v.controls = true;
+    v.autoplay = true;
+    v.muted = true;
+    v.setAttribute('muted', '');
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    if(item.poster) v.poster = item.poster;
+    return v;
   }
-  // always the converted JPEG here (item.display), even for HEIC — an
-  // earlier version offered the real original to any browser that claimed
-  // it could decode HEIC natively via <picture>, but some platforms' HEIC
-  // decoders (notably some Windows OS-level codec packs) handle orientation
-  // inconsistently, which could render worse than the verified-correct
-  // converted copy. The true original is still available via the download
-  // link, just not used for inline display anymore.
-  return `<img src="${item.display}" alt="">`;
+  // always the browser-safe display version (item.display), even for HEIC;
+  // the true original is available via the download link where offered.
+  const img = document.createElement('img');
+  img.src = item.display;
+  img.alt = '';
+  return img;
 }
 
 // ---------- zoom / pan (images only) ----------
@@ -1172,7 +1352,8 @@ function renderSlide(){
   const item = SLIDES[currentSlide];
   const mediaEl = document.getElementById('slideshow-media');
   mediaEl.classList.add('loading');
-  mediaEl.innerHTML = buildSlideStage(item);
+  mediaEl.textContent = '';
+  mediaEl.appendChild(buildSlideStage(item));
 
   const clearLoading = () => mediaEl.classList.remove('loading');
   const mediaTag = mediaEl.querySelector('img, video');
@@ -1210,18 +1391,29 @@ function toggleFullscreen(){
 }
 
 // ---------- info panel ----------
-function buildInfoRows(detail){
-  return INFO_ORDER
-    .filter(key => detail[key])
-    .map(key => `<div class="info-row"><span class="k">${INFO_LABELS[key]}</span><span class="v">${detail[key]}</span></div>`)
-    .join('');
+function fillInfoRows(container, detail){
+  // textContent, never innerHTML: EXIF strings and filenames come from the
+  // files themselves and must not be able to inject markup or script.
+  container.textContent = '';
+  INFO_ORDER.filter(key => detail[key]).forEach(key => {
+    const row = document.createElement('div');
+    row.className = 'info-row';
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = INFO_LABELS[key];
+    const v = document.createElement('span');
+    v.className = 'v';
+    v.textContent = String(detail[key]);
+    row.append(k, v);
+    container.appendChild(row);
+  });
 }
 
 function renderInfoPanel(){
   const item = SLIDES[currentSlide];
   const detail = item.detail || {};
   document.getElementById('info-title').textContent = item.time ? fmtTime(item.time) : 'Details';
-  document.getElementById('info-rows').innerHTML = buildInfoRows(detail);
+  fillInfoRows(document.getElementById('info-rows'), detail);
 
   const downloadLink = document.getElementById('info-download');
   if(downloadLink){
@@ -1420,7 +1612,7 @@ HEAD = """<head>
 <link rel="stylesheet" href="/assets/style.css">
 </head>"""
 
-INDEX_TEMPLATE = Template("""<!doctype html>
+INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <html lang="en">
 """ + HEAD + """
 <body>
@@ -1476,7 +1668,7 @@ catch(e) { console.error('Map failed to load (check your internet connection):',
 </html>
 """)
 
-DAY_TEMPLATE = Template("""<!doctype html>
+DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <html lang="en">
 """ + HEAD + """
 <body>
@@ -1524,7 +1716,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
 <div class="grid" id="thumb-grid">
   {% for item in items %}
   <div class="thumb" data-slide-index="{{ loop.index0 }}">
-    <img src="/thumb/{{ item.id }}" loading="lazy" alt="">
+    <img src="{{ item.thumb_url }}" loading="lazy" alt="">
     {% if item.media_type == 'video' %}
     <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
     {% endif %}
@@ -1570,12 +1762,12 @@ def build_day_summaries(days: list, content: dict):
 
     summaries = []
     for d in days:
-        c = content["days"].get(d.date_key, {})
+        c_title, c_desc = day_text(content, d.date_key)
         default_title = "Unsorted" if d.is_unknown else f"Day {real_rank[d.date_key]}"
-        title = c.get("title") or default_title
-        desc = c.get("description", "").strip()
+        title = c_title or default_title
+        desc = c_desc
         excerpt = (desc[:110] + "\u2026") if len(desc) > 110 else desc
-        cover = f"/thumb/{d.items[0].id}" if d.items else None
+        cover = item_url("thumb", d.items[0]) if d.items else None
         date_display = "Date unknown" if d.is_unknown else format_long_date(d.date_obj)
         color = UNKNOWN_DAY_COLOR if d.is_unknown else DAY_COLORS[(real_rank[d.date_key] - 1) % len(DAY_COLORS)]
         summaries.append({
@@ -1602,15 +1794,15 @@ def render_homepage() -> str:
     total_videos = sum(d.video_count for d in DAYS)
     total_km = round(sum(d.distance_km for d in DAYS), 1)
     return INDEX_TEMPLATE.render(
-        page_title=content["title"],
-        title=content["title"],
-        subtitle=content.get("subtitle", ""),
+        page_title=trip_title(content),
+        title=trip_title(content),
+        subtitle=_text(content.get("subtitle")),
         day_count=real_day_count,
         photo_count=total_photos,
         video_count=total_videos,
         distance_km=total_km,
         days=summaries,
-        days_json=json.dumps(summaries),
+        days_json=script_json(summaries),
     )
 
 
@@ -1622,10 +1814,10 @@ def render_day(date_key: str) -> Optional[str]:
         return None
     d = DAYS[idx]
 
-    c = content["days"].get(d.date_key, {})
+    c_title, c_desc = day_text(content, d.date_key)
     default_title = "Unsorted" if d.is_unknown else f"Day {real_rank[d.date_key]}"
-    title = c.get("title") or default_title
-    desc_raw = c.get("description", "").strip()
+    title = c_title or default_title
+    desc_raw = c_desc
     description = [p.strip() for p in desc_raw.split("\n\n") if p.strip()] if desc_raw else []
     date_display = "Date unknown" if d.is_unknown else format_long_date(d.date_obj)
 
@@ -1634,33 +1826,35 @@ def render_day(date_key: str) -> Optional[str]:
     route_thumbs = []
     route_slide_indices = []
     for slide_idx, it in enumerate(d.items):
-        item_ctx = {"id": it.id, "media_type": it.media_type}
+        v = item_version(it)
+        item_ctx = {"id": it.id, "media_type": it.media_type,
+                    "thumb_url": item_url("thumb", it, v)}
         if not d.is_unknown:
             item_ctx["time_display"] = it.dt.strftime("%H:%M")
         items_ctx.append(item_ctx)
 
         slide = {
             "type": it.media_type,
-            "display": f"/media/{it.id}",
+            "display": item_url("media", it, v),
             "time": None if d.is_unknown else it.dt.isoformat(),
             "lat": it.lat,
             "lon": it.lon,
             "detail": it.detail,
-            "downloadUrl": f"/download/{it.id}",
+            "downloadUrl": item_url("download", it, v),
         }
         if it.media_type == "video":
-            slide["poster"] = f"/thumb/{it.id}"
+            slide["poster"] = item_url("thumb", it, v)
         slides.append(slide)
         if it.has_gps:
-            route_thumbs.append(f"/thumb/{it.id}")
+            route_thumbs.append(item_url("thumb", it, v))
             route_slide_indices.append(slide_idx)
 
     prev_href = f"/day/{DAYS[idx-1].date_key}" if idx > 0 else None
     next_href = f"/day/{DAYS[idx+1].date_key}" if idx < len(DAYS) - 1 else None
 
     return DAY_TEMPLATE.render(
-        page_title=f"{title} \u2014 {content['title']}",
-        trip_title=content["title"],
+        page_title=f"{title} \u2014 {trip_title(content)}",
+        trip_title=trip_title(content),
         day_number=None if d.is_unknown else real_rank[d.date_key],
         day_total=real_day_count,
         is_unknown=d.is_unknown,
@@ -1669,16 +1863,16 @@ def render_day(date_key: str) -> Optional[str]:
         date_key=d.date_key,
         description=description,
         route=d.route,
-        route_json=json.dumps(d.route),
-        route_thumbs_json=json.dumps(route_thumbs),
-        route_slide_indices_json=json.dumps(route_slide_indices),
+        route_json=script_json(d.route),
+        route_thumbs_json=script_json(route_thumbs),
+        route_slide_indices_json=script_json(route_slide_indices),
         items=items_ctx,
-        slides_json=json.dumps(slides),
+        slides_json=script_json(slides),
         prev_href=prev_href,
-        prev_href_json=json.dumps(prev_href),
+        prev_href_json=script_json(prev_href),
         prev_label=DAYS[idx-1].date_key if idx > 0 else "",
         next_href=next_href,
-        next_href_json=json.dumps(next_href),
+        next_href_json=script_json(next_href),
         next_label=DAYS[idx+1].date_key if idx < len(DAYS) - 1 else "",
     )
 
@@ -1691,8 +1885,25 @@ ARGS = None
 ITEMS: list = []
 DAYS: list = []
 CONTENT: Optional[ContentStore] = None
+# Host names (besides IP literals) the server answers to. Checking the Host
+# header blocks DNS-rebinding attacks, where a web page you visit points its
+# own domain name at 127.0.0.1 to read this server from your browser.
+ALLOWED_HOSTNAMES: set = {"localhost"}
 
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
+CACHE_REVALIDATE = "no-cache"
+
+
+def content_disposition(filename: str) -> str:
+    """RFC 6266 attachment header that works for any filename: an ASCII-only
+    fallback plus the exact UTF-8 name. Raw non-Latin-1 names would crash
+    http.server's header encoding, and quotes or newlines would break the
+    header."""
+    fallback = "".join(
+        c if 0x20 <= ord(c) < 0x7F and c not in '"\\' else "_" for c in filename
+    ) or "download"
+    return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -1702,6 +1913,10 @@ class RequestHandler(BaseHTTPRequestHandler):
     def log_message(self, fmt, *args):
         sys.stderr.write(f"{self.address_string()} - {fmt % args}\n")
 
+    def send_response(self, code, message=None):
+        self._response_started = True
+        super().send_response(code, message)
+
     def do_GET(self):
         self._handle()
 
@@ -1710,29 +1925,55 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     # -- helpers ------------------------------------------------------
 
+    def _host_allowed(self) -> bool:
+        host = self.headers.get("Host")
+        if not host:
+            return True  # very old clients; browsers always send Host
+        try:
+            name = urlsplit("//" + host).hostname
+        except ValueError:
+            return False
+        if not name:
+            return False
+        name = name.rstrip(".").lower()
+        try:
+            ipaddress.ip_address(name)
+            return True  # DNS rebinding needs a domain name; IP literals are safe
+        except ValueError:
+            pass
+        return name in ALLOWED_HOSTNAMES
+
+    def _cache_control(self, current_version: str) -> str:
+        # URL carries the file's current version -> its bytes can never
+        # change, so let the browser keep it. Anything else (an old or
+        # missing ?v=) must be revalidated rather than trusted.
+        return CACHE_IMMUTABLE if self._req_version == current_version else CACHE_REVALIDATE
+
     def _send_text(self, body: str, content_type: str, status: int = 200):
         data = body.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", CACHE_REVALIDATE)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
 
-    def _send_bytes(self, data: bytes, content_type: str, cache_seconds: Optional[int] = None):
+    def _send_bytes(self, data: bytes, content_type: str, cache_control: Optional[str] = None):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
-        if cache_seconds:
-            self.send_header("Cache-Control", f"public, max-age={cache_seconds}")
+        if cache_control:
+            self.send_header("Cache-Control", cache_control)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
 
-    def _send_file(self, path: Path, content_type: str, download_name: Optional[str] = None):
+    def _send_file(self, path: Path, content_type: str, download_name: Optional[str] = None,
+                   cache_control: str = CACHE_REVALIDATE):
         """Stream a file straight off disk, with HTTP Range support so
         <video> seeking works properly. This is the only way media ever
-        leaves this server for native formats and video — no copy, no
+        leaves this server for native formats and video: no copy, no
         conversion, the actual bytes of your actual file."""
         try:
             stat = path.stat()
@@ -1758,6 +1999,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 if start > end or start >= file_size:
                     self.send_response(416)
                     self.send_header("Content-Range", f"bytes */{file_size}")
+                    self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
                 status = 206
@@ -1768,11 +2010,11 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
         self.send_header("Last-Modified", self.date_time_string(int(stat.st_mtime)))
-        self.send_header("Cache-Control", "public, max-age=3600")
+        self.send_header("Cache-Control", cache_control)
         if status == 206:
             self.send_header("Content-Range", f"bytes {start}-{end}/{file_size}")
         if download_name:
-            self.send_header("Content-Disposition", f'attachment; filename="{download_name}"')
+            self.send_header("Content-Disposition", content_disposition(download_name))
         self.end_headers()
 
         if self.command == "HEAD":
@@ -1787,6 +2029,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                         break
                     self.wfile.write(chunk)
                     remaining -= len(chunk)
+            if remaining > 0:
+                # file shrank mid-send: the promised Content-Length can't be
+                # met, so the connection can't be reused
+                self.close_connection = True
         except (BrokenPipeError, ConnectionResetError):
             pass  # normal when a browser cancels a video/image fetch mid-stream
 
@@ -1804,8 +2050,17 @@ class RequestHandler(BaseHTTPRequestHandler):
     # -- routing --------------------------------------------------------
 
     def _handle(self):
+        # one handler instance serves every request on a keep-alive
+        # connection, so per-request state is reset here
+        self._response_started = False
+        self._req_version = None
         try:
-            raw_path = unquote(urlparse(self.path).path)
+            if not self._host_allowed():
+                self.send_error(403, "Unrecognized Host header (see --allow-host)")
+                return
+            parsed = urlparse(self.path)
+            raw_path = unquote(parsed.path)
+            self._req_version = (parse_qs(parsed.query).get("v") or [None])[0]
 
             if raw_path in ("/", ""):
                 self._send_text(render_homepage(), "text/html")
@@ -1827,11 +2082,13 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif raw_path.startswith("/original/"):
                 item = self._lookup_item(raw_path, "/original/")
                 if item is not None:
-                    self._send_file(item.path, guess_mime(item.path))
+                    self._send_file(item.path, guess_mime(item.path),
+                                    cache_control=self._cache_control(item_version(item)))
             elif raw_path.startswith("/download/"):
                 item = self._lookup_item(raw_path, "/download/")
                 if item is not None:
-                    self._send_file(item.path, guess_mime(item.path), download_name=item.path.name)
+                    self._send_file(item.path, guess_mime(item.path), download_name=item.path.name,
+                                    cache_control=self._cache_control(item_version(item)))
             elif raw_path == "/assets/style.css":
                 self._send_text(CSS, "text/css")
             elif raw_path == "/assets/script.js":
@@ -1842,18 +2099,23 @@ class RequestHandler(BaseHTTPRequestHandler):
             pass
         except Exception:
             traceback.print_exc()
-            try:
-                self.send_error(500, "Internal server error")
-            except Exception:
-                pass
+            if not self._response_started:
+                try:
+                    self.send_error(500, "Internal server error")
+                except Exception:
+                    pass
+            else:
+                # headers (maybe part of a body) already went out: writing an
+                # error response now would corrupt the stream, so just drop
+                # the connection
+                self.close_connection = True
 
     def _serve_thumb(self, item: MediaItem):
-        try:
-            mtime = item.path.stat().st_mtime
-        except OSError:
+        if not item.path.exists():
             self.send_error(404, "File not found")
             return
-        cache_key = ("thumb", item.id, mtime, ARGS.thumb_size)
+        version = item_version(item)
+        cache_key = ("thumb", item.id, version, ARGS.thumb_size)
         data = THUMB_CACHE.get(cache_key)
         if data is None:
             data = render_thumbnail_bytes(item, ARGS.thumb_size)
@@ -1861,23 +2123,20 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error(404, "Could not generate thumbnail")
                 return
             THUMB_CACHE.set(cache_key, data)
-        self._send_bytes(data, "image/jpeg", cache_seconds=86400)
+        self._send_bytes(data, "image/jpeg", cache_control=self._cache_control(version))
 
     def _serve_media(self, item: MediaItem):
-        if item.media_type == "video":
-            self._send_file(item.path, guess_mime(item.path))
-            return
-        if not item.needs_jpeg_fallback:
-            self._send_file(item.path, guess_mime(item.path))
+        version = item_version(item)
+        cache_control = self._cache_control(version)
+        if item.media_type == "video" or not item.needs_jpeg_fallback:
+            self._send_file(item.path, guess_mime(item.path), cache_control=cache_control)
             return
         # HEIC/HEIF, TIFF, or a multi-stream/MPO .jpg: on-the-fly JPEG
         # fallback, cached in memory only
-        try:
-            mtime = item.path.stat().st_mtime
-        except OSError:
+        if not item.path.exists():
             self.send_error(404, "File not found")
             return
-        cache_key = ("fallback", item.id, mtime)
+        cache_key = ("fallback", item.id, version)
         data = FALLBACK_CACHE.get(cache_key)
         if data is None:
             data = render_fallback_jpeg_bytes(item.path)
@@ -1885,7 +2144,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                 self.send_error(500, "Could not convert image")
                 return
             FALLBACK_CACHE.set(cache_key, data)
-        self._send_bytes(data, "image/jpeg", cache_seconds=86400)
+        self._send_bytes(data, "image/jpeg", cache_control=cache_control)
 
 
 def _lan_ip() -> Optional[str]:
@@ -1900,7 +2159,7 @@ def _lan_ip() -> Optional[str]:
 
 
 def main():
-    global ARGS, ITEMS, DAYS, CONTENT
+    global ARGS, ITEMS, DAYS, CONTENT, ALLOWED_HOSTNAMES
 
     parser = argparse.ArgumentParser(
         description="Serve your trip photos/videos as a live website — nothing is written to disk."
@@ -1921,6 +2180,10 @@ def main():
                               "timestamps to your trip's local time. Photos are unaffected.")
     parser.add_argument("--no-dedupe", action="store_true",
                          help="Don't skip exact-duplicate files. Duplicate detection is on by default.")
+    parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
+                         help="Extra host name the server should answer to, e.g. a custom local DNS "
+                              "name for this computer. IP addresses, 'localhost' and this computer's "
+                              "own name (also with .local) always work. Repeatable.")
     args = parser.parse_args()
     ARGS = args
 
@@ -1930,6 +2193,20 @@ def main():
     if not HEIF_SUPPORT:
         print("Note: pillow-heif not installed — .heic/.heif files will be skipped.\n"
               "      Install with: pip install pillow-heif", file=sys.stderr)
+
+    # check the content file *before* the (possibly long) indexing step, so a
+    # typo is reported immediately and never leads to the file being rewritten
+    if args.content.exists():
+        try:
+            parse_content_file(args.content)
+        except ContentFileError as e:
+            print(f"! {e}\n  Nothing was changed. Fix the file and start the server again.",
+                  file=sys.stderr)
+            sys.exit(1)
+
+    hostname = socket.gethostname().lower().rstrip(".")
+    ALLOWED_HOSTNAMES = {"localhost", hostname, hostname.split(".")[0] + ".local"}
+    ALLOWED_HOSTNAMES |= {h.lower().rstrip(".") for h in args.allow_host}
 
     print(f"Indexing {args.input} ...")
     items = build_index(args.input, args.tz_offset, dedupe=not args.no_dedupe)
@@ -1948,7 +2225,12 @@ def main():
 
     ITEMS = items
     DAYS = days
-    CONTENT = ContentStore(args.content, [d.date_key for d in days])
+    try:
+        CONTENT = ContentStore(args.content, [d.date_key for d in days])
+    except ContentFileError as e:
+        print(f"! {e}\n  Nothing was changed. Fix the file and start the server again.",
+              file=sys.stderr)
+        sys.exit(1)
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     server = ThreadingHTTPServer((host, args.port), RequestHandler)
