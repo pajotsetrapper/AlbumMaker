@@ -35,10 +35,12 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote
 
 from PIL import Image, ImageOps
 from PIL.ExifTags import GPSTAGS
-from jinja2 import Template
+from jinja2 import Environment
+from markupsafe import Markup
 
 try:
     import pillow_heif
@@ -46,6 +48,122 @@ try:
     HEIF_SUPPORT = True
 except ImportError:
     HEIF_SUPPORT = False
+
+
+# --------------------------------------------------------------------------
+# Shared safety helpers: which files to scan, reading/writing
+# trip_content.json without ever losing the user's text, and emitting data
+# into HTML/<script> safely.
+# --------------------------------------------------------------------------
+
+# Folders that hold system/NAS/recycle-bin clutter rather than trip media.
+IGNORED_DIR_NAMES = {"@eaDir", "#recycle", "$RECYCLE.BIN", "System Volume Information"}
+
+
+def is_ignored_path(path: Path, root: Path) -> bool:
+    """Skip hidden files/folders (anything starting with '.') and known
+    system folders. Most importantly this skips macOS '._IMG_1234.JPG'
+    AppleDouble files, which carry a photo extension but aren't images."""
+    try:
+        parts = path.relative_to(root).parts
+    except ValueError:
+        parts = path.parts
+    return any(p.startswith(".") or p in IGNORED_DIR_NAMES for p in parts)
+
+
+class ContentFileError(Exception):
+    """trip_content.json exists but can't be used as-is. Never write to the
+    file when this is raised; the user's text must stay untouched."""
+
+
+def default_content() -> dict:
+    return {"title": "My Trip", "subtitle": "", "days": {}}
+
+
+def parse_content_file(path: Path) -> dict:
+    """Read and validate trip_content.json. Raises ContentFileError with a
+    human-readable message (including line/column for JSON syntax errors)
+    instead of silently falling back to defaults."""
+    try:
+        # utf-8-sig: tolerate the BOM that Windows Notepad adds on save
+        text = path.read_text(encoding="utf-8-sig")
+    except (OSError, UnicodeDecodeError) as e:
+        raise ContentFileError(f"could not read {path}: {e}") from e
+    try:
+        loaded = json.loads(text)
+    except json.JSONDecodeError as e:
+        raise ContentFileError(
+            f"{path} is not valid JSON: {e.msg} at line {e.lineno}, column {e.colno}. "
+            f"(A trailing comma after the last entry, or a missing comma between "
+            f"entries, are the usual suspects.)"
+        ) from e
+    if not isinstance(loaded, dict):
+        raise ContentFileError(f"{path}: the top level must be an object, i.e. {{ ... }}")
+    days = loaded.get("days")
+    if days is None:
+        days = {}
+    if not isinstance(days, dict):
+        raise ContentFileError(f'{path}: "days" must be an object mapping dates to entries')
+    content = default_content()
+    content.update({k: v for k, v in loaded.items() if k != "days"})
+    content["days"] = days
+    return content
+
+
+def atomic_write_text(path: Path, text: str):
+    """Write via a temp file + rename, so a crash or full disk can never
+    leave a half-written trip_content.json behind."""
+    path = Path(path)
+    tmp = path.with_name(f".{path.name}.tmp-{os.getpid()}")
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            f.write(text)
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    finally:
+        try:
+            tmp.unlink()
+        except OSError:
+            pass
+
+
+def _text(v) -> str:
+    """Coerce a value from the hand-edited JSON into display text, so a
+    null or a number in the file can't crash page rendering."""
+    if v is None:
+        return ""
+    if isinstance(v, str):
+        return v
+    if isinstance(v, list):  # tolerate a list of paragraphs
+        return "\n\n".join(_text(x) for x in v)
+    return str(v)
+
+
+def trip_title(content: dict) -> str:
+    return _text(content.get("title")).strip() or "My Trip"
+
+
+def day_text(content: dict, date_key: str) -> tuple:
+    """(title, description) for a day, both plain strings."""
+    entry = content.get("days", {}).get(date_key)
+    if not isinstance(entry, dict):
+        entry = {}
+    return _text(entry.get("title")).strip(), _text(entry.get("description")).strip()
+
+
+def script_json(obj) -> Markup:
+    """JSON that's safe to drop inside a <script> block: escapes the
+    characters that could otherwise close the script tag or start an HTML
+    comment/entity. json.dumps alone is NOT safe there."""
+    s = (json.dumps(obj)
+         .replace("<", "\\u003c").replace(">", "\\u003e").replace("&", "\\u0026"))
+    return Markup(s)
+
+
+# Autoescaping on: every {{ value }} is HTML-escaped unless explicitly
+# marked safe (script_json does that, after escaping for script context).
+_JINJA = Environment(autoescape=True)
 
 
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".webp"}
@@ -246,9 +364,12 @@ def read_image_metadata(path: Path) -> dict:
     (+ altitude), dimensions, camera/lens, and exposure settings. Any field
     that isn't present in the file is simply absent from the returned dict."""
     meta = {}
-    try:
-        with Image.open(path) as img:
-            meta["width"], meta["height"] = img.size
+    # Opening the file is deliberately NOT inside the try below: if Pillow
+    # can't open it at all, it isn't a usable image, and the exception lets
+    # the caller skip it instead of indexing a broken tile with a guessed date.
+    with Image.open(path) as img:
+        meta["width"], meta["height"] = img.size
+        try:
             exif = img.getexif()
             if exif:
                 exif_ifd = {}
@@ -301,8 +422,8 @@ def read_image_metadata(path: Path) -> dict:
                     fl = format_focal(exif_ifd[37386], exif_ifd.get(41989))
                     if fl:
                         meta["focal_length"] = fl
-    except Exception as e:
-        print(f"  ! could not read EXIF from {path.name}: {e}", file=sys.stderr)
+        except Exception as e:
+            print(f"  ! could not read EXIF from {path.name}: {e}", file=sys.stderr)
     return meta
 
 
@@ -322,11 +443,24 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         result = subprocess.run(
             ["ffprobe", "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", str(path)],
-            capture_output=True, text=True, timeout=30,
+            capture_output=True, text=True, errors="replace", timeout=30,
         )
-        data = json.loads(result.stdout)
-    except Exception as e:
-        print(f"  ! ffprobe failed on {path.name}: {e}", file=sys.stderr)
+    except FileNotFoundError:
+        # ffprobe isn't installed: keep the video, just without metadata
+        print(f"  ! ffprobe not found, so {path.name} has no date/GPS metadata "
+              f"(install ffmpeg to fix this)", file=sys.stderr)
+        return meta
+    except subprocess.TimeoutExpired:
+        print(f"  ! ffprobe timed out on {path.name}", file=sys.stderr)
+        return meta
+    if result.returncode != 0:
+        # ffprobe ran but couldn't parse the file: not a usable video, so
+        # let the caller skip it rather than show a broken tile
+        raise ValueError("ffprobe could not read this file (not a valid video?)")
+    try:
+        data = json.loads(result.stdout or "{}")
+    except ValueError as e:
+        print(f"  ! unexpected ffprobe output for {path.name}: {e}", file=sys.stderr)
         return meta
 
     fmt = data.get("format", {}) or {}
@@ -667,7 +801,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     media_dir.mkdir(parents=True, exist_ok=True)
 
     candidates = []
-    for path in sorted(p for p in input_dir.rglob("*") if p.is_file()):
+    for path in sorted(p for p in input_dir.rglob("*")
+                       if p.is_file() and not is_ignored_path(p, input_dir)):
         ext = path.suffix.lower()
         if ext in IMAGE_EXTS:
             if ext in (".heic", ".heif") and not HEIF_SUPPORT:
@@ -779,23 +914,21 @@ def group_by_day(items: list) -> list:
 # --------------------------------------------------------------------------
 
 def load_or_init_content(content_path: Path, day_keys: list) -> dict:
-    content = {"title": "My Trip", "subtitle": "", "days": {}}
-    if content_path.exists():
-        try:
-            loaded = json.loads(content_path.read_text(encoding="utf-8"))
-            content.update({k: v for k, v in loaded.items() if k != "days"})
-            content["days"] = loaded.get("days", {})
-        except Exception as e:
-            print(f"! could not parse {content_path}, starting fresh ({e})", file=sys.stderr)
+    """Load trip_content.json and add blank entries for any new days. Only
+    ever adds; never overwrites. If the existing file can't be parsed this
+    raises ContentFileError WITHOUT writing anything, since falling back to
+    defaults and saving would wipe every title and description."""
+    exists = content_path.exists()
+    content = parse_content_file(content_path) if exists else default_content()
 
-    changed = not content_path.exists()
+    changed = not exists
     for key in day_keys:
         if key not in content["days"]:
             content["days"][key] = {"title": "", "description": ""}
             changed = True
 
     if changed:
-        content_path.write_text(json.dumps(content, indent=2, ensure_ascii=False), encoding="utf-8")
+        atomic_write_text(content_path, json.dumps(content, indent=2, ensure_ascii=False) + "\n")
         print(f"-> wrote {content_path} (fill in titles/descriptions any time and re-run)")
 
     return content
@@ -1125,16 +1258,19 @@ function initDayMap(elId, route, thumbs, slideIndices){
     route.forEach((p, i) => {
       const marker = L.circleMarker(p, {radius:6, color:'#E3A857', fillColor:'#16233B', fillOpacity:1, weight:2}).addTo(map);
       if(thumbs[i]){
-        marker.bindPopup(
-          `<img src="${thumbs[i]}" class="map-popup-thumb">` +
-          `<div class="map-popup-hint">Click photo to view full-size</div>`
-        );
-        // the click-to-open-slideshow handler has to be attached each time
-        // the popup actually opens, since Leaflet builds its DOM fresh then
-        marker.on('popupopen', () => {
-          const img = document.querySelector('.leaflet-popup-content .map-popup-thumb');
-          if(img) img.addEventListener('click', () => openSlideshow(slideIndices[i]));
-        });
+        // built as DOM nodes rather than an HTML string, so nothing in the
+        // URL can ever be interpreted as markup
+        const popup = document.createElement('div');
+        const img = document.createElement('img');
+        img.src = thumbs[i];
+        img.className = 'map-popup-thumb';
+        img.alt = '';
+        img.addEventListener('click', () => openSlideshow(slideIndices[i]));
+        const hint = document.createElement('div');
+        hint.className = 'map-popup-hint';
+        hint.textContent = 'Click photo to view full-size';
+        popup.append(img, hint);
+        marker.bindPopup(popup);
       }
     });
     map.fitBounds(route, {padding:[30,30]});
@@ -1160,22 +1296,29 @@ const INFO_ORDER = ['filename','dimensions','filesize','camera','lens','aperture
                     'iso','focal_length','codec','fps','duration','gps_display','altitude'];
 
 function buildSlideStage(item){
+  // Returns a DOM element (not an HTML string): URLs and filenames are set
+  // as properties, so they can never be interpreted as markup.
   if(item.type === 'video'){
-    // muted is required for autoplay to actually work under browser
-    // autoplay policies — without it, browsers silently block autoplay
-    // and the video just sits paused on a blank frame. poster gives it a
-    // real starting frame either way; native controls let people unmute.
-    const poster = item.poster ? ` poster="${item.poster}"` : '';
-    return `<video src="${item.display}" controls autoplay muted playsinline${poster}></video>`;
+    // muted is required for autoplay to work under browser autoplay
+    // policies; poster gives a real starting frame either way, and native
+    // controls let people unmute.
+    const v = document.createElement('video');
+    v.src = item.display;
+    v.controls = true;
+    v.autoplay = true;
+    v.muted = true;
+    v.setAttribute('muted', '');
+    v.playsInline = true;
+    v.setAttribute('playsinline', '');
+    if(item.poster) v.poster = item.poster;
+    return v;
   }
-  // always the converted JPEG here (item.display), even for HEIC — an
-  // earlier version offered the real original to any browser that claimed
-  // it could decode HEIC natively via <picture>, but some platforms' HEIC
-  // decoders (notably some Windows OS-level codec packs) handle orientation
-  // inconsistently, which could render worse than the verified-correct
-  // converted copy. The true original file is still on disk untouched in
-  // media/, just not referenced for inline display anymore.
-  return `<img src="${item.display}" alt="">`;
+  // always the browser-safe display version (item.display), even for HEIC;
+  // the true original is available via the download link where offered.
+  const img = document.createElement('img');
+  img.src = item.display;
+  img.alt = '';
+  return img;
 }
 
 // ---------- zoom / pan (images only) ----------
@@ -1264,7 +1407,8 @@ function renderSlide(){
   const item = SLIDES[currentSlide];
   const mediaEl = document.getElementById('slideshow-media');
   mediaEl.classList.add('loading');
-  mediaEl.innerHTML = buildSlideStage(item);
+  mediaEl.textContent = '';
+  mediaEl.appendChild(buildSlideStage(item));
 
   const clearLoading = () => mediaEl.classList.remove('loading');
   const mediaTag = mediaEl.querySelector('img, video');
@@ -1302,18 +1446,29 @@ function toggleFullscreen(){
 }
 
 // ---------- info panel ----------
-function buildInfoRows(detail){
-  return INFO_ORDER
-    .filter(key => detail[key])
-    .map(key => `<div class="info-row"><span class="k">${INFO_LABELS[key]}</span><span class="v">${detail[key]}</span></div>`)
-    .join('');
+function fillInfoRows(container, detail){
+  // textContent, never innerHTML: EXIF strings and filenames come from the
+  // files themselves and must not be able to inject markup or script.
+  container.textContent = '';
+  INFO_ORDER.filter(key => detail[key]).forEach(key => {
+    const row = document.createElement('div');
+    row.className = 'info-row';
+    const k = document.createElement('span');
+    k.className = 'k';
+    k.textContent = INFO_LABELS[key];
+    const v = document.createElement('span');
+    v.className = 'v';
+    v.textContent = String(detail[key]);
+    row.append(k, v);
+    container.appendChild(row);
+  });
 }
 
 function renderInfoPanel(){
   const item = SLIDES[currentSlide];
   const detail = item.detail || {};
   document.getElementById('info-title').textContent = item.time ? fmtTime(item.time) : 'Details';
-  document.getElementById('info-rows').innerHTML = buildInfoRows(detail);
+  fillInfoRows(document.getElementById('info-rows'), detail);
 
   const mapWrap = document.getElementById('info-map-wrap');
   const noGps = document.getElementById('info-no-gps');
@@ -1510,7 +1665,7 @@ HEAD = """<head>
 <link rel="stylesheet" href="{{ assets_prefix }}assets/style.css">
 </head>"""
 
-INDEX_TEMPLATE = Template("""<!doctype html>
+INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <html lang="en">
 """ + HEAD + """
 <body>
@@ -1566,7 +1721,7 @@ catch(e) { console.error('Map failed to load (check your internet connection):',
 </html>
 """)
 
-DAY_TEMPLATE = Template("""<!doctype html>
+DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <html lang="en">
 """ + HEAD + """
 <body>
@@ -1614,7 +1769,7 @@ DAY_TEMPLATE = Template("""<!doctype html>
 <div class="grid" id="thumb-grid">
   {% for item in items %}
   <div class="thumb" data-slide-index="{{ loop.index0 }}">
-    <img src="../thumbs/{{ item.thumb_file }}" loading="lazy" alt="">
+    <img src="{{ item.thumb_url }}" loading="lazy" alt="">
     {% if item.media_type == 'video' %}
     <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
     {% endif %}
@@ -1667,12 +1822,12 @@ def render_site(days: list, content: dict, output_dir: Path):
 
     day_summaries = []
     for d in days:
-        c = content["days"].get(d.date_key, {})
+        c_title, c_desc = day_text(content, d.date_key)
         default_title = "Unsorted" if d.is_unknown else f"Day {real_rank[d.date_key]}"
-        title = c.get("title") or default_title
-        desc = c.get("description", "").strip()
+        title = c_title or default_title
+        desc = c_desc
         excerpt = (desc[:110] + "…") if len(desc) > 110 else desc
-        cover = f"thumbs/{d.items[0].thumb_file}" if d.items else None
+        cover = f"thumbs/{quote(d.items[0].thumb_file)}" if d.items else None
         date_display = "Date unknown" if d.is_unknown else format_long_date(d.date_obj)
         color = UNKNOWN_DAY_COLOR if d.is_unknown else DAY_COLORS[(real_rank[d.date_key] - 1) % len(DAY_COLORS)]
         day_summaries.append({
@@ -1691,24 +1846,24 @@ def render_site(days: list, content: dict, output_dir: Path):
         })
 
     index_html = INDEX_TEMPLATE.render(
-        page_title=content["title"],
+        page_title=trip_title(content),
         assets_prefix="",
-        title=content["title"],
-        subtitle=content.get("subtitle", ""),
+        title=trip_title(content),
+        subtitle=_text(content.get("subtitle")),
         day_count=real_day_count,
         photo_count=total_photos,
         video_count=total_videos,
         distance_km=total_km,
         days=day_summaries,
-        days_json=json.dumps(day_summaries),
+        days_json=script_json(day_summaries),
     )
     (output_dir / "index.html").write_text(index_html, encoding="utf-8")
 
     for i, d in enumerate(days):
-        c = content["days"].get(d.date_key, {})
+        c_title, c_desc = day_text(content, d.date_key)
         default_title = "Unsorted" if d.is_unknown else f"Day {real_rank[d.date_key]}"
-        title = c.get("title") or default_title
-        desc_raw = c.get("description", "").strip()
+        title = c_title or default_title
+        desc_raw = c_desc
         description = [p.strip() for p in desc_raw.split("\n\n") if p.strip()] if desc_raw else []
         date_display = "Date unknown" if d.is_unknown else format_long_date(d.date_obj)
 
@@ -1717,7 +1872,7 @@ def render_site(days: list, content: dict, output_dir: Path):
         route_thumbs = []
         route_slide_indices = []
         for idx, it in enumerate(d.items):
-            item_ctx = {"thumb_file": it.thumb_file, "media_type": it.media_type}
+            item_ctx = {"thumb_url": f"../thumbs/{quote(it.thumb_file)}", "media_type": it.media_type}
             if not d.is_unknown:
                 # only show a time badge when it's a real capture time — a
                 # file-modified fallback time isn't worth presenting as fact
@@ -1726,17 +1881,17 @@ def render_site(days: list, content: dict, output_dir: Path):
 
             slide = {
                 "type": it.media_type,
-                "display": f"../media/{it.display_file}",
+                "display": f"../media/{quote(it.display_file)}",
                 "time": None if d.is_unknown else it.dt.isoformat(),
                 "lat": it.lat,
                 "lon": it.lon,
                 "detail": it.detail,
             }
             if it.media_type == "video":
-                slide["poster"] = f"../thumbs/{it.thumb_file}"
+                slide["poster"] = f"../thumbs/{quote(it.thumb_file)}"
             slides.append(slide)
             if it.has_gps:
-                route_thumbs.append(f"../thumbs/{it.thumb_file}")
+                route_thumbs.append(f"../thumbs/{quote(it.thumb_file)}")
                 # the day map's route only includes items with GPS, so its
                 # index doesn't line up with the full slides list — this
                 # records which slide each map point actually corresponds
@@ -1747,9 +1902,9 @@ def render_site(days: list, content: dict, output_dir: Path):
         next_href = f"{days[i+1].date_key}.html" if i < len(days) - 1 else None
 
         day_html = DAY_TEMPLATE.render(
-            page_title=f"{title} — {content['title']}",
+            page_title=f"{title} — {trip_title(content)}",
             assets_prefix="../",
-            trip_title=content["title"],
+            trip_title=trip_title(content),
             day_number=None if d.is_unknown else real_rank[d.date_key],
             day_total=real_day_count,
             is_unknown=d.is_unknown,
@@ -1758,16 +1913,16 @@ def render_site(days: list, content: dict, output_dir: Path):
             date_key=d.date_key,
             description=description,
             route=d.route,
-            route_json=json.dumps(d.route),
-            route_thumbs_json=json.dumps(route_thumbs),
-            route_slide_indices_json=json.dumps(route_slide_indices),
+            route_json=script_json(d.route),
+            route_thumbs_json=script_json(route_thumbs),
+            route_slide_indices_json=script_json(route_slide_indices),
             items=items_ctx,
-            slides_json=json.dumps(slides),
+            slides_json=script_json(slides),
             prev_href=prev_href,
-            prev_href_json=json.dumps(prev_href),
+            prev_href_json=script_json(prev_href),
             prev_label=days[i-1].date_key if i > 0 else "",
             next_href=next_href,
-            next_href_json=json.dumps(next_href),
+            next_href_json=script_json(next_href),
             next_label=days[i+1].date_key if i < len(days) - 1 else "",
         )
         (output_dir / "days" / f"{d.date_key}.html").write_text(day_html, encoding="utf-8")
@@ -1819,6 +1974,15 @@ def main():
     if args.tz_offset is not None:
         print(f"Using a fixed UTC{args.tz_offset:+g}h offset for video timestamps.")
 
+    # check the content file *before* the (possibly long) processing step, so
+    # a typo is reported immediately and never leads to the file being rewritten
+    if args.content.exists():
+        try:
+            parse_content_file(args.content)
+        except ContentFileError as e:
+            print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
+            sys.exit(1)
+
     print(f"Scanning {args.input} ...")
     items = scan_media(args.input, args.output, args.thumb_size, args.force,
                         tz_offset=args.tz_offset, workers=args.workers, dedupe=not args.no_dedupe)
@@ -1835,7 +1999,11 @@ def main():
     days = group_by_day(items)
     print(f"Grouped into {len(days)} day(s).")
 
-    content = load_or_init_content(args.content, [d.date_key for d in days])
+    try:
+        content = load_or_init_content(args.content, [d.date_key for d in days])
+    except ContentFileError as e:  # e.g. edited while the scan was running
+        print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
+        sys.exit(1)
 
     render_site(days, content, args.output)
     print(f"\nSite generated at: {args.output.resolve()}")
