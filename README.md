@@ -39,8 +39,10 @@ video metadata and grab a thumbnail frame from each video:
 - Windows: [ffmpeg.org/download](https://ffmpeg.org/download.html), or `winget install ffmpeg`
 
 Without ffmpeg, videos still appear, but with no date (so they land
-on the "Unsorted" page) and no location or thumbnail. The static site
-shows a broken-image icon in place of their thumbnails.
+on the "Unsorted" page), no location, and a plain placeholder tile
+instead of a preview frame. Once ffmpeg is installed, the static site
+fills in the missing previews on its next run, and the live server on
+its next start.
 
 ## 2a. Build a static site: `generate_site.py`
 
@@ -59,9 +61,8 @@ Options:
   can't be the photos folder itself, or a folder that contains it.
 - `-c / --content`: where titles and descriptions are stored (default:
   `./trip_content.json`). See section 3.
-- `--thumb-size`: maximum thumbnail dimension in px (default 400). For
-  video thumbnails this sets the width, so portrait videos get taller
-  thumbnails.
+- `--thumb-size`: maximum thumbnail dimension in px (default 400,
+  allowed 16–4096).
 - `--force`: regenerate all thumbnails and media copies, even for files
   that haven't changed. Normally not needed; see "Re-running the static
   build" below.
@@ -179,8 +180,8 @@ Your text is safe:
   - `I`: toggle a details panel with camera, lens, aperture, shutter
     speed, ISO, focal length, resolution, file size, and a small map of
     where the file was captured. Videos show duration, codec and frame
-    rate instead of camera settings. On the live server, this panel also
-    has a "Download original file" link.
+    rate instead of camera settings. The panel also has a "Download
+    original file" link.
   - `F`: toggle true full-screen, with no bar, caption or on-screen
     controls. Everything else still works.
   - `Esc`: close the details panel if it's open, otherwise close the
@@ -224,11 +225,12 @@ browser, including Safari, because some systems' HEIC decoders get the
 orientation wrong.
 
 - **Static site:** the JPEG version is saved in `media/`, next to an
-  untouched copy of the original. That original copy is currently not
-  linked from the site, so these photos take up space twice in the
-  output folder.
-- **Live server:** the JPEG is built in memory on request. The real
-  original is available through the "Download original file" link.
+  untouched copy of the original. These photos take up space twice in
+  the output folder.
+- **Live server:** the JPEG is built in memory on request.
+
+Either way, the real original is what the "Download original file" link
+in the details panel gives you.
 
 **Live Photos.** An iPhone exports a Live Photo as a photo
 (`IMG_1234.HEIC` or `.JPG`) plus a short `IMG_1234.MOV`. Instead of
@@ -287,9 +289,10 @@ so none of this applies there. The exceptions:
     inside your photos folder is never mistaken for photos
 - **Duplicates.** Files with identical content (the same photo imported
   from two devices, a folder synced twice) are detected and only the
-  first is kept. Detection compares file size plus the first and last
-  64 KB of each file. Re-exported or re-compressed versions of a photo
-  are not detected. Use `--no-dedupe` to include everything.
+  first is kept. Files are only treated as duplicates when they're
+  identical byte for byte. Re-exported or re-compressed versions of a
+  photo are different files, so they're kept. Use `--no-dedupe` to
+  include everything.
 - **Day grouping.** Photos are placed by their EXIF capture date
   (`DateTimeOriginal`, falling back to the other EXIF date fields), and
   videos by their `creation_time`.
@@ -299,16 +302,22 @@ so none of this applies there. The exceptions:
   - These files go on a single "Unsorted" page at the end instead. It has
     the same grid and map, and it doesn't count toward the "days" total.
   - Both scripts tell you how many files this happened for.
-- **Video timestamps.** A video's `creation_time` is stored in UTC.
-  - By default it's converted using the timezone of the computer running
-    the script, which is only right if that matches the trip's timezone.
+- **Video timestamps.**
+  - iPhone videos also record the local time where they were shot, and
+    that's used as-is, just like a photo's EXIF time. No timezone
+    setting is needed for them.
+  - Other videos only store `creation_time`, in UTC. By default it's
+    converted using the timezone of the computer running the script,
+    which is only right if that matches the trip's timezone.
   - If a day's videos land on the wrong side of midnight, pass
-    `--tz-offset` with the trip's UTC offset.
+    `--tz-offset` with the trip's UTC offset. This then applies to
+    every video, iPhone ones included.
   - Photos are unaffected, since camera EXIF times are already local.
 - **GPS.** For photos, the location comes from EXIF GPS data. For videos,
   it comes from the `location` / ISO-6709 tag (what iPhones write), when
-  present. Files without GPS still appear in the grid, just not on the
-  map.
+  present. Coordinates that can't be real (out of range, or exactly
+  0,0) are ignored. Files without GPS still appear in the grid, just not
+  on the map.
 - **Maps** use Leaflet with free OpenStreetMap tiles: no API key, no
   account. The dark look is a CSS filter over the standard tiles.
   - The maps and fonts load from the internet, so they need a connection.

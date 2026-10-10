@@ -25,13 +25,17 @@ See README.md for the full walkthrough.
 from __future__ import annotations
 
 import argparse
+import errno
+import filecmp
 import hashlib
 import io
 import ipaddress
 import json
+import math
 import mimetypes
 import os
 import re
+import shutil
 import socket
 import subprocess
 import sys
@@ -223,6 +227,59 @@ def is_live_photo_clip(meta: dict) -> bool:
     return duration is not None and duration <= LIVE_CLIP_MAX_SECONDS
 
 
+def valid_gps(lat: float, lon: float) -> bool:
+    """Reject coordinates that can't be real: NaN/inf (EXIF rationals with
+    a zero denominator), out of range, or exactly 0,0 (the usual "no fix"
+    placeholder). Bad values would otherwise break the maps."""
+    return (math.isfinite(lat) and math.isfinite(lon)
+            and -90 <= lat <= 90 and -180 <= lon <= 180
+            and not (lat == 0 and lon == 0))
+
+
+def _parse_iso_datetime(s: str) -> Optional[datetime]:
+    """ISO 8601 timestamps as written by cameras and ffprobe, including
+    offsets without a colon (+0200) that Python 3.9's parser rejects."""
+    s = str(s).strip().replace("Z", "+00:00")
+    s = re.sub(r"([+-]\d{2})(\d{2})$", r"\1:\2", s)
+    try:
+        return datetime.fromisoformat(s)
+    except ValueError:
+        return None
+
+
+def check_ffmpeg():
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    if missing:
+        print(f"Note: {' and '.join(missing)} not found. Videos will still be included, but "
+              f"without date, location or preview frame. Install ffmpeg to fix this.",
+              file=sys.stderr)
+
+
+def placeholder_thumbnail(thumb_size: int) -> Image.Image:
+    """Plain dark tile used when a video's preview frame can't be extracted
+    (no ffmpeg, or an undecodable stream), so the grid never shows a broken
+    image. The grid draws its play icon on top, as for any video."""
+    return Image.new("RGB", (thumb_size, thumb_size * 3 // 4), (34, 50, 82))
+
+
+def same_file_content(a: Path, b: Path) -> bool:
+    """Byte-for-byte comparison, used to confirm a fingerprint match."""
+    try:
+        return filecmp.cmp(a, b, shallow=False)
+    except OSError:
+        return False
+
+
+def positive_thumb_size(value: str) -> int:
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number: {value!r}")
+    if not 16 <= n <= 4096:
+        raise argparse.ArgumentTypeError("must be between 16 and 4096")
+    return n
+
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp"}
 BROWSER_NATIVE_IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".webp", ".bmp"}
@@ -265,7 +322,6 @@ class MediaItem:
     width: Optional[int] = None
     height: Optional[int] = None
     detail: dict = field(default_factory=dict)
-    is_heic: bool = False
     needs_jpeg_fallback: bool = False  # HEIC/HEIF, TIFF, or a multi-image/MPO .jpg
     is_live_clip: bool = False         # video that looks like a Live Photo's motion clip
     live_path: Optional[Path] = None   # paired Live Photo clip, played from the photo
@@ -318,7 +374,7 @@ def _gps_from_exif(gps_ifd: dict) -> Optional[tuple]:
         lon = _to_deg(gps_ifd["GPSLongitude"])
         if str(gps_ifd.get("GPSLongitudeRef", "E")).upper().startswith("W"):
             lon = -lon
-        if lat == 0 and lon == 0:
+        if not valid_gps(lat, lon):
             return None
         return (round(lat, 6), round(lon, 6))
     except Exception:
@@ -453,6 +509,10 @@ def read_image_metadata(path: Path) -> dict:
         try:
             exif = img.getexif()
             if exif:
+                # orientations 5-8 mean the camera stored the image sideways;
+                # report the size as it's actually displayed
+                if exif.get(0x0112) in (5, 6, 7, 8):
+                    meta["width"], meta["height"] = meta["height"], meta["width"]
                 exif_ifd = {}
                 try:
                     exif_ifd = dict(exif.get_ifd(0x8769))
@@ -516,8 +576,7 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         )
     except FileNotFoundError:
         # ffprobe isn't installed: keep the video, just without metadata
-        print(f"  ! ffprobe not found, so {path.name} has no date/GPS metadata "
-              f"(install ffmpeg to fix this)", file=sys.stderr)
+        # (main() already explained this once; don't repeat it per file)
         return meta
     except subprocess.TimeoutExpired:
         print(f"  ! ffprobe timed out on {path.name}", file=sys.stderr)
@@ -540,8 +599,18 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         if s.get("codec_type") == "video" and video_stream is None:
             video_stream = s
 
+    # iPhones also store the local capture time with its UTC offset (e.g.
+    # 2024-05-02T14:00:00+0200). Unless --tz-offset says otherwise, that's
+    # the best source: the clock time where the video was shot, the same
+    # thing a photo's EXIF time records, with no timezone guesswork.
+    local_ct = tags.get("com.apple.quicktime.creationdate")
+    if local_ct and tz_offset_hours is None:
+        parsed = _parse_iso_datetime(local_ct)
+        if parsed is not None:
+            meta["dt"] = parsed.replace(tzinfo=None)
+
     ct = tags.get("creation_time")
-    if ct:
+    if ct and "dt" not in meta:
         try:
             ct_clean = ct.replace("Z", "+00:00")
             parsed = datetime.fromisoformat(ct_clean)
@@ -562,13 +631,27 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         m = re.match(r"([+-]\d+\.?\d*)([+-]\d+\.?\d*)", loc)
         if m:
             try:
-                meta["gps"] = (round(float(m.group(1)), 6), round(float(m.group(2)), 6))
+                lat, lon = float(m.group(1)), float(m.group(2))
+                if valid_gps(lat, lon):
+                    meta["gps"] = (round(lat, 6), round(lon, 6))
             except Exception:
                 pass
 
     if video_stream:
         meta["width"] = video_stream.get("width")
         meta["height"] = video_stream.get("height")
+        # phones record portrait video as landscape plus a rotation flag
+        # (a "rotate" tag in older ffprobe, a display matrix in newer)
+        rotation = 0
+        try:
+            rotation = int(float((video_stream.get("tags") or {}).get("rotate", 0)))
+            for side_data in video_stream.get("side_data_list") or []:
+                if "rotation" in side_data:
+                    rotation = int(float(side_data["rotation"]))
+        except (TypeError, ValueError):
+            pass
+        if rotation % 180 and meta["width"] and meta["height"]:
+            meta["width"], meta["height"] = meta["height"], meta["width"]
         codec = video_stream.get("codec_name")
         if codec:
             meta["codec"] = codec.upper()
@@ -599,6 +682,11 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
 
 
 def fast_fingerprint(path: Path, sample_size: int = 65536) -> Optional[tuple]:
+    """Cheap first-pass fingerprint for spotting duplicate files: file size
+    plus a hash of the first and last chunk of bytes, so it stays fast even
+    for multi-GB videos. Files that match are then compared byte-for-byte
+    (same_file_content) before one is skipped. Re-exported or re-compressed
+    copies of a photo are different files and are not detected."""
     try:
         size = path.stat().st_size
         with open(path, "rb") as f:
@@ -656,8 +744,10 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
         for path, media_type in candidates:
             fp = fast_fingerprint(path)
             original = seen.get(fp) if fp is not None else None
-            if original is not None:
-                print(f"  ~ skipping {path.name}: duplicate of {original.name}", file=sys.stderr)
+            # the fingerprint only samples each file, so confirm a match
+            # byte-for-byte before skipping anything
+            if original is not None and same_file_content(original, path):
+                print(f"  ~ skipping {path.name}: exact duplicate of {original.name}", file=sys.stderr)
                 skipped += 1
                 continue
             if fp is not None:
@@ -714,7 +804,6 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
                 lon=gps[1] if gps else None,
                 width=w, height=h,
                 detail=detail,
-                is_heic=(media_type == "image" and path.suffix.lower() in (".heic", ".heif")),
                 needs_jpeg_fallback=(
                     media_type == "image" and (
                         path.suffix.lower() in (".heic", ".heif", ".tif", ".tiff")
@@ -773,7 +862,7 @@ def render_thumbnail_bytes(item: MediaItem, thumb_size: int) -> Optional[bytes]:
                 try:
                     result = subprocess.run(
                         ["ffmpeg", "-v", "quiet", "-ss", seek, "-i", str(item.path),
-                         "-frames:v", "1", "-vf", f"scale={thumb_size}:-1",
+                         "-frames:v", "1", "-vf", f"scale={thumb_size}:{thumb_size}:force_original_aspect_ratio=decrease",
                          "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"],
                         capture_output=True, timeout=30,
                     )
@@ -781,7 +870,9 @@ def render_thumbnail_bytes(item: MediaItem, thumb_size: int) -> Optional[bytes]:
                         return result.stdout
                 except Exception:
                     continue
-            return None
+            buf = io.BytesIO()
+            placeholder_thumbnail(thumb_size).save(buf, "JPEG", quality=82)
+            return buf.getvalue()
         with Image.open(item.path) as img:
             # let libjpeg decode at 1/2, 1/4 or 1/8 scale instead of decoding
             # every pixel just to throw most away (a no-op for non-JPEG
@@ -800,12 +891,10 @@ def render_thumbnail_bytes(item: MediaItem, thumb_size: int) -> Optional[bytes]:
 
 
 def render_fallback_jpeg_bytes(path: Path) -> Optional[bytes]:
-    """HEIC/HEIF and TIFF -> full-resolution near-lossless JPEG, EXIF
-    preserved (orientation corrected since exif_transpose already bakes the
-    rotation into the pixels — see generate_site.py for the same logic and
-    the reasoning behind it). Used only for browsers that can't decode the
-    original format inline; browsers that can (Safari, for HEIC) are served
-    the real original directly via /original/<id> instead."""
+    """HEIC/HEIF, TIFF or multi-image JPEG -> full-resolution, near-lossless
+    JPEG with the original EXIF (Orientation reset, since exif_transpose
+    bakes the rotation into the pixels). Used for display in every browser;
+    the untouched original is available through /download/<id>."""
     try:
         with Image.open(path) as img:
             exif = img.getexif()
@@ -2185,11 +2274,6 @@ class RequestHandler(BaseHTTPRequestHandler):
                 item = self._lookup_item(raw_path, "/media/")
                 if item is not None:
                     self._serve_media(item)
-            elif raw_path.startswith("/original/"):
-                item = self._lookup_item(raw_path, "/original/")
-                if item is not None:
-                    self._send_file(item.path, guess_mime(item.path),
-                                    cache_control=self._cache_control(item_version(item)))
             elif raw_path.startswith("/download/"):
                 item = self._lookup_item(raw_path, "/download/")
                 if item is not None:
@@ -2288,10 +2372,12 @@ def main():
                          help="Allow other devices on your network to connect (binds 0.0.0.0 instead "
                               "of localhost-only). Anyone on your network can then open the site — "
                               "there's no login.")
-    parser.add_argument("--thumb-size", type=int, default=400, help="Max thumbnail dimension in px")
+    parser.add_argument("--thumb-size", type=positive_thumb_size, default=400,
+                         help="Max thumbnail dimension in px (16-4096)")
     parser.add_argument("--tz-offset", type=float, default=None,
                          help="Fixed UTC offset in hours (e.g. 2 or -5.5) for converting VIDEO "
-                              "timestamps to your trip's local time. Photos are unaffected.")
+                              "timestamps to your trip's local time. Without it, iPhone videos use "
+                              "their recorded local time. Photos are unaffected.")
     parser.add_argument("--no-dedupe", action="store_true",
                          help="Don't skip exact-duplicate files. Duplicate detection is on by default.")
     parser.add_argument("--no-live-photos", action="store_true",
@@ -2325,6 +2411,7 @@ def main():
     ALLOWED_HOSTNAMES = {"localhost", hostname, hostname.split(".")[0] + ".local"}
     ALLOWED_HOSTNAMES |= {h.lower().rstrip(".") for h in args.allow_host}
 
+    check_ffmpeg()
     print(f"Indexing {args.input} ...")
     items = build_index(args.input, args.tz_offset, dedupe=not args.no_dedupe,
                         live_photos=not args.no_live_photos)
@@ -2351,7 +2438,15 @@ def main():
         sys.exit(1)
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
-    server = ThreadingHTTPServer((host, args.port), RequestHandler)
+    try:
+        server = ThreadingHTTPServer((host, args.port), RequestHandler)
+    except OSError as e:
+        if e.errno in (errno.EADDRINUSE, 10048):  # 10048: the Windows code
+            print(f"Port {args.port} is already in use. Is the server already running? "
+                  f"Otherwise pick another port, e.g. --port {args.port + 1}", file=sys.stderr)
+        else:
+            print(f"Could not start the server on {host}:{args.port}: {e}", file=sys.stderr)
+        sys.exit(1)
 
     print(f"\nNothing has been written to disk except {args.content} — this server generates "
           f"every page and image on the fly, in memory, per request.")
