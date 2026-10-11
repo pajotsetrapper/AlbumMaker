@@ -79,7 +79,7 @@ class ContentFileError(Exception):
 
 
 def default_content() -> dict:
-    return {"title": "My Trip", "subtitle": "", "days": {}}
+    return {"title": "My Trip", "subtitle": "", "days": {}, "photos": {}}
 
 
 def parse_content_file(path: Path) -> dict:
@@ -106,6 +106,9 @@ def parse_content_file(path: Path) -> dict:
         days = {}
     if not isinstance(days, dict):
         raise ContentFileError(f'{path}: "days" must be an object mapping dates to entries')
+    photos = loaded.get("photos")
+    if photos is not None and not isinstance(photos, dict):
+        raise ContentFileError(f'{path}: "photos" must be an object mapping file paths to entries')
     content = default_content()
     content.update({k: v for k, v in loaded.items() if k != "days"})
     content["days"] = days
@@ -152,6 +155,101 @@ def day_text(content: dict, date_key: str) -> tuple:
     if not isinstance(entry, dict):
         entry = {}
     return _text(entry.get("title")).strip(), _text(entry.get("description")).strip()
+
+
+# --------------------------------------------------------------------------
+# Per-photo and per-day edits, stored in trip_content.json:
+#
+#   "photos": { "<path relative to the photos folder>":
+#                 {"caption": "...", "favorite": true, "hidden": true} }
+#   "days":   { "<date>": {"title": "...", "description": "...",
+#                          "cover": "<same kind of relative path>"} }
+#
+# Only values that differ from the defaults are stored. Anything else in the
+# file (including keys this code doesn't know) is left exactly as it was.
+# --------------------------------------------------------------------------
+
+CAPTION_MAX = 2000
+
+
+def photo_entry(content: dict, rel: str) -> dict:
+    """Caption / favorite / hidden for one photo, as clean plain values."""
+    photos = content.get("photos")
+    e = photos.get(rel) if isinstance(photos, dict) else None
+    if not isinstance(e, dict):
+        e = {}
+    return {"caption": _text(e.get("caption")).strip(),
+            "favorite": e.get("favorite") is True,
+            "hidden": e.get("hidden") is True}
+
+
+def hidden_rels(content: dict) -> set:
+    photos = content.get("photos")
+    if not isinstance(photos, dict):
+        return set()
+    return {rel for rel, e in photos.items() if isinstance(e, dict) and e.get("hidden") is True}
+
+
+def _day_entry(content: dict, date_key: str) -> dict:
+    days = content.get("days")
+    if not isinstance(days, dict):
+        days = content["days"] = {}
+    entry = days.get(date_key)
+    if not isinstance(entry, dict):
+        entry = days[date_key] = {}
+    return entry
+
+
+def set_photo_fields(content: dict, rel: str, caption=None, favorite=None, hidden=None) -> dict:
+    """Change a photo's fields in `content` (in place). Returns its new entry."""
+    photos = content.get("photos")
+    if not isinstance(photos, dict):
+        photos = content["photos"] = {}
+    entry = photos.get(rel)
+    entry = dict(entry) if isinstance(entry, dict) else {}
+    if caption is not None:
+        entry["caption"] = caption.strip()[:CAPTION_MAX]
+    if favorite is not None:
+        entry["favorite"] = bool(favorite)
+    if hidden is not None:
+        entry["hidden"] = bool(hidden)
+    for key in ("caption", "favorite", "hidden"):   # store only non-default values
+        if not entry.get(key):
+            entry.pop(key, None)
+    if entry:
+        photos[rel] = entry
+    else:
+        photos.pop(rel, None)
+    return photo_entry(content, rel)
+
+
+def set_cover(content: dict, date_key: str, rel: Optional[str]):
+    entry = _day_entry(content, date_key)
+    if rel:
+        entry["cover"] = rel
+    else:
+        entry.pop("cover", None)
+
+
+def set_day_text(content: dict, date_key: str, title=None, description=None):
+    entry = _day_entry(content, date_key)
+    if title is not None:
+        entry["title"] = title.strip()
+    if description is not None:
+        entry["description"] = description.replace("\r\n", "\n").strip()
+
+
+def report_unknown_photo_keys(content: dict, known_rels):
+    """Captions/flags for files that weren't found (renamed or moved?) stay in
+    the file untouched; this just says so."""
+    photos = content.get("photos")
+    if not isinstance(photos, dict):
+        return
+    missing = sorted(set(photos) - set(known_rels))
+    if missing:
+        shown = ", ".join(missing[:3]) + (", ..." if len(missing) > 3 else "")
+        print(f"Note: trip_content.json has captions/flags for {len(missing)} file(s) that "
+              f"weren't found ({shown}). They're kept, but only apply to that exact path.")
 
 
 def script_json(obj) -> Markup:
@@ -279,6 +377,7 @@ class MediaItem:
     is_mpo: bool = False       # multi-image JPEG (portrait/panorama/HDR modes)
     is_live_clip: bool = False  # video that looks like a Live Photo's motion clip
     live_clip: Optional["MediaItem"] = None      # a photo's paired Live Photo clip
+    rel: str = ""              # path relative to the photos folder: the key used in trip_content.json
 
     # trip_server: position in the item list, used in URLs (/thumb/42)
     id: int = -1
@@ -827,11 +926,53 @@ def group_by_day(items: list) -> list:
     return ordered
 
 
+def assign_rel_paths(items: list, root: Path):
+    """Give every item the key trip_content.json uses for it: its path
+    relative to the photos folder, with forward slashes."""
+    for it in items:
+        try:
+            it.rel = it.path.relative_to(root).as_posix()
+        except ValueError:
+            it.rel = it.path.name
+
+
+def visible_days(days: list, content: dict, editable: bool = False) -> list:
+    """The days a visitor sees: photos marked hidden are dropped, and so are
+    days left with nothing. The editor sees everything (hidden ones dimmed)."""
+    if editable:
+        return days
+    hidden = hidden_rels(content)
+    if not hidden:
+        return days
+    out = []
+    for d in days:
+        items = [it for it in d.items if it.rel not in hidden]
+        if items:
+            out.append(DayGroup(date_key=d.date_key, date_obj=d.date_obj,
+                                is_unknown=d.is_unknown, items=items))
+    return out
+
+
+def pick_cover(d: DayGroup, content: dict) -> MediaItem:
+    """The day's cover: the one chosen in trip_content.json, else the first
+    photo (not a video frame), else the first item."""
+    entry = content.get("days", {}).get(d.date_key)
+    want = entry.get("cover") if isinstance(entry, dict) else None
+    if isinstance(want, str):
+        for it in d.items:
+            if it.rel == want:
+                return it
+    for it in d.items:
+        if it.media_type == "image":
+            return it
+    return d.items[0]
+
+
 # --------------------------------------------------------------------------
 # Page design (CSS, JavaScript, templates) and the data that fills it
 # --------------------------------------------------------------------------
 
-CSS = """
+CSS = r"""
 :root{
   --navy:#16233B; --navy-deep:#0E1729; --navy-light:#223252;
   --parchment:#F1E9D8; --parchment-dim:#E4D9C0;
@@ -1002,7 +1143,9 @@ img,video{max-width:100%; display:block;}
 #slideshow:fullscreen .slideshow-caption,
 #slideshow:-webkit-full-screen .slideshow-caption,
 #slideshow:fullscreen .slideshow-nav,
-#slideshow:-webkit-full-screen .slideshow-nav{
+#slideshow:-webkit-full-screen .slideshow-nav,
+#slideshow:fullscreen .slideshow-edit,
+#slideshow:-webkit-full-screen .slideshow-edit{
   display:none;
 }
 #slideshow:fullscreen .slideshow-stage,
@@ -1040,6 +1183,41 @@ img,video{max-width:100%; display:block;}
   .info-panel.open{transform:translateY(0);}
 }
 
+/* favorites, hidden photos, captions */
+.thumb .fav-badge{position:absolute; top:.35rem; right:.35rem; display:none; color:var(--gold); font-size:1.05rem; line-height:1; text-shadow:0 1px 4px rgba(0,0,0,.8); pointer-events:none;}
+.thumb.is-fav .fav-badge{display:block;}
+.thumb .hidden-badge{position:absolute; bottom:.35rem; left:.35rem; display:none; background:rgba(14,23,41,.85); color:var(--cream); font-family:var(--mono); font-size:.6rem; letter-spacing:.1em; padding:.1rem .35rem; border-radius:4px; pointer-events:none;}
+.thumb.is-hidden .hidden-badge{display:block;}
+.thumb.is-hidden img{opacity:.35;}
+.grid.fav-only .thumb:not(.is-fav){display:none;}
+.fav-filter{margin-right:auto; background:none; border:1px solid rgba(237,230,214,.25); color:var(--cream); font-family:var(--mono); font-size:.75rem; padding:.3rem .7rem; border-radius:6px; cursor:pointer; opacity:.8;}
+.fav-filter:hover{opacity:1;}
+.fav-filter.active{background:var(--gold); color:var(--navy-deep); border-color:var(--gold); opacity:1; font-weight:600;}
+.fav-filter[hidden]{display:none;}
+.slideshow-caption .cap-text{font-family:var(--sans); font-size:.95rem; opacity:1; margin-bottom:.25rem; padding:0 3rem;}
+
+/* editing (only rendered for the person running trip_server.py) */
+.slideshow-edit{display:flex; gap:.6rem; align-items:center; padding:.2rem 1.4rem 1rem;}
+.slideshow-edit[hidden]{display:none;}
+.slideshow-edit input{flex:1; min-width:0; background:rgba(237,230,214,.08); border:1px solid rgba(237,230,214,.3); color:var(--cream); border-radius:6px; padding:.45rem .7rem; font-family:var(--sans); font-size:.9rem;}
+.slideshow-edit input:focus{border-color:var(--gold); outline:none;}
+.slideshow-btn.on{border-color:var(--gold); color:var(--gold);}
+.day-edit-btn{display:inline-block; background:none; border:1px solid rgba(237,230,214,.3); color:var(--cream); font-family:var(--mono); font-size:.72rem; border-radius:6px; padding:.3rem .6rem; cursor:pointer; margin:.4rem .5rem 0 0;}
+.day-edit-btn:hover{border-color:var(--gold); color:var(--gold); text-decoration:none;}
+.day-edit-btn[hidden]{display:none;}
+.day-editor{max-width:1100px; margin:1rem auto; padding:1.3rem 1.8rem; background:var(--parchment); color:var(--ink); border-radius:var(--radius);}
+.day-editor[hidden]{display:none;}
+.day-editor label{display:block; font-family:var(--mono); font-size:.7rem; letter-spacing:.08em; text-transform:uppercase; opacity:.7; margin:.2rem 0 .3rem;}
+.day-editor label span{text-transform:none; letter-spacing:0; opacity:.8;}
+.day-editor input, .day-editor textarea{width:100%; font-family:var(--sans); font-size:1rem; color:var(--ink); background:#fbf7ec; border:1px solid rgba(31,42,61,.25); border-radius:8px; padding:.55rem .75rem; margin-bottom:.9rem;}
+.day-editor textarea{resize:vertical; line-height:1.5;}
+.day-editor-actions{display:flex; gap:.6rem;}
+.editor-btn{background:var(--navy); color:var(--cream); border:none; border-radius:6px; padding:.5rem 1rem; font-family:var(--mono); font-size:.8rem; cursor:pointer;}
+.editor-btn.secondary{background:rgba(31,42,61,.1); color:var(--ink);}
+.toast{position:fixed; left:50%; bottom:1.5rem; transform:translateX(-50%); display:none; background:var(--navy-light); color:var(--cream); border:1px solid var(--gold-dim); padding:.55rem 1rem; border-radius:8px; font-family:var(--mono); font-size:.78rem; z-index:2000; box-shadow:0 6px 20px rgba(0,0,0,.4); max-width:90vw;}
+.toast.error{border-color:#d36a6a;}
+@media (max-width:640px){ .slideshow-edit{flex-wrap:wrap;} .slideshow-edit input{flex-basis:100%; order:-1;} }
+
 @media (prefers-reduced-motion: reduce){
   .day-card, .thumb img{transition:none !important;}
   html{scroll-behavior:auto;}
@@ -1052,11 +1230,56 @@ img,video{max-width:100%; display:block;}
 """
 
 
-JS = """
+JS = r"""
 // ---------- shared map helpers ----------
 function fmtTime(iso){
   const d = new Date(iso);
   return d.toLocaleString(undefined, {month:'short', day:'numeric', hour:'2-digit', minute:'2-digit'});
+}
+
+// ---------- small shared helpers ----------
+function isTyping(el){
+  if(!el || !el.tagName) return false;
+  const tag = el.tagName;
+  return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
+}
+
+let toastTimer = null;
+function showToast(msg, isError){
+  let el = document.getElementById('toast');
+  if(!el){
+    el = document.createElement('div');
+    el.id = 'toast';
+    el.className = 'toast';
+    el.setAttribute('role', 'status');
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.classList.toggle('error', !!isError);
+  el.style.display = 'block';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => { el.style.display = 'none'; }, isError ? 5000 : 2200);
+}
+
+// Saves an edit through trip_server.py. Returns the parsed reply, or null
+// (after showing why) if it didn't work.
+async function apiPost(path, body){
+  try {
+    const r = await fetch(path, {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify(body)
+    });
+    const data = await r.json().catch(() => ({}));
+    if(!r.ok || !data.ok){
+      showToast(data.error || ('Could not save (' + r.status + ')'), true);
+      return null;
+    }
+    return data;
+  } catch(e){
+    showToast('Could not reach the server, so nothing was saved', true);
+    return null;
+  }
 }
 
 // ---------- thumbnail size control (day pages) ----------
@@ -1092,6 +1315,7 @@ function initDayNav(prevHref, nextHref){
 
   document.addEventListener('keydown', (e) => {
     if(slideshowOpen()) return;                  // the slideshow has its own arrow-key handling
+    if(isTyping(e.target)) return;                // typing in the title/caption boxes
     if(inMap(document.activeElement)) return;     // let Leaflet's own keyboard map-panning work
     if(e.key === 'ArrowLeft' && prevHref) window.location.href = prevHref;
     else if(e.key === 'ArrowRight' && nextHref) window.location.href = nextHref;
@@ -1100,7 +1324,7 @@ function initDayNav(prevHref, nextHref){
   let touchStartX = null, touchStartY = null, touchInMap = false;
   document.addEventListener('touchstart', (e) => {
     if(slideshowOpen() || e.touches.length !== 1) return;
-    touchInMap = inMap(e.target);
+    touchInMap = inMap(e.target) || !!(e.target.closest && e.target.closest('.day-editor'));
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
   }, {passive: true});
@@ -1185,6 +1409,10 @@ let currentSlide = 0;
 let infoPanelOpen = false;
 let infoMap = null;
 let infoMarker = null;
+let EDITABLE = false;     // true only when trip_server.py says this viewer may edit
+let DAY_KEY = '';
+let FAV_ONLY = false;
+let lastFocus = null;
 
 const INFO_LABELS = {
   filename: 'File', dimensions: 'Dimensions', filesize: 'File size',
@@ -1275,6 +1503,7 @@ function toggleZoomAt(){
 }
 
 function openSlideshow(index){
+  lastFocus = document.activeElement;
   currentSlide = index;
   const overlay = document.getElementById('slideshow');
   overlay.classList.add('open');
@@ -1289,6 +1518,7 @@ function closeSlideshow(){
   document.body.style.overflow = '';
   closeInfoPanel();
   if(document.fullscreenElement) document.exitFullscreen();
+  if(lastFocus && lastFocus.focus) lastFocus.focus();
 }
 
 function preloadSlide(index){
@@ -1300,6 +1530,22 @@ function preloadSlide(index){
   if(!item || item.type !== 'image') return;
   const img = new Image();
   img.src = item.display;
+}
+
+function renderCaption(){
+  const item = SLIDES[currentSlide];
+  const capEl = document.getElementById('slideshow-caption');
+  if(!item || !capEl) return;
+  capEl.textContent = '';
+  if(item.caption){
+    const t = document.createElement('div');
+    t.className = 'cap-text';
+    t.textContent = item.caption;
+    capEl.appendChild(t);
+  }
+  const meta = document.createElement('div');
+  meta.textContent = (item.time ? fmtTime(item.time) + ' — ' : '') + (currentSlide + 1) + ' / ' + SLIDES.length;
+  capEl.appendChild(meta);
 }
 
 function renderSlide(){
@@ -1325,9 +1571,9 @@ function renderSlide(){
     clearLoading();
   }
 
-  document.getElementById('slideshow-caption').textContent =
-    (item.time ? fmtTime(item.time) + ' — ' : '') + (currentSlide+1) + ' / ' + SLIDES.length;
+  renderCaption();
   if(infoPanelOpen) renderInfoPanel();
+  syncEditBar();
 
   const liveBtn = document.getElementById('slideshow-live');
   if(liveBtn) liveBtn.hidden = !item.live;
@@ -1336,8 +1582,16 @@ function renderSlide(){
   preloadSlide((currentSlide - 1 + SLIDES.length) % SLIDES.length);
 }
 
-function nextSlide(){ currentSlide = (currentSlide + 1) % SLIDES.length; renderSlide(); }
-function prevSlide(){ currentSlide = (currentSlide - 1 + SLIDES.length) % SLIDES.length; renderSlide(); }
+// With "Favorites" switched on, arrows/swipes step through favorites only.
+function stepSlide(dir){
+  const n = SLIDES.length;
+  for(let k = 1; k <= n; k++){
+    const i = (((currentSlide + dir * k) % n) + n) % n;
+    if(!FAV_ONLY || SLIDES[i].favorite){ currentSlide = i; renderSlide(); return; }
+  }
+}
+function nextSlide(){ stepSlide(1); }
+function prevSlide(){ stepSlide(-1); }
 
 function toggleFullscreen(){
   const overlay = document.getElementById('slideshow');
@@ -1449,11 +1703,134 @@ function closeInfoPanel(){
   document.getElementById('info-panel').classList.remove('open');
 }
 
-function initSlideshow(items){
+// ---------- favorites filter, and editing (editing only when trip_server.py allows it) ----------
+function updateFavUi(){
+  const btn = document.getElementById('fav-filter');
+  if(!btn) return;
+  const n = SLIDES.filter(s => s.favorite).length;
+  btn.textContent = '★ Favorites (' + n + ')';
+  btn.classList.toggle('active', FAV_ONLY);
+  btn.hidden = (n === 0 && !FAV_ONLY && !EDITABLE);
+}
+
+function initFavFilter(){
+  const btn = document.getElementById('fav-filter');
+  if(btn){
+    btn.addEventListener('click', () => {
+      FAV_ONLY = !FAV_ONLY;
+      const grid = document.getElementById('thumb-grid');
+      if(grid) grid.classList.toggle('fav-only', FAV_ONLY);
+      updateFavUi();
+    });
+  }
+  updateFavUi();
+}
+
+function applyThumbState(i){
+  const item = SLIDES[i];
+  const el = document.querySelector('[data-slide-index="' + i + '"]');
+  if(el && item){
+    el.classList.toggle('is-fav', !!item.favorite);
+    el.classList.toggle('is-hidden', !!item.hidden);
+    const img = el.querySelector('img');
+    if(img) img.alt = item.caption || '';
+  }
+  updateFavUi();
+}
+
+function syncEditBar(){
+  if(!EDITABLE) return;
+  const item = SLIDES[currentSlide];
+  const fav = document.getElementById('edit-fav');
+  const hide = document.getElementById('edit-hide');
+  const cap = document.getElementById('edit-caption');
+  if(!item || !fav || !hide || !cap) return;
+  fav.classList.toggle('on', !!item.favorite);
+  fav.textContent = item.favorite ? '★ Favorite' : '☆ Favorite';
+  hide.classList.toggle('on', !!item.hidden);
+  hide.textContent = item.hidden ? 'Unhide' : 'Hide';
+  if(document.activeElement !== cap) cap.value = item.caption || '';
+}
+
+async function saveSlide(fields){
+  const idx = currentSlide, item = SLIDES[idx];
+  if(!item || !item.rel) return null;
+  const res = await apiPost('/api/photo', Object.assign({rel: item.rel}, fields));
+  if(res){
+    Object.assign(item, res.photo);
+    applyThumbState(idx);
+    if(currentSlide === idx){ renderCaption(); }
+  }
+  syncEditBar();
+  return res;
+}
+
+function toggleFavorite(){
+  const item = SLIDES[currentSlide];
+  if(item) saveSlide({favorite: !item.favorite});
+}
+
+async function toggleHidden(){
+  const item = SLIDES[currentSlide];
+  if(!item) return;
+  const res = await saveSlide({hidden: !item.hidden});
+  if(res && res.photo.hidden){
+    showToast('Hidden from visitors. You still see it here, dimmed.');
+  }
+}
+
+async function setCover(){
+  const item = SLIDES[currentSlide];
+  if(!item || !item.rel) return;
+  const res = await apiPost('/api/cover', {date: DAY_KEY, rel: item.rel});
+  if(res) showToast('Cover photo set for this day');
+}
+
+function initEditBar(){
+  document.getElementById('edit-fav').addEventListener('click', toggleFavorite);
+  document.getElementById('edit-hide').addEventListener('click', toggleHidden);
+  document.getElementById('edit-cover').addEventListener('click', setCover);
+  const cap = document.getElementById('edit-caption');
+  // 'change' fires when the box loses focus (or Enter is pressed) with new text
+  cap.addEventListener('change', () => saveSlide({caption: cap.value}));
+  cap.addEventListener('keydown', (e) => { if(e.key === 'Enter') cap.blur(); });
+}
+
+function initDayEditor(dateKey){
+  const openBtn = document.getElementById('day-edit');
+  const box = document.getElementById('day-editor');
+  if(!openBtn || !box) return;
+  const title = document.getElementById('edit-title');
+  const desc = document.getElementById('edit-desc');
+  openBtn.addEventListener('click', () => { box.hidden = false; openBtn.hidden = true; title.focus(); });
+  document.getElementById('day-cancel').addEventListener('click', () => {
+    title.value = title.defaultValue;
+    desc.value = desc.defaultValue;
+    box.hidden = true;
+    openBtn.hidden = false;
+  });
+  document.getElementById('day-save').addEventListener('click', async () => {
+    const res = await apiPost('/api/day', {date: dateKey, title: title.value, description: desc.value});
+    if(res) location.reload();
+  });
+}
+
+function initSlideshow(items, opts){
+  opts = opts || {};
   SLIDES = items;
+  EDITABLE = !!opts.editable;
+  DAY_KEY = opts.dayKey || '';
   document.querySelectorAll('[data-slide-index]').forEach(el => {
     el.addEventListener('click', () => openSlideshow(parseInt(el.dataset.slideIndex, 10)));
+    el.addEventListener('keydown', (e) => {
+      if(e.key === 'Enter' || e.key === ' '){
+        e.preventDefault();
+        openSlideshow(parseInt(el.dataset.slideIndex, 10));
+      }
+    });
   });
+  initFavFilter();
+  if(EDITABLE) initEditBar();
   document.getElementById('slideshow-close').addEventListener('click', closeSlideshow);
   document.getElementById('slideshow-next').addEventListener('click', nextSlide);
   document.getElementById('slideshow-prev').addEventListener('click', prevSlide);
@@ -1467,12 +1844,14 @@ function initSlideshow(items){
 
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
+    if(isTyping(e.target)){ if(e.key === 'Escape') e.target.blur(); return; }
     if(e.key === 'ArrowRight') nextSlide();
     else if(e.key === 'ArrowLeft') prevSlide();
     else if(e.key === 'Escape'){ infoPanelOpen ? closeInfoPanel() : closeSlideshow(); }
     else if(e.key.toLowerCase() === 'f') toggleFullscreen();
     else if(e.key.toLowerCase() === 'i') toggleInfoPanel();
     else if(e.key.toLowerCase() === 'l') playLive();
+    else if(e.key.toLowerCase() === 's' && EDITABLE) toggleFavorite();
     else if(e.key === '+' || e.key === '=') zoomBy(0.4);
     else if(e.key === '-' || e.key === '_') zoomBy(-0.4);
     else if(e.key === '0') resetZoom();
@@ -1566,7 +1945,7 @@ function initSlideshow(items){
 
 
 SLIDESHOW_HTML = """
-<div class="slideshow" id="slideshow">
+<div class="slideshow" id="slideshow" role="dialog" aria-modal="true" aria-label="Photo viewer">
   <div class="slideshow-bar">
     <span class="slideshow-hint">&larr; &rarr; navigate &middot; Scroll/pinch to zoom &middot; I info &middot; F fullscreen &middot; Esc close</span>
     <div>
@@ -1582,6 +1961,14 @@ SLIDESHOW_HTML = """
     <div class="slideshow-nav next" id="slideshow-next"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></div>
     <div class="slideshow-caption" id="slideshow-caption"></div>
   </div>
+  {% if editable %}
+  <div class="slideshow-edit" id="slideshow-edit">
+    <button class="slideshow-btn" id="edit-fav" type="button" title="Favorite (S)">&#9734; Favorite</button>
+    <input id="edit-caption" type="text" maxlength="2000" placeholder="Add a caption (press Enter to save)" aria-label="Caption">
+    <button class="slideshow-btn" id="edit-cover" type="button" title="Use this as the cover photo for the day">Set as cover</button>
+    <button class="slideshow-btn" id="edit-hide" type="button" title="Hide from visitors">Hide</button>
+  </div>
+  {% endif %}
   <div class="info-panel" id="info-panel">
     <div class="info-panel-inner">
       <button class="info-close" id="info-close" type="button" aria-label="Close details">&times;</button>
@@ -1678,12 +2065,28 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
   <div class="stamp"><span class="num">{{ day_number if day_number else '?' }}</span><span class="of">{{ 'N/A' if is_unknown else 'DAY' }}</span></div>
   <h1>{{ day_title }}</h1>
   <div class="date">{{ date_display }}</div>
+  {% if editable %}
+  <div><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+  {% endif %}
   <div class="day-nav">
     <span>{% if prev_href %}<a href="{{ prev_href }}">&larr; {{ prev_label }}</a>{% endif %}</span>
     <span>{% if next_href %}<a href="{{ next_href }}">{{ next_label }} &rarr;</a>{% endif %}</span>
   </div>
   {% if prev_href or next_href %}<div class="day-nav-hint">&larr; &rarr; keys or swipe also work</div>{% endif %}
 </div>
+
+{% if editable %}
+<div class="day-editor" id="day-editor" hidden>
+  <label for="edit-title">Title</label>
+  <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="Day title">
+  <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
+  <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
+  <div class="day-editor-actions">
+    <button type="button" class="editor-btn" id="day-save">Save</button>
+    <button type="button" class="editor-btn secondary" id="day-cancel">Cancel</button>
+  </div>
+</div>
+{% endif %}
 
 <div class="description {{ 'empty' if not description else '' }}">
   {% if description %}
@@ -1701,6 +2104,7 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 
 {% if items %}
 <div class="grid-controls">
+  <button type="button" class="fav-filter" id="fav-filter" hidden></button>
   <span class="grid-controls-label">Thumbnail size</span>
   <div class="size-toggle" role="group" aria-label="Thumbnail size">
     <button type="button" class="size-btn" data-size="small">S</button>
@@ -1712,13 +2116,15 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 
 <div class="grid" id="thumb-grid">
   {% for item in items %}
-  <div class="thumb" data-slide-index="{{ loop.index0 }}">
-    <img src="{{ item.thumb_url }}" loading="lazy" alt="">
+  <div class="thumb{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
+    <img src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}">
     {% if item.media_type == 'video' %}
     <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
     {% endif %}
     {% if item.live %}<span class="live-badge" title="Live Photo">LIVE</span>{% endif %}
     {% if item.time_display %}<span class="badge">{{ item.time_display }}</span>{% endif %}
+    <span class="fav-badge" title="Favorite">&#9733;</span>
+    <span class="hidden-badge">HIDDEN</span>
   </div>
   {% endfor %}
 </div>
@@ -1730,9 +2136,10 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <script src="{{ assets_prefix }}assets/script.js"></script>
 <script>
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
-initSlideshow({{ slides_json }});
+initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
 initThumbSizeControl();
 initDayNav({{ prev_href_json }}, {{ next_href_json }});
+{% if editable %}initDayEditor({{ date_key_json }});{% endif %}
 {% if route %}
 try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
@@ -1803,7 +2210,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "date_display": "Date unknown" if d.is_unknown else format_long_date(d.date_obj),
             "title": title,
             "excerpt": (desc[:110] + "\u2026") if len(desc) > 110 else desc,
-            "cover": urls.thumb(d.items[0], from_index=True) if d.items else None,
+            "cover": urls.thumb(pick_cover(d, content), from_index=True) if d.items else None,
             "photo_count": d.photo_count,
             "video_count": d.video_count,
             "color": UNKNOWN_DAY_COLOR if d.is_unknown else DAY_COLORS[(rank - 1) % len(DAY_COLORS)],
@@ -1828,7 +2235,8 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
     )
 
 
-def build_day_context(days: list, i: int, content: dict, urls: SiteUrls) -> dict:
+def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
+                      editable: bool = False) -> dict:
     """Template variables for DAY_TEMPLATE, for days[i]."""
     ranks = _day_ranks(days)
     d = days[i]
@@ -1836,8 +2244,10 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls) -> dict
 
     items_ctx, slides, route_thumbs, route_slide_indices = [], [], [], []
     for idx, it in enumerate(d.items):
+        pe = photo_entry(content, it.rel)
         item_ctx = {"thumb_url": urls.thumb(it, from_index=False), "media_type": it.media_type,
-                    "live": it.live_clip is not None}
+                    "live": it.live_clip is not None, "caption": pe["caption"],
+                    "favorite": pe["favorite"], "hidden": pe["hidden"]}
         if not d.is_unknown:
             # only show a time badge when it's a real capture time: a
             # file-modified fallback time isn't worth presenting as fact
@@ -1853,6 +2263,11 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls) -> dict
             "detail": it.detail,
             "downloadUrl": urls.download(it),
         }
+        slide["caption"] = pe["caption"]
+        slide["favorite"] = pe["favorite"]
+        slide["hidden"] = pe["hidden"]
+        if editable:
+            slide["rel"] = it.rel   # what edits are saved against; visitors never get it
         if it.media_type == "video":
             slide["poster"] = urls.thumb(it, from_index=False)
         if it.live_clip is not None:
@@ -1884,6 +2299,10 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls) -> dict
         day_title=title,
         date_display="Date unknown" if d.is_unknown else format_long_date(d.date_obj),
         date_key=d.date_key,
+        date_key_json=script_json(d.date_key),
+        editable=editable,
+        raw_title=day_text(content, d.date_key)[0],
+        raw_description=day_text(content, d.date_key)[1],
         description=[p.strip() for p in desc.split("\n\n") if p.strip()],
         route=d.route,
         route_json=script_json(d.route),
