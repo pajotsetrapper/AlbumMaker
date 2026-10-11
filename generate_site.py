@@ -40,6 +40,7 @@ from PIL import Image, ImageOps
 try:
     from trip_common import (
         BROWSER_NATIVE_IMAGE_EXTS, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SITE_MARKER, VIDEO_EXTS,
+        assign_rel_paths, hidden_rels, report_unknown_photo_keys,
         HEIF_SUPPORT, ContentFileError, MediaItem, SiteUrls, atomic_write_text, build_day_context,
         build_index_context, build_media_item, check_ffmpeg, collect_candidates, dedupe_candidates,
         default_content, group_by_day, pair_live_photos, parse_content_file, placeholder_thumbnail,
@@ -349,7 +350,7 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
 def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                 force: bool, tz_offset: Optional[float] = None,
                 workers: Optional[int] = None, dedupe: bool = True,
-                manifest: Optional[dict] = None) -> tuple:
+                manifest: Optional[dict] = None, skip_rels: Optional[set] = None) -> tuple:
     """Returns (items, records): the processed media, and the build-record
     entry for every processed file (see save_manifest)."""
     manifest = manifest or {}
@@ -361,6 +362,22 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     # the output folder is excluded explicitly too: on the very first run
     # it doesn't hold a build record yet
     candidates = collect_candidates(input_dir, exclude_dirs=(output_dir,))
+    if skip_rels:
+        # Photos marked hidden in trip_content.json are left out of the build
+        # entirely, so their files never end up in a site you might publish.
+        # A video sharing a hidden photo's folder and name is its Live Photo
+        # clip, so it goes too.
+        def rel_of(p):
+            return p.relative_to(input_dir).as_posix()
+        hidden_stems = {(p.parent, p.stem.lower()) for p, kind in candidates
+                        if kind == "image" and rel_of(p) in skip_rels}
+        before = len(candidates)
+        candidates = [(p, kind) for p, kind in candidates
+                      if rel_of(p) not in skip_rels
+                      and not (kind == "video" and (p.parent, p.stem.lower()) in hidden_stems)]
+        if before != len(candidates):
+            print(f"Leaving out {before - len(candidates)} file(s) marked hidden in trip_content.json "
+                  f"(including Live Photo clips of hidden photos).")
     if dedupe:
         candidates = dedupe_candidates(candidates)
 
@@ -563,9 +580,10 @@ def main():
 
     # check the content file *before* the (possibly long) processing step, so
     # a typo is reported immediately and never leads to the file being rewritten
+    skip_rels = set()
     if args.content.exists():
         try:
-            parse_content_file(args.content)
+            skip_rels = hidden_rels(parse_content_file(args.content))
         except ContentFileError as e:
             print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
             sys.exit(1)
@@ -575,13 +593,14 @@ def main():
     manifest = load_manifest(args.output)
     items, records = scan_media(args.input, args.output, args.thumb_size, args.force,
                                 tz_offset=args.tz_offset, workers=args.workers,
-                                dedupe=not args.no_dedupe, manifest=manifest)
+                                dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels)
     if not items:
         print("No supported photos or videos found.", file=sys.stderr)
         sys.exit(1)
     # workers finish in any order: sort by path so the result is the same
     # on every run (pairing returns its items sorted too)
     items = sorted(items, key=lambda it: it.path) if args.no_live_photos else pair_live_photos(items)
+    assign_rel_paths(items, args.input)
 
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
@@ -598,6 +617,7 @@ def main():
         print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
         sys.exit(1)
 
+    report_unknown_photo_keys(content, {it.rel for it in items} | skip_rels)
     pages = render_site(days, content, args.output)
 
     # only after the site was written successfully: drop outputs nothing

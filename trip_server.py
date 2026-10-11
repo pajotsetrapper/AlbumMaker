@@ -50,7 +50,9 @@ from markupsafe import Markup
 
 try:
     from trip_common import (
-        CSS, DAY_TEMPLATE, HEIF_SUPPORT, INDEX_TEMPLATE, JS, ContentFileError, MediaItem, SiteUrls,
+        CAPTION_MAX, CSS, DAY_TEMPLATE, HEIF_SUPPORT, INDEX_TEMPLATE, JS, ContentFileError, MediaItem,
+        SiteUrls, assign_rel_paths, hidden_rels, report_unknown_photo_keys, set_cover, set_day_text,
+        set_photo_fields, visible_days,
         atomic_write_text, build_day_context, build_index_context, build_media_item, check_ffmpeg,
         collect_candidates, dedupe_candidates, default_content, group_by_day, pair_live_photos,
         parse_content_file, placeholder_thumbnail, positive_thumb_size, read_image_metadata,
@@ -109,6 +111,7 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
 
     if live_photos:
         items = pair_live_photos(items)
+    assign_rel_paths(items, input_dir)   # the keys trip_content.json uses for captions etc.
     for n, it in enumerate(items):
         it.id = n  # URLs use the position in this list, so keep it gapless
     return items
@@ -284,6 +287,20 @@ class ContentStore:
         self._cache = content
         self._sig = self._sig_now()
 
+    def update(self, mutate) -> dict:
+        """Change the file safely: re-read it as it is on disk right now, let
+        `mutate(content)` edit that in place, write it back atomically. If the
+        file currently can't be parsed this raises ContentFileError and writes
+        nothing, so a hand-edit in progress is never overwritten."""
+        with self._lock:
+            content = parse_content_file(self.path) if self.path.exists() else default_content()
+            mutate(content)
+            atomic_write_text(self.path, json.dumps(content, indent=2, ensure_ascii=False) + "\n")
+            self._cache = content
+            self._sig = self._sig_now()
+            self._warned_sig = object()
+            return content
+
     def get(self) -> dict:
         with self._lock:
             sig = self._sig_now()
@@ -352,15 +369,19 @@ class LiveUrls(SiteUrls):
         return f"/live/{item.id}?v={file_version(item.live_clip.path)}"
 
 
-def render_homepage() -> str:
-    return INDEX_TEMPLATE.render(**build_index_context(DAYS, CONTENT.get(), LiveUrls()))
+def render_homepage(editable: bool = False) -> str:
+    content = CONTENT.get()
+    days = visible_days(DAYS, content, editable)
+    return INDEX_TEMPLATE.render(**build_index_context(days, content, LiveUrls()))
 
 
-def render_day(date_key: str) -> Optional[str]:
-    idx = next((i for i, d in enumerate(DAYS) if d.date_key == date_key), None)
+def render_day(date_key: str, editable: bool = False) -> Optional[str]:
+    content = CONTENT.get()
+    days = visible_days(DAYS, content, editable)   # hidden photos (and emptied days) drop out for visitors
+    idx = next((i for i, d in enumerate(days) if d.date_key == date_key), None)
     if idx is None:
         return None
-    return DAY_TEMPLATE.render(**build_day_context(DAYS, idx, CONTENT.get(), LiveUrls()))
+    return DAY_TEMPLATE.render(**build_day_context(days, idx, content, LiveUrls(), editable=editable))
 
 
 # --------------------------------------------------------------------------
@@ -375,6 +396,8 @@ CONTENT: Optional[ContentStore] = None
 # header blocks DNS-rebinding attacks, where a web page you visit points its
 # own domain name at 127.0.0.1 to read this server from your browser.
 ALLOWED_HOSTNAMES: set = {"localhost"}
+KNOWN_RELS: set = set()   # every photo path trip_content.json may refer to
+DAY_KEYS: set = set()
 
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
 CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
@@ -406,6 +429,23 @@ class RequestHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         self._handle()
 
+    def do_POST(self):
+        self._response_started = False
+        self._req_version = None
+        self._preview = False
+        try:
+            self._handle_post()
+        except (BrokenPipeError, ConnectionResetError):
+            pass
+        except Exception:
+            traceback.print_exc()
+            self.close_connection = True
+            if not self._response_started:
+                try:
+                    self._send_json({"ok": False, "error": "Internal server error"}, 500)
+                except Exception:
+                    pass
+
     def do_HEAD(self):
         self._handle()
 
@@ -428,6 +468,139 @@ class RequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             pass
         return name in ALLOWED_HOSTNAMES
+
+    def _can_edit(self) -> bool:
+        """Editing is for whoever is sitting at the computer running the
+        server: a loopback connection, or this machine reaching itself through
+        its own network address. Other devices on the network (--lan) can
+        look but never change anything."""
+        if ARGS.read_only:
+            return False
+        client = self.client_address[0]
+        try:
+            if ipaddress.ip_address(client).is_loopback:
+                return True
+        except ValueError:
+            return False
+        try:
+            return client == self.connection.getsockname()[0]
+        except OSError:
+            return False
+
+    def _editor_view(self) -> bool:
+        return self._can_edit() and not self._preview
+
+    def _origin_ok(self) -> bool:
+        """A browser tab on some other site must not be able to make edits:
+        if an Origin header is sent, it has to be this very server."""
+        origin = self.headers.get("Origin")
+        if not origin:
+            return True
+        try:
+            return urlsplit(origin).netloc.lower() == (self.headers.get("Host") or "").lower()
+        except ValueError:
+            return False
+
+    def _send_json(self, obj, status: int = 200):
+        data = json.dumps(obj).encode("utf-8")
+        self.send_response(status)
+        self.send_header("Content-Type", "application/json; charset=utf-8")
+        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Cache-Control", "no-store")
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(data)
+
+    def _fail(self, status: int, message: str):
+        # the request body was not read, so the connection can't be reused
+        self.close_connection = True
+        self._send_json({"ok": False, "error": message}, status)
+
+    def _handle_post(self):
+        if not self._host_allowed():
+            return self._fail(403, "Unrecognized Host header")
+        if not self._can_edit():
+            return self._fail(403, "Editing is only available on the computer running the server "
+                                   "(and is switched off by --read-only).")
+        if not self._origin_ok():
+            return self._fail(403, "Cross-origin request refused")
+        path = urlparse(self.path).path
+        if path not in ("/api/photo", "/api/cover", "/api/day"):
+            return self._fail(404, "Not found")
+        if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
+            return self._fail(415, "Expected application/json")
+        try:
+            length = int(self.headers.get("Content-Length", ""))
+        except ValueError:
+            return self._fail(411, "Content-Length required")
+        if not 0 <= length <= 65536:
+            return self._fail(413, "Request too large")
+        try:
+            body = json.loads(self.rfile.read(length).decode("utf-8"))
+        except (ValueError, UnicodeDecodeError):
+            return self._send_json({"ok": False, "error": "Invalid JSON"}, 400)
+        if not isinstance(body, dict):
+            return self._send_json({"ok": False, "error": "Expected a JSON object"}, 400)
+        try:
+            if path == "/api/photo":
+                result = self._api_photo(body)
+            elif path == "/api/cover":
+                result = self._api_cover(body)
+            else:
+                result = self._api_day(body)
+        except ContentFileError as e:
+            return self._send_json({"ok": False, "error": f"Nothing was saved: {e}"}, 409)
+        except ValueError as e:
+            return self._send_json({"ok": False, "error": str(e)}, 400)
+        self._send_json({"ok": True, **result})
+
+    def _api_photo(self, body: dict) -> dict:
+        rel = body.get("rel")
+        if not isinstance(rel, str) or rel not in KNOWN_RELS:
+            raise ValueError("Unknown photo")
+        fields = {}
+        if "caption" in body:
+            if not isinstance(body["caption"], str):
+                raise ValueError("caption must be text")
+            if len(body["caption"]) > CAPTION_MAX:
+                raise ValueError(f"Caption is too long (max {CAPTION_MAX} characters)")
+            fields["caption"] = body["caption"]
+        for key in ("favorite", "hidden"):
+            if key in body:
+                if not isinstance(body[key], bool):
+                    raise ValueError(f"{key} must be true or false")
+                fields[key] = body[key]
+        if not fields:
+            raise ValueError("Nothing to change")
+        out = {}
+        CONTENT.update(lambda c: out.update(photo=set_photo_fields(c, rel, **fields)))
+        return out
+
+    def _api_cover(self, body: dict) -> dict:
+        date, rel = body.get("date"), body.get("rel")
+        if date not in DAY_KEYS:
+            raise ValueError("Unknown day")
+        if rel is not None and (not isinstance(rel, str) or rel not in KNOWN_RELS):
+            raise ValueError("Unknown photo")
+        CONTENT.update(lambda c: set_cover(c, date, rel))
+        return {}
+
+    def _api_day(self, body: dict) -> dict:
+        date = body.get("date")
+        if date not in DAY_KEYS:
+            raise ValueError("Unknown day")
+        fields = {}
+        for key, limit in (("title", 200), ("description", 20000)):
+            if key in body:
+                if not isinstance(body[key], str):
+                    raise ValueError(f"{key} must be text")
+                if len(body[key]) > limit:
+                    raise ValueError(f"{key} is too long (max {limit} characters)")
+                fields[key] = body[key]
+        if not fields:
+            raise ValueError("Nothing to change")
+        CONTENT.update(lambda c: set_day_text(c, date, **fields))
+        return {}
 
     def _cache_control(self, current_version: str) -> str:
         # URL carries the file's current version -> its bytes can never
@@ -528,10 +701,15 @@ class RequestHandler(BaseHTTPRequestHandler):
             item_id = int(id_str)
             if not 0 <= item_id < len(ITEMS):
                 raise ValueError
-            return ITEMS[item_id]
+            item = ITEMS[item_id]
         except ValueError:
             self.send_error(404, "No such item")
             return None
+        # a hidden photo must not be reachable by guessing its number either
+        if not self._can_edit() and item.rel in hidden_rels(CONTENT.get()):
+            self.send_error(404, "No such item")
+            return None
+        return item
 
     # -- routing --------------------------------------------------------
 
@@ -540,19 +718,22 @@ class RequestHandler(BaseHTTPRequestHandler):
         # connection, so per-request state is reset here
         self._response_started = False
         self._req_version = None
+        self._preview = False
         try:
             if not self._host_allowed():
                 self.send_error(403, "Unrecognized Host header (see --allow-host)")
                 return
             parsed = urlparse(self.path)
             raw_path = unquote(parsed.path)
-            self._req_version = (parse_qs(parsed.query).get("v") or [None])[0]
+            query = parse_qs(parsed.query)
+            self._req_version = (query.get("v") or [None])[0]
+            self._preview = "1" in query.get("preview", [])   # editor looking at the visitor view
 
             if raw_path in ("/", ""):
-                self._send_text(render_homepage(), "text/html")
+                self._send_text(render_homepage(self._editor_view()), "text/html")
             elif raw_path.startswith("/day/"):
                 key = raw_path[len("/day/"):].strip("/")
-                html = render_day(key)
+                html = render_day(key, self._editor_view())
                 if html is None:
                     self.send_error(404, "No such day")
                 else:
@@ -649,7 +830,7 @@ def _lan_ip() -> Optional[str]:
 
 
 def main():
-    global ARGS, ITEMS, DAYS, CONTENT, ALLOWED_HOSTNAMES
+    global ARGS, ITEMS, DAYS, CONTENT, ALLOWED_HOSTNAMES, KNOWN_RELS, DAY_KEYS
 
     parser = argparse.ArgumentParser(
         description="Serve your trip photos/videos as a live website — nothing is written to disk."
@@ -675,6 +856,9 @@ def main():
     parser.add_argument("--no-live-photos", action="store_true",
                          help="Show iPhone Live Photo clips as separate videos instead of "
                               "attaching them to their photos.")
+    parser.add_argument("--read-only", action="store_true",
+                         help="Turn off in-page editing (captions, favorites, hiding, covers, day text). "
+                              "Without this flag, editing works from the computer running the server only.")
     parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
                          help="Extra host name the server should answer to, e.g. a custom local DNS "
                               "name for this computer. IP addresses, 'localhost' and this computer's "
@@ -729,6 +913,10 @@ def main():
               file=sys.stderr)
         sys.exit(1)
 
+    KNOWN_RELS = {it.rel for it in ITEMS}
+    DAY_KEYS = {d.date_key for d in DAYS}
+    report_unknown_photo_keys(CONTENT.get(), KNOWN_RELS)
+
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     try:
         server = ThreadingHTTPServer((host, args.port), RequestHandler)
@@ -742,6 +930,9 @@ def main():
 
     print(f"\nNothing has been written to disk except {args.content} — this server generates "
           f"every page and image on the fly, in memory, per request.")
+    if not args.read_only:
+        print(f"Editing is on for this computer: captions, favorites, hiding, cover photos and day "
+              f"text are saved into {args.content}. Use --read-only to turn it off.")
     print(f"\nServing at http://127.0.0.1:{args.port}/")
     if args.lan:
         lan_ip = _lan_ip()
