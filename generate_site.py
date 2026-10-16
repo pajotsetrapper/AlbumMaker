@@ -41,6 +41,7 @@ try:
     from trip_common import (
         BROWSER_NATIVE_IMAGE_EXTS, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SITE_MARKER, VIDEO_EXTS,
         assign_rel_paths, hidden_rels, report_unknown_photo_keys,
+        add_date_check_args, apply_date_check, resolve_date_range,
         HEIF_SUPPORT, ContentFileError, MediaItem, SiteUrls, atomic_write_text, build_day_context,
         build_index_context, build_media_item, check_ffmpeg, collect_candidates, dedupe_candidates,
         default_content, group_by_day, pair_live_photos, parse_content_file, placeholder_thumbnail,
@@ -560,7 +561,9 @@ def main():
     parser.add_argument("--no-live-photos", action="store_true",
                          help="Show iPhone Live Photo clips as separate videos instead of "
                               "attaching them to their photos.")
+    add_date_check_args(parser)
     args = parser.parse_args()
+    date_range = resolve_date_range(args, parser)
 
     if not args.input.is_dir():
         print(f"Input folder not found: {args.input}", file=sys.stderr)
@@ -602,10 +605,12 @@ def main():
     items = sorted(items, key=lambda it: it.path) if args.no_live_photos else pair_live_photos(items)
     assign_rel_paths(items, args.input)
 
+    if not args.no_date_check:
+        apply_date_check(items, date_range)
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
     print(f"\nFound {len(items)} media files "
-          f"({fallback_count} without EXIF date, using file date instead; "
+          f"({fallback_count} without a usable capture date, filed under Unsorted; "
           f"{gps_count} with GPS location).")
 
     days = group_by_day(items)

@@ -378,6 +378,7 @@ class MediaItem:
     is_live_clip: bool = False  # video that looks like a Live Photo's motion clip
     live_clip: Optional["MediaItem"] = None      # a photo's paired Live Photo clip
     rel: str = ""              # path relative to the photos folder: the key used in trip_content.json
+    dt_rejected: str = ""      # why the embedded capture date was ignored (see the date check)
 
     # trip_server: position in the item list, used in URLs (/thumb/42)
     id: int = -1
@@ -926,6 +927,115 @@ def group_by_day(items: list) -> list:
     return ordered
 
 
+# --------------------------------------------------------------------------
+# Date sanity check
+#
+# Some files carry a capture date that is plainly wrong: the placeholder
+# 1904-01-01 / 1970-01-01 / 1980-01-01 that editors and apps write when they
+# don't know the time, a camera whose clock was never set (it counts up from
+# 2000-01-01), or a clock set into the future. Left alone, each one invents a
+# "day" that never happened, far from the real trip. Such files are filed
+# under "Unsorted" instead, exactly like files that have no date at all, and
+# their Details panel says which date was ignored and why.
+# --------------------------------------------------------------------------
+
+MIN_PLAUSIBLE_YEAR = 1995
+CLUSTER_WINDOW_DAYS = 366   # how far from the typical date a file may be
+CLUSTER_MIN_FILES = 5       # with fewer files there is no "typical" to judge by
+CLUSTER_MIN_SHARE = 0.8     # the typical dates must cover at least this share of the files
+
+
+def _parse_ymd(s: str) -> datetime:
+    try:
+        return datetime.strptime(s, "%Y-%m-%d")
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"'{s}' is not a date like 2026-05-01")
+
+
+def add_date_check_args(parser):
+    parser.add_argument("--date-range", nargs=2, type=_parse_ymd, metavar=("START", "END"),
+                        help="The dates your files should fall between, e.g. --date-range "
+                             "2026-04-28 2026-05-10 (both days included). Files dated outside it "
+                             "are filed under Unsorted. Without this, a date counts as wrong if it "
+                             "is before 1995, in the future, or more than a year away from the "
+                             "rest of your files.")
+    parser.add_argument("--no-date-check", action="store_true",
+                        help="Trust every embedded date, even ones that look wrong.")
+
+
+def resolve_date_range(args, parser) -> Optional[tuple]:
+    """(first moment, first moment after) of --date-range, or None."""
+    if not args.date_range:
+        return None
+    start, end = args.date_range
+    if end < start:
+        parser.error("--date-range: the end date is before the start date")
+    return start, end + timedelta(days=1)
+
+
+def find_suspicious_dates(items: list, date_range=None, now=None) -> list:
+    """[(item, reason)] for files whose embedded capture date looks wrong.
+    Files that already have no date (dt_is_fallback) aren't judged."""
+    now = now or datetime.now()
+    dated = [it for it in items if not it.dt_is_fallback]
+    flagged = []
+    if date_range:
+        start, end = date_range      # `end` is exclusive
+        last = end - timedelta(days=1)
+        for it in dated:
+            if not start <= it.dt < end:
+                flagged.append((it, f"outside --date-range {start:%Y-%m-%d} to {last:%Y-%m-%d}"))
+        return flagged
+
+    rest = []
+    for it in dated:
+        if it.dt.year < MIN_PLAUSIBLE_YEAR:
+            flagged.append((it, f"before {MIN_PLAUSIBLE_YEAR}"))
+        elif it.dt > now + timedelta(days=1):
+            flagged.append((it, "in the future"))
+        else:
+            rest.append(it)
+
+    # Dates that are possible but nowhere near the others (a camera that was
+    # reset to 2000, say). Only judged when most files clearly agree with
+    # each other; a folder that really spans several years is left alone.
+    if len(rest) >= CLUSTER_MIN_FILES:
+        typical = sorted(it.dt for it in rest)[len(rest) // 2]
+        window = timedelta(days=CLUSTER_WINDOW_DAYS)
+        near = [it for it in rest if abs(it.dt - typical) <= window]
+        if len(near) / len(rest) >= CLUSTER_MIN_SHARE:
+            for it in rest:
+                if abs(it.dt - typical) > window:
+                    flagged.append((it, f"more than a year from the rest of your files "
+                                        f"(most are from about {typical:%Y-%m})"))
+    return flagged
+
+
+def apply_date_check(items: list, date_range=None, now=None, quiet: bool = False) -> int:
+    """Move files with a wrong-looking date to the Unsorted group. Returns how many."""
+    flagged = find_suspicious_dates(items, date_range, now)
+    report = []
+    for it, reason in flagged:
+        original = it.dt
+        try:
+            it.dt = datetime.fromtimestamp(it.path.stat().st_mtime)
+        except OSError:
+            pass
+        it.dt_is_fallback = True
+        it.dt_rejected = reason
+        it.detail["date_note"] = f"Embedded date {original:%Y-%m-%d %H:%M} ignored ({reason})"
+        report.append((it.rel or it.path.name, original, reason))
+    if report and not quiet:
+        print(f"Date check: {len(report)} file(s) have a date that looks wrong, so they are listed "
+              f"under Unsorted instead of getting a day of their own:")
+        for name, original, reason in report[:8]:
+            print(f"  {name}   dated {original:%Y-%m-%d} - {reason}")
+        if len(report) > 8:
+            print(f"  ... and {len(report) - 8} more")
+        print("  If those dates are right, pass --date-range START END (or --no-date-check).")
+    return len(report)
+
+
 def assign_rel_paths(items: list, root: Path):
     """Give every item the key trip_content.json uses for it: its path
     relative to the photos folder, with forward slashes."""
@@ -1202,6 +1312,9 @@ img,video{max-width:100%; display:block;}
 .slideshow-edit input{flex:1; min-width:0; background:rgba(237,230,214,.08); border:1px solid rgba(237,230,214,.3); color:var(--cream); border-radius:6px; padding:.45rem .7rem; font-family:var(--sans); font-size:.9rem;}
 .slideshow-edit input:focus{border-color:var(--gold); outline:none;}
 .slideshow-btn.on{border-color:var(--gold); color:var(--gold);}
+.slideshow-progress{position:absolute; top:0; left:0; right:0; height:3px; pointer-events:none; z-index:3;}
+.slideshow-progress div{height:100%; width:0; background:var(--gold);}
+@media (prefers-reduced-motion: reduce){ .slideshow-progress{display:none;} }
 .day-edit-btn{display:inline-block; background:none; border:1px solid rgba(237,230,214,.3); color:var(--cream); font-family:var(--mono); font-size:.72rem; border-radius:6px; padding:.3rem .6rem; cursor:pointer; margin:.4rem .5rem 0 0;}
 .day-edit-btn:hover{border-color:var(--gold); color:var(--gold); text-decoration:none;}
 .day-edit-btn[hidden]{display:none;}
@@ -1413,14 +1526,21 @@ let EDITABLE = false;     // true only when trip_server.py says this viewer may 
 let DAY_KEY = '';
 let FAV_ONLY = false;
 let lastFocus = null;
+let playing = false;      // slideshow autoplay
+let playTimer = null;
+let playMs = 5000;
+let liveActive = false;   // a Live Photo clip is playing in place of the photo
+let ignoreNextPop = false;
+const PLAY_SPEEDS = [3000, 5000, 8000, 12000];
 
 const INFO_LABELS = {
   filename: 'File', dimensions: 'Dimensions', filesize: 'File size',
   camera: 'Camera', lens: 'Lens', aperture: 'Aperture', shutter: 'Shutter',
   iso: 'ISO', focal_length: 'Focal length', codec: 'Codec', fps: 'Frame rate',
-  duration: 'Duration', gps_display: 'Location', altitude: 'Altitude'
+  duration: 'Duration', gps_display: 'Location', altitude: 'Altitude',
+  date_note: 'Date'
 };
-const INFO_ORDER = ['filename','dimensions','filesize','camera','lens','aperture','shutter',
+const INFO_ORDER = ['filename','date_note','dimensions','filesize','camera','lens','aperture','shutter',
                     'iso','focal_length','codec','fps','duration','gps_display','altitude'];
 
 function buildSlideStage(item){
@@ -1502,23 +1622,150 @@ function toggleZoomAt(){
   applyZoomTransform();
 }
 
-function openSlideshow(index){
+// ---------- links to a photo, and the Back button ----------
+// Opening the viewer adds ONE history entry (#p=<key>); moving between photos
+// only rewrites that hash. So Back, or a phone's back button, closes the viewer
+// instead of leaving the page, and the address always links to the photo shown.
+function slideHash(i){
+  const s = SLIDES[i];
+  return (s && s.key !== undefined) ? '#p=' + encodeURIComponent(String(s.key)) : '';
+}
+
+function slideIndexFromHash(){
+  const m = /^#p=(.+)$/.exec(location.hash);
+  if(!m) return -1;
+  let key;
+  try { key = decodeURIComponent(m[1]); } catch(e){ return -1; }
+  return SLIDES.findIndex(s => String(s.key) === key);
+}
+
+// A link like day.html#p=IMG_0412.jpg opens straight onto that photo. The
+// viewer then has no history entry of its own, so closing it only drops the hash.
+function openSlideshowFromHash(){
+  const idx = slideIndexFromHash();
+  if(idx < 0) return;
+  try { history.replaceState(null, '', location.href); } catch(e){}
+  openSlideshow(idx, true);
+}
+
+function onPopState(){
+  if(ignoreNextPop){ ignoreNextPop = false; return; }
+  const idx = slideIndexFromHash();
+  const open = document.getElementById('slideshow').classList.contains('open');
+  if(idx >= 0){
+    if(!open) openSlideshow(idx, true);
+    else if(idx !== currentSlide){ currentSlide = idx; renderSlide(); }
+  } else if(open){
+    closeSlideshow(true);
+  }
+}
+
+function openSlideshow(index, fromHistory){
   lastFocus = document.activeElement;
   currentSlide = index;
   const overlay = document.getElementById('slideshow');
   overlay.classList.add('open');
+  if(fromHistory !== true && slideHash(index)){
+    try { history.pushState({viewer: true}, '', slideHash(index)); } catch(e){}
+  }
   renderSlide();
   document.body.style.overflow = 'hidden';
 }
 
-function closeSlideshow(){
+function closeSlideshow(fromHistory){
   const overlay = document.getElementById('slideshow');
+  if(!overlay.classList.contains('open')) return;
+  stopPlaying();
   overlay.classList.remove('open');
   document.getElementById('slideshow-media').innerHTML = '';
   document.body.style.overflow = '';
   closeInfoPanel();
   if(document.fullscreenElement) document.exitFullscreen();
   if(lastFocus && lastFocus.focus) lastFocus.focus();
+  if(fromHistory !== true && location.hash.indexOf('#p=') === 0){
+    if(history.state && history.state.viewer){
+      ignoreNextPop = true;   // we opened it, so step back over our own entry
+      history.back();
+    } else {
+      // arrived on a shared link: just drop the hash and stay on the page
+      try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
+    }
+  }
+}
+
+// ---------- autoplay ----------
+function autoBlocked(){
+  // don't move on while someone is reading details, zoomed in, typing a
+  // caption, watching a Live Photo clip, or has the tab in the background
+  return infoPanelOpen || liveActive || ZOOM.scale > 1 || document.hidden ||
+         isTyping(document.activeElement);
+}
+
+function resetProgress(){
+  const bar = document.getElementById('slideshow-progress-bar');
+  if(!bar) return;
+  bar.style.transition = 'none';
+  bar.style.width = '0';
+}
+
+function startProgress(ms){
+  const bar = document.getElementById('slideshow-progress-bar');
+  if(!bar) return;
+  resetProgress();
+  void bar.offsetWidth;   // restart the animation
+  bar.style.transition = 'width ' + ms + 'ms linear';
+  bar.style.width = '100%';
+}
+
+function scheduleAdvance(){
+  clearTimeout(playTimer);
+  resetProgress();
+  if(!playing || !document.getElementById('slideshow').classList.contains('open')) return;
+  const item = SLIDES[currentSlide];
+  if(!item) return;
+  if(item.type === 'video') return;   // moves on when the clip ends (see renderSlide)
+  if(autoBlocked()){ playTimer = setTimeout(scheduleAdvance, 500); return; }
+  startProgress(playMs);
+  playTimer = setTimeout(() => {
+    if(autoBlocked()){ scheduleAdvance(); return; }
+    stepSlide(1);
+  }, playMs);
+}
+
+function setPlaying(on){
+  playing = !!on;
+  const btn = document.getElementById('slideshow-play');
+  const spd = document.getElementById('slideshow-speed');
+  if(btn){
+    btn.innerHTML = playing ? '&#10074;&#10074; Pause' : '&#9654; Play';
+    btn.setAttribute('aria-pressed', playing ? 'true' : 'false');
+    btn.classList.toggle('on', playing);
+  }
+  if(spd){ spd.hidden = !playing; spd.textContent = (playMs / 1000) + 's'; }
+  scheduleAdvance();
+}
+
+function stopPlaying(){
+  if(playing) setPlaying(false);
+  else { clearTimeout(playTimer); resetProgress(); }
+}
+
+function togglePlaying(){ setPlaying(!playing); }
+
+function cycleSpeed(){
+  const i = PLAY_SPEEDS.indexOf(playMs);
+  playMs = PLAY_SPEEDS[(i + 1) % PLAY_SPEEDS.length];
+  try { localStorage.setItem('tripSlideMs', String(playMs)); } catch(e){}
+  document.getElementById('slideshow-speed').textContent = (playMs / 1000) + 's';
+  scheduleAdvance();
+}
+
+function loadPlayMs(){
+  try {
+    const v = parseInt(localStorage.getItem('tripSlideMs'), 10);
+    if(PLAY_SPEEDS.indexOf(v) >= 0) return v;
+  } catch(e){}
+  return 5000;
 }
 
 function preloadSlide(index){
@@ -1549,6 +1796,7 @@ function renderCaption(){
 }
 
 function renderSlide(){
+  liveActive = false;
   resetZoom();
   const item = SLIDES[currentSlide];
   const mediaEl = document.getElementById('slideshow-media');
@@ -1561,6 +1809,16 @@ function renderSlide(){
   if(mediaTag){
     if(item.type === 'video'){
       mediaTag.addEventListener('loadeddata', clearLoading, {once: true});
+      // while playing, a video holds the slide until it finishes
+      mediaTag.addEventListener('ended', () => {
+        if(playing && SLIDES[currentSlide] === item) stepSlide(1);
+      }, {once: true});
+      mediaTag.addEventListener('error', () => {
+        if(playing && SLIDES[currentSlide] === item){
+          clearTimeout(playTimer);
+          playTimer = setTimeout(() => stepSlide(1), playMs);
+        }
+      }, {once: true});
     } else if(mediaTag.complete){
       clearLoading();
     } else {
@@ -1580,6 +1838,12 @@ function renderSlide(){
 
   preloadSlide((currentSlide + 1) % SLIDES.length);
   preloadSlide((currentSlide - 1 + SLIDES.length) % SLIDES.length);
+
+  const h = slideHash(currentSlide);
+  if(h && document.getElementById('slideshow').classList.contains('open')){
+    try { history.replaceState(history.state, '', h); } catch(e){}
+  }
+  scheduleAdvance();
 }
 
 // With "Favorites" switched on, arrows/swipes step through favorites only.
@@ -1610,6 +1874,9 @@ function playLive(){
   const item = SLIDES[currentSlide];
   if(!item || !item.live) return;
   resetZoom();
+  liveActive = true;
+  clearTimeout(playTimer);
+  resetProgress();
   const mediaEl = document.getElementById('slideshow-media');
   const v = document.createElement('video');
   v.src = item.live;
@@ -1696,11 +1963,13 @@ function toggleInfoPanel(){
   infoPanelOpen = !infoPanelOpen;
   document.getElementById('info-panel').classList.toggle('open', infoPanelOpen);
   if(infoPanelOpen) renderInfoPanel();
+  scheduleAdvance();
 }
 
 function closeInfoPanel(){
   infoPanelOpen = false;
   document.getElementById('info-panel').classList.remove('open');
+  scheduleAdvance();
 }
 
 // ---------- favorites filter, and editing (editing only when trip_server.py allows it) ----------
@@ -1825,13 +2094,17 @@ function initSlideshow(items, opts){
     el.addEventListener('keydown', (e) => {
       if(e.key === 'Enter' || e.key === ' '){
         e.preventDefault();
+        e.stopPropagation();   // the viewer's own Space (play/pause) must not see this key press
         openSlideshow(parseInt(el.dataset.slideIndex, 10));
       }
     });
   });
   initFavFilter();
   if(EDITABLE) initEditBar();
-  document.getElementById('slideshow-close').addEventListener('click', closeSlideshow);
+  playMs = loadPlayMs();
+  document.getElementById('slideshow-close').addEventListener('click', () => closeSlideshow());
+  document.getElementById('slideshow-play').addEventListener('click', togglePlaying);
+  document.getElementById('slideshow-speed').addEventListener('click', cycleSpeed);
   document.getElementById('slideshow-next').addEventListener('click', nextSlide);
   document.getElementById('slideshow-prev').addEventListener('click', prevSlide);
   document.getElementById('slideshow-fs').addEventListener('click', toggleFullscreen);
@@ -1841,11 +2114,19 @@ function initSlideshow(items, opts){
   document.getElementById('slideshow').addEventListener('click', (e) => {
     if(e.target.id === 'slideshow') closeSlideshow();
   });
+  // after a mouse click, a button must not keep the keyboard focus: otherwise
+  // the next Space press would "click" it again instead of play/pausing
+  document.getElementById('slideshow').addEventListener('click', (e) => {
+    const b = e.target.closest && e.target.closest('button');
+    if(b && e.detail > 0) b.blur();
+  });
+  window.addEventListener('popstate', onPopState);
 
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
     if(isTyping(e.target)){ if(e.key === 'Escape') e.target.blur(); return; }
-    if(e.key === 'ArrowRight') nextSlide();
+    if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }
+    else if(e.key === 'ArrowRight') nextSlide();
     else if(e.key === 'ArrowLeft') prevSlide();
     else if(e.key === 'Escape'){ infoPanelOpen ? closeInfoPanel() : closeSlideshow(); }
     else if(e.key.toLowerCase() === 'f') toggleFullscreen();
@@ -1946,9 +2227,12 @@ function initSlideshow(items, opts){
 
 SLIDESHOW_HTML = """
 <div class="slideshow" id="slideshow" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="slideshow-progress" aria-hidden="true"><div id="slideshow-progress-bar"></div></div>
   <div class="slideshow-bar">
-    <span class="slideshow-hint">&larr; &rarr; navigate &middot; Scroll/pinch to zoom &middot; I info &middot; F fullscreen &middot; Esc close</span>
+    <span class="slideshow-hint">&larr; &rarr; navigate &middot; Space play/pause &middot; Scroll/pinch to zoom &middot; I info &middot; F fullscreen &middot; Esc close</span>
     <div>
+      <button class="slideshow-btn" id="slideshow-play" type="button" aria-pressed="false" title="Play slideshow (Space)">&#9654; Play</button>
+      <button class="slideshow-btn" id="slideshow-speed" type="button" hidden title="Time per photo">5s</button>
       <button class="slideshow-btn" id="slideshow-live" type="button" hidden title="Play Live Photo (L)">Live</button>
       <button class="slideshow-btn" id="slideshow-info" type="button">Info</button>
       <button class="slideshow-btn" id="slideshow-fs" type="button">Fullscreen</button>
@@ -2137,6 +2421,7 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <script>
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
+openSlideshowFromHash();
 initThumbSizeControl();
 initDayNav({{ prev_href_json }}, {{ next_href_json }});
 {% if editable %}initDayEditor({{ date_key_json }});{% endif %}
@@ -2195,6 +2480,10 @@ def _day_ranks(days: list) -> dict:
 def _day_title(d, content: dict, ranks: dict) -> tuple:
     """(title, description) for a day, with the default title filled in."""
     title, description = day_text(content, d.date_key)
+    if d.is_unknown and not description:
+        description = ("Photos and videos with no usable capture date, or with one that looked "
+                       "wrong (the Details panel of each says which). They are kept together "
+                       "here rather than being given a day they weren't taken on.")
     return title or ("Unsorted" if d.is_unknown else f"Day {ranks[d.date_key]}"), description
 
 
@@ -2263,6 +2552,7 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
             "detail": it.detail,
             "downloadUrl": urls.download(it),
         }
+        slide["key"] = it.display_file or str(it.id)   # what #p=... in a link points at
         slide["caption"] = pe["caption"]
         slide["favorite"] = pe["favorite"]
         slide["hidden"] = pe["hidden"]
