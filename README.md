@@ -6,10 +6,28 @@ homepage, and a full-screen slideshow you can drive with the keyboard.
 
 It reads EXIF (for photos) and container metadata (for videos) to work
 out *when* and *where* each file was captured. You don't type anything
-in by hand except the titles and descriptions, if you want them.
+in by hand except the titles and descriptions, if you want them. With the
+live server you can also add captions, mark favorites, hide photos and
+pick each day's cover photo right in the page.
+
+## Quick start
+
+```bash
+pip install -r requirements.txt
+
+# Live and editable (open http://127.0.0.1:8000/):
+python trip_server.py -i /path/to/your/photos
+
+# Or build a standalone folder you can copy anywhere:
+python generate_site.py -i /path/to/your/photos -o site
+```
+
+You also need ffmpeg (see "Install"). Everything below explains the
+details.
 
 There are two scripts. Both produce the same site with the same look and
-features; they differ only in how it's delivered:
+features; they differ in how it's delivered, and in whether you can edit
+in the page:
 
 | | `generate_site.py` | `trip_server.py` |
 |---|---|---|
@@ -17,11 +35,13 @@ features; they differ only in how it's delivered:
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
 | Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
-| After editing descriptions | Re-run the script | Save the file and refresh the page |
+| Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server), or edit the file and refresh |
 | Cost | A build step | A little CPU on first view of each day |
 
 Both use the same `requirements.txt` and the same `trip_content.json`
-format, so you can switch between them, or use both, at any time.
+format, so you can switch between them, or use both, at any time. A
+typical workflow is to curate in the live server, then run
+`generate_site.py` to produce the version you share.
 
 ## 1. Install
 
@@ -63,8 +83,8 @@ Options:
 - `-o / --output`: where the website is written (default: `./site`).
   It can be inside your photos folder; it's excluded from the scan. It
   can't be the photos folder itself, or a folder that contains it.
-- `-c / --content`: where titles and descriptions are stored (default:
-  `./trip_content.json`). See section 3.
+- `-c / --content`: where titles, descriptions and photo notes are
+  stored (default: `./trip_content.json`). See section 3.
 - `--thumb-size`: maximum thumbnail dimension in px (default 400,
   allowed 16–4096).
 - `--force`: regenerate all thumbnails and media copies, even for files
@@ -72,6 +92,11 @@ Options:
   build" below.
 - `--tz-offset`: fixed UTC offset in hours (e.g. `2` or `-5.5`) for video
   timestamps. See "Video timestamps" below.
+- `--date-range START END`: the dates your files should fall between,
+  e.g. `--date-range 2026-04-28 2026-05-10` (both days included). Files
+  dated outside it go to "Unsorted". See "Dates that look wrong" below.
+- `--no-date-check`: trust every embedded date, even ones that look
+  wrong.
 - `--workers`: how many files to process in parallel (default: one per
   CPU core). Lower it if you want to keep using the computer while it
   runs.
@@ -79,6 +104,9 @@ Options:
   See "Duplicates" below.
 - `--no-live-photos`: show iPhone Live Photo clips as separate videos
   instead of attaching them to their photos. See "Live Photos" below.
+
+Photos you've marked **hidden** in `trip_content.json` are left out of
+the build entirely, including their files. See "Hidden photos" below.
 
 ## 2b. Serve it live: `trip_server.py`
 
@@ -94,13 +122,15 @@ Options:
 - `-i / --input`: folder with your photos and videos (default: the
   current folder, so you can also drop the script into your photos
   folder and run it with no arguments).
-- `-c / --content`: where titles and descriptions are stored (default:
-  `./trip_content.json`). See section 3.
+- `-c / --content`: where titles, descriptions and photo notes are
+  stored (default: `./trip_content.json`). See section 3.
 - `--port`: default `8000`.
 - `--lan`: let other devices on your network open the site too. **There
   is no login of any kind**: anyone on your Wi-Fi or network can browse
   your photos while the server runs with this on. Leave it off unless you
-  want that.
+  want that. Other devices can look but never edit; see section 4.
+- `--read-only`: turn off in-page editing completely, even on the
+  computer running the server. See section 4.
 - `--allow-host NAME`: an extra host name the server should answer to
   (repeatable). The server only responds to requests addressed to an IP
   address, `localhost`, or this computer's own name (also with
@@ -108,17 +138,16 @@ Options:
   trick where a web page you visit tries to read your local server
   through its own domain name. You only need this if you reach the
   computer through a custom local DNS name.
-- `--thumb-size`: same as for `generate_site.py`.
-- `--tz-offset`: same as for `generate_site.py`.
-- `--no-dedupe`: same as for `generate_site.py`.
-- `--no-live-photos`: same as for `generate_site.py`.
+- `--thumb-size`, `--tz-offset`, `--date-range`, `--no-date-check`,
+  `--no-dedupe`, `--no-live-photos`: same as for `generate_site.py`.
 
-The server writes nothing to disk except `trip_content.json`.
+Apart from `trip_content.json`, the server writes nothing to disk, and
+it writes to that file only when you save an edit in the page.
 Thumbnails and converted images are built in memory and kept in a small
 in-memory cache, so revisiting a day is fast. The cache is gone when the
 server stops.
 
-## 3. Titles and descriptions
+## 3. Titles, descriptions and photo notes: `trip_content.json`
 
 The first run of either script creates `trip_content.json` in the folder
 you run it from, with an entry for every day it found:
@@ -131,14 +160,56 @@ you run it from, with an entry for every day it found:
     "2026-05-01": { "title": "", "description": "" },
     "2026-05-02": { "title": "", "description": "" },
     "unknown": { "title": "", "description": "" }
-  }
+  },
+  "photos": {}
 }
 ```
 
 Edit `title` and `subtitle` for the whole trip, and `title` and
 `description` for each day. A blank line in a description starts a new
-paragraph. The `"unknown"` entry only appears if some files had no real
+paragraph. The `"unknown"` entry only appears if some files had no usable
 capture date; it's the "Unsorted" page (see "Day grouping" below).
+
+Per-photo notes and each day's cover live in the same file. Here's one
+that's been filled in:
+
+```json
+{
+  "title": "Belgium 2026",
+  "subtitle": "May, with the whole family",
+  "days": {
+    "2026-05-01": {
+      "title": "Canals & coffee",
+      "description": "Arrived early.\n\nThe light was perfect.",
+      "cover": "IMG_0412.jpg"
+    }
+  },
+  "photos": {
+    "IMG_0412.jpg":     { "caption": "Golden hour on the canal", "favorite": true },
+    "sub/IMG_0499.jpg": { "hidden": true }
+  }
+}
+```
+
+- `days.<date>.cover`: the photo to use as that day's card on the
+  homepage. Without one, the day uses its first photo (a photo rather
+  than a video frame, when there is one).
+- `photos`: keyed by the file's path **relative to your photos folder**,
+  with forward slashes, even on Windows (`sub/IMG_0499.jpg`). Each entry
+  can have:
+  - `caption`: shown under the photo in the slideshow and used as the
+    image's alt text.
+  - `favorite`: `true` marks it with a ★ and includes it in the
+    Favorites filter.
+  - `hidden`: `true` keeps it away from visitors. See "Hidden photos".
+- Only values that differ from the defaults are stored, so an entry
+  disappears again when you clear its caption and un-favorite it.
+- Moving or renaming a file detaches its caption and flags, because the
+  path is the key. The entry is kept in the file, and the script prints
+  a note at startup saying how many entries match no file.
+
+You can edit all of this by hand, or (live server only) in the page; see
+section 4.
 
 To see your changes:
 
@@ -147,25 +218,84 @@ To see your changes:
 
 Your text is safe:
 
-- **Entries are only ever added.** Later runs add blank entries for new
-  days and never change text you've written. When entries are added,
-  the file is saved with standard 2-space indentation, and a missing
-  `title` or `subtitle` is filled in with the default.
+- **Nothing is deleted behind your back.** Later runs only add blank
+  entries for new days and never change text you've written. When
+  entries are added, a missing `title` or `subtitle` is filled in with
+  the default.
+- **Edits made in the page are careful.** The server re-reads the file
+  from disk right before saving, changes only the one thing you edited,
+  and replaces the file in one step, so a crash can't leave half a file.
+  Keys it doesn't recognise are kept. The file is saved with standard
+  2-space indentation, so hand-made formatting is tidied up.
 - **A broken file is never rewritten.** If the file has a mistake (a
   trailing comma is the classic), the script stops and tells you what's
-  wrong, including the line and column for syntax errors. A running server prints a warning and
-  keeps showing the last version that loaded fine until you save a fixed
-  one.
-- **Titles and descriptions are plain text.** Anything that looks like
-  HTML is shown as-is rather than interpreted.
+  wrong, including the line and column for syntax errors. A running
+  server prints a warning and keeps showing the last version that loaded
+  fine until you save a fixed one. While the file is broken, in-page
+  edits are refused with a message ("Nothing was saved"), instead of
+  overwriting your half-finished hand edit.
+- **Titles, descriptions and captions are plain text.** Anything that
+  looks like HTML is shown as-is rather than interpreted.
+
+## 4. Editing in the page (live server)
+
+When you open the live server on the computer that's running it, the day
+pages get editing controls. Changes are saved to `trip_content.json` the
+moment you make them, and the page updates without reloading.
+
+**In the slideshow** (open any photo), a bar under the picture has:
+
+- **Favorite** (or press `S`): marks the photo with a ★.
+- A **caption** box: type, then press Enter or click away to save.
+- **Set as cover**: makes this photo the day's cover on the homepage.
+- **Hide** / **Unhide**: see below.
+
+**On the day page**, **Edit title & description** opens a small form.
+Saving reloads the page with your text in place. **Preview as visitor**
+reloads the page exactly as someone else would see it, with no editing
+controls and hidden photos gone. (It applies to that one page; navigating
+elsewhere puts you back in the editor.)
+
+Who can edit:
+
+- Only the computer running the server, and that holds whether or not
+  `--lan` is on. With `--lan`, you can still edit from the host computer
+  while other devices on your network can look but never change
+  anything. Using the machine's own network address from the machine
+  itself still counts as local.
+- `--read-only` turns editing off for everyone, including you.
+- Edit requests are only accepted from pages the server itself serves, so
+  a web page you visit can't send edits to it.
+
+### Favorites
+
+Once any photo is a favorite, a **★ Favorites (n)** button appears above
+the thumbnail grid. It shows only the favorites, and while it's on the
+slideshow's arrows and swipes step through favorites only. Favorites
+work on the static site too, since they're read from the file.
+
+### Hidden photos
+
+Hiding is for the receipts, screenshots and blurry shots you don't want
+anyone else to see. It's not the same as deleting: your files are never
+touched.
+
+- **Live server:** visitors don't see a hidden photo anywhere, and its
+  address returns 404 even if they guess it. You still see it, dimmed
+  and labelled HIDDEN, so you can unhide it. A day whose photos are all
+  hidden disappears for visitors, and the "Day 1, Day 2..." numbering
+  skips it.
+- **Static site:** hidden photos are **left out of the build entirely**,
+  not just not shown, so their files never end up in a folder you might
+  publish. A Live Photo's motion clip goes with its photo.
 
 ## What you get
 
 - **Homepage:** the trip title, stats (days / photos / videos / km
   tracked, where km is the straight-line distance between each day's
-  consecutive geotagged photos, Unsorted included), an overview map with every geotagged photo as a point
-  coloured by day, and a card per day. Click a point or a card to jump to
-  that day.
+  consecutive geotagged photos, Unsorted included), an overview map with
+  every geotagged photo as a point coloured by day, and a card per day.
+  Click a point or a card to jump to that day.
 - **Day pages:** the description, a map of that day's photo and video
   locations, a thumbnail grid, and previous/next day links.
   - The map shows points only, with no connecting line. Photos aren't
@@ -175,12 +305,17 @@ Your text is safe:
     opens it in the slideshow.
   - `←` / `→` (or a swipe on a touchscreen) go to the previous or next
     day.
+  - Favorites show a ★ in the grid, and captions are used as alt text.
+  - Thumbnails can be reached with Tab, and Enter or Space opens one.
 - **Slideshow:** click any thumbnail to open a full-screen viewer.
   - `←` / `→`: previous / next photo. Clicking the left or right edge of
     the screen, or swiping, also works.
+  - **Autoplay** (`Space` or the Play button): see below.
   - Scroll or pinch to zoom, drag to pan once zoomed, double-click to
     toggle zoom. `+` / `-` / `0` work from the keyboard. The edge-click
     zones step aside while zoomed, so they don't fight with panning.
+  - The caption, if there is one, appears at the bottom of the viewer
+    along with the time the photo was taken and its position in the day.
   - `I`: toggle a details panel with camera, lens, aperture, shutter
     speed, ISO, focal length, resolution, file size, and a small map of
     where the file was captured. Videos show duration, codec and frame
@@ -200,12 +335,69 @@ Your text is safe:
 - **Thumbnail size:** each day page has a Small / Medium / Large toggle.
   Your choice is remembered by the browser and carries over between days.
 
+### Keyboard shortcuts
+
+| Key | Where | Does |
+|---|---|---|
+| `←` `→` | day page | previous / next day |
+| `←` `→` | slideshow | previous / next photo |
+| `Space` | slideshow | play / pause autoplay |
+| `+` `-` `0` | slideshow | zoom in / out / reset |
+| `I` | slideshow | details panel |
+| `F` | slideshow | true full-screen |
+| `L` | slideshow | play a Live Photo's clip |
+| `S` | slideshow, editing | favorite / unfavorite |
+| `Esc` | slideshow | close details, then close the viewer |
+
+Shortcuts are switched off while you're typing in a caption or title box.
+
+### Autoplay
+
+Press **Play** (or `Space`) in the slideshow to have it advance by
+itself. It never starts on its own, and closing the viewer stops it.
+
+- A thin progress bar across the top shows the time left on the current
+  photo. The speed button, which appears while playing, cycles through
+  3, 5, 8 and 12 seconds; the choice is remembered by the browser.
+- A video plays to the end before moving on.
+- It loops back to the first photo after the last. With the Favorites
+  filter on, it plays favorites only.
+- Using the arrows or swiping keeps it playing and restarts the timer.
+- It waits while the details panel is open, while you're zoomed in, while
+  you're typing a caption, while a Live Photo clip plays, and while the
+  tab is in the background, then continues with a fresh interval.
+- In full-screen the buttons are hidden, so use `Space`.
+
+### Links to a photo, and the Back button
+
+Opening a photo adds `#p=...` to the address, and the address follows
+you as you move between photos. That gives you:
+
+- **Back closes the viewer** instead of leaving the page (and the
+  back button on a phone does the same). Forward reopens it.
+- **Links to a single photo.** Copy the address while a photo is open
+  and anyone opening it lands straight on that photo. Closing it leaves
+  them on the day page.
+
+Things to know:
+
+- On the static site the link names the photo's file in `media/`, so
+  renaming or re-importing files breaks old links. On the live server it
+  uses a number that can shift when files are added, so treat those links
+  as being for yourself.
+- A link to a photo that no longer exists is ignored.
+- Links behave best when the site is served over http(s). When a page is
+  opened straight from a folder (`file://`), some browsers don't allow
+  the address to change; the viewer still works, it just doesn't update
+  the address.
+
 ## How your photos are handled
 
 **Your originals are never modified.** Neither script ever changes,
 moves or renames your photos and videos. The only file either script
 may create in your photos folder is `trip_content.json`, and only if you
-run the script from inside that folder.
+run the script from inside that folder. The live server later updates it
+when you save an edit in the page.
 
 **Full-screen viewing uses the real files.** For jpg, png, webp and bmp,
 the slideshow shows your actual file, with no resizing or recompression.
@@ -218,6 +410,13 @@ Videos work the same way. This is meant for viewing on your own computer
 or over a home network. On the open internet, visitors on slow
 connections would be downloading 20 MB photos just to see them shrunk on
 a phone.
+
+**The copies keep their metadata.** Because the static site's copies are
+byte for byte, they still contain everything embedded in the originals,
+including GPS coordinates, and the details panel shows the location and
+the original filename. That's fine for family and friends, but think
+before putting the folder on a public website. Photos you've hidden are
+not copied at all.
 
 **HEIC/HEIF, TIFF and multi-image JPEGs are converted for display.**
 Chrome, Firefox and Edge can't show HEIC/HEIF or TIFF at all, and some
@@ -280,7 +479,12 @@ so none of this applies there. The exceptions:
   - **Photos:** jpg, png, heic/heif, tiff, bmp, webp. HEIC needs
     `pillow-heif`, which is in `requirements.txt`; without it, HEIC files
     are skipped with a note.
-  - **Videos:** mp4, mov, m4v, avi, mkv, 3gp.
+  - **Videos:** mp4, mov, m4v, avi, mkv, 3gp. Whether a video *plays*
+    inline depends on the browser supporting its container and codec.
+    For example, HEVC files only play where the system has an HEVC
+    decoder, and AVI generally doesn't play at all. Such a video still
+    gets a preview tile, and "Download original file" still works. The
+    files are never converted.
 - **Skipped files.** These are ignored during the scan:
   - hidden files and folders (names starting with `.`, such as macOS's
     `._IMG_1234.JPG` companion files)
@@ -306,6 +510,33 @@ so none of this applies there. The exceptions:
   - These files go on a single "Unsorted" page at the end instead. It has
     the same grid and map, and it doesn't count toward the "days" total.
   - Both scripts tell you how many files this happened for.
+  - Days run from midnight to midnight, so a photo taken at 1 a.m. belongs
+    to the new day.
+- **Dates that look wrong.** Some files do have a capture date, but it's
+  plainly bad: a camera whose clock was never set (it counts up from
+  2000-01-01), an editor that stamped a placeholder date, or a clock set
+  into the future. Left alone, each would create a "day" far from the
+  real trip. So by default a date is treated as wrong, and the file goes
+  to "Unsorted" like a file with no date, when it is:
+  - before 1995,
+  - in the future, or
+  - more than a year away from the rest of your files. This last check
+    only applies when there are at least 5 files and at least 80% of
+    them agree with each other, so a small folder, or a folder that
+    genuinely spans several years, is left alone.
+
+  Both scripts list the affected files and the reason when they start,
+  and each one's details panel has a "Date" row saying which embedded
+  date was ignored. If the dates are in fact right, say so:
+
+  ```bash
+  python generate_site.py -i photos --date-range 2024-08-01 2026-05-10
+  ```
+
+  `--date-range` replaces the guessing with your dates (both ends
+  included); `--no-date-check` switches the check off. The check can't
+  spot a wrong date that still looks plausible, such as a clock that's
+  off by a few hours or a month.
 - **Video timestamps.**
   - iPhone videos also record the local time where they were shot, and
     that's used as-is, just like a photo's EXIF time. No timezone
@@ -338,12 +569,18 @@ so none of this applies there. The exceptions:
     files are reused, so regenerating a big trip is fast.
   - Changing `--thumb-size` rebuilds all thumbnails automatically.
   - Outputs of photos you removed, and pages for days that no longer
-    have any photos, are deleted. Only files the build record lists are
-    ever deleted, and only inside the output folder.
+    have any photos, are deleted. The same goes for photos you've newly
+    hidden. Only files the build record lists are ever deleted, and only
+    inside the output folder.
+  - Captions, favorites and covers don't touch the photo files, so
+    re-running after changing only those is quick.
   - The scan still reads every file's metadata on each run, which takes
     a moment on large trips.
   - Deleting the build record is safe: the next run just regenerates
     thumbnails and converted images, and re-checks the copies.
+- **Editing is for the live server.** The static site only displays what
+  `trip_content.json` says. Edits you make in the live server don't
+  appear in a static site until you re-run `generate_site.py`.
 - **Live server: new photos need a restart.** The folder is scanned once
   at startup. Your `trip_content.json` is untouched by a restart; new
   days just get a blank entry added.
@@ -362,19 +599,32 @@ so none of this applies there. The exceptions:
   leftovers from photos removed before upgrading. For a clean result,
   delete the output folder and regenerate.
 
-## Running the tests
+## Troubleshooting
 
-The `tests/` folder has a test suite covering both scripts. It builds
-small photos and videos on the fly, runs the generator, and starts the
-server on a free port. It needs nothing beyond `requirements.txt`. From
-the project folder:
-
-```bash
-python -m unittest discover -s tests -t .
-```
-
-Video tests are skipped automatically if ffmpeg isn't installed. pytest
-runs the same tests too, if you prefer it (`pytest tests`).
+- **Photos ended up on "Unsorted".** They have no capture date, or one
+  that looked wrong. Open a photo's details panel: a "Date" row says
+  which embedded date was ignored and why. If the dates are right, pass
+  `--date-range START END`. If a video has no date, check that ffmpeg is
+  installed.
+- **I can't see the editing buttons.** They only appear when you open the
+  server from the computer running it, and not with `--read-only`. If
+  you're looking at a page that has "Preview as visitor" applied, open
+  the day again from the homepage.
+- **"Nothing was saved" when editing.** `trip_content.json` currently
+  has a syntax error. Fix it (the message says where), and edits work
+  again. Nothing you typed in the file was touched.
+- **A caption or favorite disappeared after I reorganised my folders.**
+  They're attached to the file's path. The entry is still in
+  `trip_content.json`; change its key to the new path.
+- **A photo I hid is still on my published site.** Re-run
+  `generate_site.py`; it removes the photo's files from the output folder.
+  Then upload again, using a method that also deletes files that no
+  longer exist locally (a plain copy leaves the old ones on the server).
+- **The map is blank or grey.** Maps load from the internet; check your
+  connection.
+- **A video shows a preview but won't play.** The browser can't decode
+  that format. Use "Download original file" from the details panel, or
+  play it with a desktop player.
 
 ## Customizing the look
 
@@ -388,3 +638,6 @@ server alike:
   overview map.
 - **The templates.** The page layout is plain Jinja2 templates
   (`INDEX_TEMPLATE`, `DAY_TEMPLATE`) in the same file.
+- **The `JS` string.** The slideshow, maps, autoplay and editing code.
+  Like `CSS`, it's a raw string, so backslashes in it are passed to the
+  browser unchanged.
