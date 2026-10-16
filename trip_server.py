@@ -57,6 +57,7 @@ try:
         collect_candidates, dedupe_candidates, default_content, group_by_day, pair_live_photos,
         parse_content_file, placeholder_thumbnail, positive_thumb_size, read_image_metadata,
         read_video_metadata,
+        add_date_check_args, apply_date_check, resolve_date_range,
     )
 except ModuleNotFoundError as e:
     if e.name != "trip_common":
@@ -856,6 +857,7 @@ def main():
     parser.add_argument("--no-live-photos", action="store_true",
                          help="Show iPhone Live Photo clips as separate videos instead of "
                               "attaching them to their photos.")
+    add_date_check_args(parser)
     parser.add_argument("--read-only", action="store_true",
                          help="Turn off in-page editing (captions, favorites, hiding, covers, day text). "
                               "Without this flag, editing works from the computer running the server only.")
@@ -865,6 +867,7 @@ def main():
                               "own name (also with .local) always work. Repeatable.")
     args = parser.parse_args()
     ARGS = args
+    date_range = resolve_date_range(args, parser)
 
     if not args.input.is_dir():
         print(f"Input folder not found: {args.input}", file=sys.stderr)
@@ -895,10 +898,12 @@ def main():
         print("No supported photos or videos found.", file=sys.stderr)
         sys.exit(1)
 
+    if not args.no_date_check:
+        apply_date_check(items, date_range)
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
     print(f"\nFound {len(items)} media files "
-          f"({fallback_count} without EXIF date, using file date instead; "
+          f"({fallback_count} without a usable capture date, filed under Unsorted; "
           f"{gps_count} with GPS location).")
 
     days = group_by_day(items)
