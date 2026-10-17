@@ -20,6 +20,10 @@ python trip_server.py -i /path/to/your/photos
 
 # Or build a standalone folder you can copy anywhere:
 python generate_site.py -i /path/to/your/photos -o site
+
+# Optional, once, while online: so the pages work without internet
+# (see "Working without internet"):
+python trip_server.py --fetch-offline-assets
 ```
 
 You also need ffmpeg (see "Install"). Everything below explains the
@@ -33,7 +37,8 @@ in the page:
 |---|---|---|
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
-| Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` |
+| Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` (and the map tiles, if you turn on the tile cache) |
+| Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site | The same, and map tiles you have already viewed can be kept in a local cache |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
 | Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server), or edit the file and refresh |
 | Cost | A build step | A little CPU on first view of each day |
@@ -53,7 +58,9 @@ pip install -r requirements.txt
 
 Keep the three Python files together in one folder: `generate_site.py`,
 `trip_server.py`, and `trip_common.py`. The last one holds the code both
-scripts share, and neither runs without it.
+scripts share, and neither runs without it. Optionally, a `vendor` folder
+next to them holds local copies of the map library and fonts; see
+"Working without internet".
 
 You also need **ffmpeg** installed and on your PATH. It's used to read
 video metadata and grab a thumbnail frame from each video:
@@ -104,9 +111,16 @@ Options:
   See "Duplicates" below.
 - `--no-live-photos`: show iPhone Live Photo clips as separate videos
   instead of attaching them to their photos. See "Live Photos" below.
+- `--fetch-offline-assets`: download the map library and fonts into a
+  `vendor` folder (needs internet, once), then exit. See "Working
+  without internet".
 
 Photos you've marked **hidden** in `trip_content.json` are left out of
 the build entirely, including their files. See "Hidden photos" below.
+
+If a `vendor` folder is present, it is copied into the site
+(`assets/vendor`), so the site doesn't need the internet for its map
+library and fonts.
 
 ## 2b. Serve it live: `trip_server.py`
 
@@ -139,10 +153,18 @@ Options:
   through its own domain name. You only need this if you reach the
   computer through a custom local DNS name.
 - `--thumb-size`, `--tz-offset`, `--date-range`, `--no-date-check`,
-  `--no-dedupe`, `--no-live-photos`: same as for `generate_site.py`.
+  `--no-dedupe`, `--no-live-photos`, `--fetch-offline-assets`: same as
+  for `generate_site.py`.
+- `--tile-cache DIR`: keep the map tiles you look at in this folder and
+  serve them from there, so maps you've already viewed still work
+  without internet. See "Working without internet".
+- `--tile-url TEMPLATE`: where map tiles come from, with `{z}`, `{x}` and
+  `{y}` in it (default: OpenStreetMap). For a tile provider you have an
+  account with.
 
-Apart from `trip_content.json`, the server writes nothing to disk, and
-it writes to that file only when you save an edit in the page.
+Apart from `trip_content.json` (and the tile folder, if you use
+`--tile-cache`), the server writes nothing to disk, and it writes to the
+JSON file only when you save an edit in the page.
 Thumbnails and converted images are built in memory and kept in a small
 in-memory cache, so revisiting a day is fast. The cache is gone when the
 server stops.
@@ -288,6 +310,101 @@ touched.
 - **Static site:** hidden photos are **left out of the build entirely**,
   not just not shown, so their files never end up in a folder you might
   publish. A Live Photo's motion clip goes with its photo.
+
+## 5. Working without internet
+
+Out of the box, three things come from the internet: the map library
+(Leaflet), the fonts, and the map tiles (the background pictures). Your
+photos, thumbnails, videos, slideshow and editing never need it. Without
+a connection the pages still work, but the maps are blank and the fonts
+fall back to your system's. Three optional steps fix that, and each one
+helps on its own.
+
+### Step 1: keep the map library and fonts locally
+
+Run this once, while you're online:
+
+```bash
+python trip_server.py --fetch-offline-assets
+```
+
+(`generate_site.py --fetch-offline-assets` does the same thing.) It saves
+Leaflet and the three fonts, about 0.5 MB in 28 files, into a `vendor`
+folder next to the scripts, and from then on both scripts use those local
+copies automatically. Details:
+
+- The files come from the npm registry, in exact pinned versions, and
+  each download is checked against its published SHA-512 checksum. One
+  that doesn't match is refused.
+- If anything fails (no connection, a bad checksum, a full disk), it says
+  so and your existing `vendor` folder is left as it was. A half-finished
+  download is never used.
+- The live server picks the folder up when it starts; it prints whether
+  it found it. The static build copies it into the site
+  (`assets/vendor`), so the site keeps working when moved to another
+  computer or a USB drive.
+- Licenses: Leaflet is BSD-2-Clause and the fonts (Fraunces, IBM Plex
+  Sans, IBM Plex Mono) are under the SIL Open Font License. The licenses
+  are saved in `vendor/licenses`, and the static build copies them along.
+- To go back to loading everything from the internet, delete the
+  `vendor` folder. To refresh the files, run the command again.
+
+### Step 2: keep the map tiles you've looked at (live server)
+
+```bash
+python trip_server.py -i /path/to/your/photos --tile-cache tile_cache
+```
+
+With this, the pages ask the server for their tiles. The server downloads
+a tile the first time it's needed, saves it in the folder, and serves it
+from there from then on. Browse your trip's maps once while online, and
+those areas keep working with no connection. How it behaves:
+
+- Tiles are only fetched as you look at the map, never in bulk, and at
+  most two at a time. Someone who browses fast gets each tile downloaded
+  once, however many requests arrive.
+- A cached tile older than a week is refreshed when the provider is
+  reachable. When it isn't, the old copy is used rather than nothing.
+- When there's no connection, a tile that was never cached answers
+  immediately instead of making every tile wait for a timeout. If the
+  provider refuses the server (HTTP 403, 429 or 503), it stops asking for
+  five minutes.
+- Only real images are saved; a hotel Wi-Fi login page that answers in
+  place of a tile is not.
+- The folder grows only with what you look at (tiles are typically a few
+  to a few tens of KB each) and is safe to delete at any time.
+- `--tile-url` points it at another provider, for example
+  `--tile-url "https://tiles.example.com/{z}/{x}/{y}.png"`. With
+  `--tile-url` but no `--tile-cache`, the pages use that provider
+  directly.
+- The server introduces itself to the provider as "TripSite". OpenStreetMap's
+  free tile server is meant for light, personal use like this; for
+  anything heavier, use a provider you have an account with. The credit
+  shown on the maps says "OpenStreetMap contributors"; if you switch
+  provider, check what credit it asks for.
+- A static site can't cache tiles, since there's no server. It shows
+  tiles while online and the outline below while offline.
+
+### Step 3: a fallback outline (automatic)
+
+Wherever no tile can be loaded (no internet, or an area you never
+cached), the maps now show a rough outline of the continents instead of
+a blank box, with your photo points on top, and a small notice: "Map
+tiles unavailable (offline?)". It's country-level only, with no roads or
+place names, but it keeps the points in context. It needs no setup apart
+from step 1, because it's drawn by the map library. A few missing tiles
+among loaded ones don't trigger the notice.
+
+### What each step gets you
+
+| Setup | Offline result |
+|---|---|
+| Nothing | Photos, slideshow and editing work. The maps are blank and the fonts are your system's. |
+| Step 1 | Maps show the outline and your points, with the right fonts. |
+| Steps 1 and 2 | Areas you've viewed before show the full map; everywhere else shows the outline. |
+
+To try it, open the site in Chrome, press F12, choose the Network tab and
+set it to "Offline", then reload. Turning Wi-Fi off works too.
 
 ## What you get
 
@@ -555,8 +672,10 @@ so none of this applies there. The exceptions:
   on the map.
 - **Maps** use Leaflet with free OpenStreetMap tiles: no API key, no
   account. The dark look is a CSS filter over the standard tiles.
-  - The maps and fonts load from the internet, so they need a connection.
-    Everything else works offline.
+  - By default the map library, fonts and tiles load from the internet,
+    so they need a connection; everything else works offline. See
+    "Working without internet" to keep the first two locally and to
+    cache tiles.
   - For a heavily visited public site, OpenStreetMap's tile usage policy
     asks you to use a dedicated provider (e.g. MapTiler, Stadia Maps,
     Mapbox). For a personal site shared with family and friends, the
@@ -620,8 +739,20 @@ so none of this applies there. The exceptions:
   `generate_site.py`; it removes the photo's files from the output folder.
   Then upload again, using a method that also deletes files that no
   longer exist locally (a plain copy leaves the old ones on the server).
-- **The map is blank or grey.** Maps load from the internet; check your
-  connection.
+- **The map is blank or grey.** By default the map library and tiles
+  load from the internet, so check your connection. To be independent of
+  it, see "Working without internet". With the local `vendor` folder in
+  place you'll see a rough outline and a "tiles unavailable" notice
+  instead of a blank box.
+- **`--fetch-offline-assets` says it couldn't download.** It needs a
+  connection to the npm registry (registry.npmjs.org); check your
+  internet, proxy or firewall and run it again. Nothing was changed.
+- **The fonts look different without internet.** The fonts load from the
+  internet unless the `vendor` folder is present; run
+  `--fetch-offline-assets` once. Until then the browser uses a fallback.
+- **I use `--tile-cache` but tiles don't appear.** The server has to be
+  able to reach the tile provider the first time it needs a tile. Watch
+  the terminal for a message, and make sure the cache folder is writable.
 - **A video shows a preview but won't play.** The browser can't decode
   that format. Use "Download original file" from the details panel, or
   play it with a desktop player.
@@ -638,6 +769,10 @@ server alike:
   overview map.
 - **The templates.** The page layout is plain Jinja2 templates
   (`INDEX_TEMPLATE`, `DAY_TEMPLATE`) in the same file.
+- **The continent outline.** The offline fallback map is generated data
+  (Natural Earth, public domain) at the very end of `trip_common.py`; the
+  colours it's drawn in are in the `addBaseMap` function in the `JS`
+  string.
 - **The `JS` string.** The slideshow, maps, autoplay and editing code.
   Like `CSS`, it's a raw string, so backslashes in it are passed to the
   browser unchanged.
