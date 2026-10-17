@@ -42,6 +42,7 @@ try:
         BROWSER_NATIVE_IMAGE_EXTS, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SITE_MARKER, VIDEO_EXTS,
         assign_rel_paths, hidden_rels, report_unknown_photo_keys,
         add_date_check_args, apply_date_check, resolve_date_range,
+        VENDOR_DIR, add_offline_args, fetch_offline_assets, vendor_ready,
         HEIF_SUPPORT, ContentFileError, MediaItem, SiteUrls, atomic_write_text, build_day_context,
         build_index_context, build_media_item, check_ffmpeg, collect_candidates, dedupe_candidates,
         default_content, group_by_day, pair_live_photos, parse_content_file, placeholder_thumbnail,
@@ -484,6 +485,12 @@ class StaticUrls(SiteUrls):
     characters ('#', '%', spaces, ...)."""
     footer = "Generated with generate_site.py"
     edit_hint = " and re-run the generator."
+    has_vendor = False   # local copies of Leaflet and the fonts are bundled in assets/vendor
+
+    def vendor_url(self, from_index):
+        if not self.has_vendor:
+            return None
+        return ("" if from_index else "../") + "assets/vendor/"
 
     def home(self, from_index):
         return "index.html" if from_index else "../index.html"
@@ -512,6 +519,7 @@ class StaticUrls(SiteUrls):
 def render_site(days: list, content: dict, output_dir: Path) -> list:
     """Write all pages. Returns the day pages written (relative paths)."""
     urls = StaticUrls()
+    urls.has_vendor = vendor_ready()
     (output_dir / "days").mkdir(parents=True, exist_ok=True)
     (output_dir / "index.html").write_text(
         INDEX_TEMPLATE.render(**build_index_context(days, content, urls)), encoding="utf-8")
@@ -526,6 +534,9 @@ def render_site(days: list, content: dict, output_dir: Path) -> list:
     assets_dir.mkdir(exist_ok=True)
     (assets_dir / "style.css").write_text(CSS, encoding="utf-8")
     (assets_dir / "script.js").write_text(JS, encoding="utf-8")
+    if urls.has_vendor:
+        # the map library and fonts travel with the site, so it needs no internet for them
+        shutil.copytree(VENDOR_DIR, assets_dir / "vendor", dirs_exist_ok=True)
     return pages
 
 
@@ -535,7 +546,7 @@ def render_site(days: list, content: dict, output_dir: Path) -> list:
 
 def main():
     parser = argparse.ArgumentParser(description="Build a static trip website from a photo/video folder.")
-    parser.add_argument("-i", "--input", required=True, type=Path, help="Folder containing your photos/videos")
+    parser.add_argument("-i", "--input", type=Path, help="Folder containing your photos/videos (required)")
     parser.add_argument("-o", "--output", default=Path("site"), type=Path, help="Output folder for the generated site")
     parser.add_argument("-c", "--content", default=Path("trip_content.json"), type=Path,
                          help="JSON file holding the trip title and per-day descriptions (default: ./trip_content.json)")
@@ -562,7 +573,12 @@ def main():
                          help="Show iPhone Live Photo clips as separate videos instead of "
                               "attaching them to their photos.")
     add_date_check_args(parser)
+    add_offline_args(parser)
     args = parser.parse_args()
+    if args.fetch_offline_assets:
+        sys.exit(fetch_offline_assets())
+    if args.input is None:
+        parser.error("-i/--input is required")
     date_range = resolve_date_range(args, parser)
 
     if not args.input.is_dir():
@@ -632,6 +648,12 @@ def main():
     save_manifest(args.output, args.thumb_size, records, pages)
     print(f"\nSite generated at: {args.output.resolve()}")
     print(f"Open {args.output.resolve() / 'index.html'} in a browser to view it.")
+    if vendor_ready():
+        print("The map library and fonts are bundled in the site (assets/vendor), so it works without internet; "
+              "only the map tiles need a connection.")
+    else:
+        print("Tip: the site loads its map library and fonts from the internet. To bundle them so it works "
+              "offline, run once:  python generate_site.py --fetch-offline-assets  and build again.")
 
 
 if __name__ == "__main__":

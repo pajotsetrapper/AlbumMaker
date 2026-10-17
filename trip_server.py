@@ -38,7 +38,10 @@ import socket
 import subprocess
 import sys
 import threading
+import time
 import traceback
+import urllib.error
+import urllib.request
 from collections import OrderedDict
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -58,6 +61,8 @@ try:
         parse_content_file, placeholder_thumbnail, positive_thumb_size, read_image_metadata,
         read_video_metadata,
         add_date_check_args, apply_date_check, resolve_date_range,
+        DEFAULT_TILE_URL, VENDOR_DIR, add_offline_args, atomic_write_bytes, fetch_offline_assets,
+        vendor_ready,
     )
 except ModuleNotFoundError as e:
     if e.name != "trip_common":
@@ -333,20 +338,116 @@ class ContentStore:
 # --------------------------------------------------------------------------
 
 
+# --------------------------------------------------------------------------
+# Map tiles and local Leaflet/fonts (see "Working without internet" in
+# trip_common.py)
+# --------------------------------------------------------------------------
+
+VENDOR_READY = False                    # local Leaflet + fonts present in ./vendor?
+TILE_CACHE: Optional[Path] = None       # --tile-cache: where tiles are kept
+TILE_UPSTREAM = DEFAULT_TILE_URL        # where a missing tile is downloaded from
+TILE_CLIENT_URL = DEFAULT_TILE_URL      # what the pages' maps ask for
+TILE_MAX_AGE = 7 * 24 * 3600            # older cached tiles are refreshed when possible
+TILE_UA = "TripSite/1.0 (personal photo trip viewer with a local tile cache)"
+TILE_ROUTE = re.compile(r"^/tiles/(\d{1,2})/(\d{1,8})/(\d{1,8})\.png$")
+
+_tile_gate = threading.Semaphore(2)     # at most 2 downloads at once, as OSM asks
+_tile_locks: dict = {}                  # one lock per tile, so it is only downloaded once
+_tile_locks_guard = threading.Lock()
+_tiles_blocked_until = 0.0              # after a failure, don't make every tile wait for a timeout
+
+
+def sniff_image(data: bytes) -> Optional[str]:
+    if data[:8] == b"\x89PNG\r\n\x1a\n":
+        return "image/png"
+    if data[:3] == b"\xff\xd8\xff":
+        return "image/jpeg"
+    if data[:4] == b"RIFF" and data[8:12] == b"WEBP":
+        return "image/webp"
+    return None
+
+
+def tile_cache_path(z: int, x: int, y: int) -> Path:
+    return TILE_CACHE / str(z) / str(x) / f"{y}.png"
+
+
+def download_tile(z: int, x: int, y: int) -> Optional[bytes]:
+    """One tile from the upstream provider, or None. When the network is
+    unreachable (or the provider turns us away) it stops trying for a while,
+    so a page full of tiles doesn't wait for a timeout per tile."""
+    global _tiles_blocked_until
+    if time.monotonic() < _tiles_blocked_until:
+        return None
+    url = (TILE_UPSTREAM.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y)))
+    request = urllib.request.Request(url, headers={"User-Agent": TILE_UA})
+    with _tile_gate:
+        if time.monotonic() < _tiles_blocked_until:   # someone else just found out
+            return None
+        try:
+            with urllib.request.urlopen(request, timeout=6) as resp:
+                data = resp.read(1_000_001)
+        except urllib.error.HTTPError as e:
+            if e.code in (403, 429, 503):             # being refused: back off, don't hammer
+                _tiles_blocked_until = time.monotonic() + 300
+            return None
+        except (urllib.error.URLError, OSError, TimeoutError):
+            _tiles_blocked_until = time.monotonic() + 30
+            return None
+    if len(data) > 1_000_000 or sniff_image(data) is None:
+        return None
+    return data
+
+
+def get_tile(z: int, x: int, y: int) -> Optional[Path]:
+    """The tile's file in the cache. A missing or old tile is downloaded
+    first; if that fails, an old cached copy is still used."""
+    path = tile_cache_path(z, x, y)
+    key = (z, x, y)
+    with _tile_locks_guard:
+        lock = _tile_locks.setdefault(key, threading.Lock())
+    try:
+        with lock:
+            try:
+                age = time.time() - path.stat().st_mtime
+            except OSError:
+                age = None
+            if age is not None and age < TILE_MAX_AGE:
+                return path
+            data = download_tile(z, x, y)
+            if data is not None:
+                try:
+                    atomic_write_bytes(path, data)
+                    return path
+                except OSError as e:
+                    print(f"Could not save a map tile in {TILE_CACHE}: {e}", file=sys.stderr)
+            return path if age is not None else None
+    finally:
+        with _tile_locks_guard:
+            _tile_locks.pop(key, None)
+
+
+VENDOR_MIME = {".js": "application/javascript", ".css": "text/css", ".woff2": "font/woff2",
+               ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
+
+
 class LiveUrls(SiteUrls):
     """The server's own routes. Media URLs carry a ?v= version token (see
     file_version). One instance per page render, so each file is only
     stat()ed once per page."""
-    footer = Markup("Served live by trip_server.py &middot; nothing written to disk")
+    footer = Markup("Served live by trip_server.py")
     edit_hint = ", then refresh this page."
 
     def __init__(self):
         self._versions = {}
+        self.tile_url = TILE_CLIENT_URL
 
     def _v(self, item: MediaItem) -> str:
         if item.id not in self._versions:
             self._versions[item.id] = item_version(item)
         return self._versions[item.id]
+
+    def vendor_url(self, from_index):
+        return "/vendor/" if VENDOR_READY else None
 
     def home(self, from_index):
         return "/"
@@ -469,6 +570,41 @@ class RequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             pass
         return name in ALLOWED_HOSTNAMES
+
+    def _serve_tile(self, raw_path: str):
+        m = TILE_ROUTE.match(raw_path)
+        if TILE_CACHE is None or not m:
+            self.send_error(404, "No such tile")
+            return
+        z, x, y = (int(g) for g in m.groups())
+        if z > 19 or x >= 2 ** z or y >= 2 ** z:
+            self.send_error(404, "No such tile")
+            return
+        path = get_tile(z, x, y)
+        if path is None:
+            self.send_error(404, "Tile not available")
+            return
+        try:
+            with open(path, "rb") as f:
+                mime = sniff_image(f.read(16)) or "image/png"
+        except OSError:
+            self.send_error(404, "Tile not available")
+            return
+        self._send_file(path, mime, cache_control="public, max-age=86400")
+
+    def _serve_vendor(self, raw_path: str):
+        rel = raw_path[len("/vendor/"):]
+        parts = rel.split("/")
+        if not VENDOR_READY or not rel or any(p in ("", ".", "..") or "\\" in p for p in parts):
+            self.send_error(404, "Not found")
+            return
+        root = VENDOR_DIR.resolve()
+        target = (VENDOR_DIR / rel).resolve()
+        mime = VENDOR_MIME.get(target.suffix.lower())
+        if root not in target.parents or not target.is_file() or mime is None:
+            self.send_error(404, "Not found")
+            return
+        self._send_file(target, mime, cache_control="public, max-age=86400")
 
     def _can_edit(self) -> bool:
         """Editing is for whoever is sitting at the computer running the
@@ -761,6 +897,10 @@ class RequestHandler(BaseHTTPRequestHandler):
                     else:
                         self._send_file(clip.path, guess_mime(clip.path),
                                         cache_control=self._cache_control(file_version(clip.path)))
+            elif raw_path.startswith("/tiles/"):
+                self._serve_tile(raw_path)
+            elif raw_path.startswith("/vendor/"):
+                self._serve_vendor(raw_path)
             elif raw_path == "/assets/style.css":
                 self._send_text(CSS, "text/css")
             elif raw_path == "/assets/script.js":
@@ -832,6 +972,7 @@ def _lan_ip() -> Optional[str]:
 
 def main():
     global ARGS, ITEMS, DAYS, CONTENT, ALLOWED_HOSTNAMES, KNOWN_RELS, DAY_KEYS
+    global VENDOR_READY, TILE_CACHE, TILE_UPSTREAM, TILE_CLIENT_URL
 
     parser = argparse.ArgumentParser(
         description="Serve your trip photos/videos as a live website — nothing is written to disk."
@@ -858,6 +999,15 @@ def main():
                          help="Show iPhone Live Photo clips as separate videos instead of "
                               "attaching them to their photos.")
     add_date_check_args(parser)
+    add_offline_args(parser)
+    parser.add_argument("--tile-cache", type=Path, metavar="DIR",
+                        help="Keep the map tiles you look at in this folder and serve them from there, "
+                             "so maps you have already viewed still work without internet. A tile is "
+                             "downloaded the first time it is needed (never in bulk) and refreshed "
+                             "after a week when possible.")
+    parser.add_argument("--tile-url", metavar="TEMPLATE",
+                        help="Where map tiles come from, with {z}, {x} and {y} in it (default: "
+                             "OpenStreetMap). Use this for a tile provider you have an account with.")
     parser.add_argument("--read-only", action="store_true",
                          help="Turn off in-page editing (captions, favorites, hiding, covers, day text). "
                               "Without this flag, editing works from the computer running the server only.")
@@ -868,6 +1018,21 @@ def main():
     args = parser.parse_args()
     ARGS = args
     date_range = resolve_date_range(args, parser)
+    if args.fetch_offline_assets:
+        sys.exit(fetch_offline_assets())
+    if args.tile_url:
+        if not (args.tile_url.startswith(("http://", "https://")) and all(
+                part in args.tile_url for part in ("{z}", "{x}", "{y}"))):
+            parser.error("--tile-url must start with http:// or https:// and contain {z}, {x} and {y}")
+        TILE_UPSTREAM = TILE_CLIENT_URL = args.tile_url
+    if args.tile_cache:
+        try:
+            args.tile_cache.mkdir(parents=True, exist_ok=True)
+        except OSError as e:
+            parser.error(f"can't use --tile-cache {args.tile_cache}: {e}")
+        TILE_CACHE = args.tile_cache
+        TILE_CLIENT_URL = "/tiles/{z}/{x}/{y}.png"   # the pages ask this server, which keeps the tiles
+    VENDOR_READY = vendor_ready()
 
     if not args.input.is_dir():
         print(f"Input folder not found: {args.input}", file=sys.stderr)
@@ -935,6 +1100,15 @@ def main():
 
     print(f"\nNothing has been written to disk except {args.content} — this server generates "
           f"every page and image on the fly, in memory, per request.")
+    if VENDOR_READY:
+        print(f"Maps and fonts: using the local copies in {VENDOR_DIR} (no internet needed for them).")
+    else:
+        print("Maps and fonts load from the internet. To make them work offline, run once while "
+              "online:  python trip_server.py --fetch-offline-assets")
+    if TILE_CACHE is not None:
+        cached = sum(1 for _ in TILE_CACHE.rglob("*.png"))
+        print(f"Map tiles are cached in {TILE_CACHE} ({cached} so far); browse the maps while online "
+              f"and those areas keep working offline.")
     if not args.read_only:
         print(f"Editing is on for this computer: captions, favorites, hiding, cover photos and day "
               f"text are saved into {args.content}. Use --read-only to turn it off.")
