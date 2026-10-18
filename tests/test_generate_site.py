@@ -11,9 +11,9 @@ from pathlib import Path
 
 from PIL import Image
 
-from .helpers import (HAVE_FFMPEG, TempDirMixin, card_covers, install_app, make_fake_vendor, make_jpeg,
-                      make_video, needs_ffmpeg, read_json, run_script, slide_for, slides_of,
-                      standard_trip, tc, write_json)
+from .helpers import (HAVE_FFMPEG, TempDirMixin, card_covers, css_rule, day_nav_args, install_app, make_fake_vendor,
+                      make_jpeg, make_video, needs_ffmpeg, read_json, run_script, size_toggle, slide_for,
+                      slides_of, standard_trip, tc, write_json)
 
 
 def md5(path):
@@ -183,6 +183,50 @@ class StaticBuildTests(TempDirMixin, unittest.TestCase):
         self.assertRegex(index, rf'<div class="n">{expected}</div><div class="l">Photos</div>')
         self.assertRegex(index, r'<div class="n">2</div><div class="l">Days</div>')
         self.assertRegex(index, r'<div class="n">0</div><div class="l">Videos</div>')
+
+    # ---- size controls and Esc
+    def test_day_pages_and_the_homepage_each_have_a_four_step_size_control(self):
+        wanted = [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]
+        day, index = self.page("days/2026-05-01.html"), self.page("index.html")
+        self.assertEqual(size_toggle(day, "thumb-grid"), ("tripThumbSize", wanted))
+        self.assertEqual(size_toggle(index, "day-list"), ("tripCardSize", wanted))
+        self.assertIn('id="thumb-grid"', day)
+        self.assertIn('id="day-list"', index)
+        self.assertIsNone(size_toggle(day, "day-list"), "the day page must not carry the card control")
+        self.assertIsNone(size_toggle(index, "thumb-grid"), "the homepage must not carry the thumbnail control")
+
+    def test_every_size_has_a_layout_and_each_step_is_bigger_than_the_last(self):
+        css = self.page("assets/style.css")
+        import re
+        # day-page thumbnails: the smallest width each size asks for, and the largest it may grow to
+        def clamp(rule):
+            lo, _, hi = re.search(r"clamp\((\d+)px,\s*(\d+)vw,\s*(\d+)px\)", rule).groups()
+            return int(lo), int(hi)
+        small, large, xl = (clamp(css_rule(css, f".grid.size-{n}")) for n in ("small", "large", "xl"))
+        medium = clamp(css_rule(css, ".grid"))                       # the unchanged default layout
+        self.assertEqual(medium, (130, 220), "Medium stays exactly the layout day pages always had")
+        for position in (0, 1):                                      # smallest width, then largest width
+            self.assertTrue(small[position] < medium[position] < large[position] < xl[position], (small, medium, large, xl))
+        # homepage cards: S < M (the original 280px) < L < XL
+        px = lambda selector: int(re.search(r"min\(100%,(\d+)px\)", css_rule(css, selector)).group(1))
+        medium = int(re.search(r"\.day-list\{[^}]*minmax\((\d+)px", css).group(1))
+        self.assertEqual(medium, 280, "Medium stays exactly the layout the homepage always had")
+        self.assertTrue(px(".day-list.size-small") < medium < px(".day-list.size-large") < px(".day-list.size-xl"))
+
+    def test_the_biggest_sizes_cannot_push_a_phone_screen_sideways(self):
+        css = self.page("assets/style.css")
+        for selector in (".grid.size-xl", ".day-list.size-large", ".day-list.size-xl", ".day-list.size-small"):
+            self.assertIn("min(100%", css_rule(css, selector), selector)
+
+    def test_day_pages_tell_the_script_where_esc_leads(self):
+        first = day_nav_args(self.page("days/2026-05-01.html"))
+        self.assertEqual((first[0], first[2]), (None, "../index.html"))     # nothing before the first day
+        self.assertTrue(first[1].endswith(".html"))
+        self.assertEqual(day_nav_args(self.page("days/unknown.html"))[2], "../index.html")
+
+    def test_the_hint_under_a_day_page_mentions_esc(self):
+        self.assertIn("Esc returns to all days", self.page("days/2026-05-01.html"))
+        self.assertNotIn("Esc returns to all days", self.page("index.html"))
 
     def test_the_content_file_is_extended_not_overwritten(self):
         c = read_json(self.content)

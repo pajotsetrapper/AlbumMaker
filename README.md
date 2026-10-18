@@ -412,7 +412,9 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
   tracked, where km is the straight-line distance between each day's
   consecutive geotagged photos, Unsorted included), an overview map with
   every geotagged photo as a point coloured by day, and a card per day.
-  Click a point or a card to jump to that day.
+  Click a point or a card to jump to that day. A Card size control
+  (S / M / L / XL) above the cards makes them bigger or smaller; see
+  "Thumbnail and card size" below.
 - **Day pages:** the description, a map of that day's photo and video
   locations, a thumbnail grid, and previous/next day links.
   - The map shows points only, with no connecting line. Photos aren't
@@ -422,6 +424,11 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
     opens it in the slideshow.
   - `←` / `→` (or a swipe on a touchscreen) go to the previous or next
     day.
+  - `Esc` goes back to the homepage. It backs out one step at a time, so
+    if a map popup, the viewer, its details panel or the title and
+    description form is open, `Esc` closes that first and a further press
+    leaves the page. Holding the key down, or pressing it together with
+    Ctrl, Alt or Cmd, does not leave.
   - Favorites show a ★ in the grid, and captions are used as alt text.
   - Thumbnails can be reached with Tab, and Enter or Space opens one.
 - **Slideshow:** click any thumbnail to open a full-screen viewer.
@@ -441,7 +448,8 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
   - `F`: toggle true full-screen, with no bar, caption or on-screen
     controls. Everything else still works.
   - `Esc`: close the details panel if it's open, otherwise close the
-    viewer.
+    viewer. Once the viewer is closed, `Esc` on the day page goes back
+    to the homepage.
   - `L` (or the Live button): play a Live Photo's motion clip. The
     button only appears on Live Photos, which are also marked LIVE in
     the grid. See "Live Photos" below.
@@ -449,14 +457,21 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
     instant. Videos play inline with normal video controls.
 - **Responsive layout:** the maps and thumbnail grid scale with the
   screen, from a big monitor down to a phone.
-- **Thumbnail size:** each day page has a Small / Medium / Large toggle.
-  Your choice is remembered by the browser and carries over between days.
+- **Thumbnail and card size:** day pages have a Thumbnail size control
+  and the homepage has a Card size control, each with four steps: **S**,
+  **M**, **L** and **XL**. M is the original layout of both. The browser
+  remembers each choice separately, so a big thumbnail grid on day pages
+  doesn't make the homepage cards big, and the choice carries over between
+  days. The larger sizes stretch the thumbnails (400 pixels by default),
+  so for the sharpest XL pass `--thumb-size 800`. The static build then
+  regenerates its thumbnails once; the live server just uses the new size.
 
 ### Keyboard shortcuts
 
 | Key | Where | Does |
 |---|---|---|
 | `←` `→` | day page | previous / next day |
+| `Esc` | day page | back to the homepage (closes anything open first) |
 | `←` `→` | slideshow | previous / next photo |
 | `Space` | slideshow | play / pause autoplay |
 | `+` `-` `0` | slideshow | zoom in / out / reset |
@@ -466,7 +481,9 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
 | `S` | slideshow, editing | favorite / unfavorite |
 | `Esc` | slideshow | close details, then close the viewer |
 
-Shortcuts are switched off while you're typing in a caption or title box.
+Shortcuts are switched off while you're typing in a caption or title box,
+except `Esc`, which leaves the box (or cancels the title and description
+form) without leaving the page.
 
 ### Autoplay
 

@@ -22,7 +22,7 @@ class Loader extends ResourceLoader {
 
 // Loads a page and lets its scripts run. jsdom has no layout engine and no SVG
 // measuring, so the few things Leaflet needs from a real browser are supplied.
-async function load(base, path, { settle = 900 } = {}) {
+async function load(base, path, { settle = 900, storage = null, breakStorage = false } = {}) {
   const errors = [];
   const dom = await JSDOM.fromURL(base + path, {
     runScripts: 'dangerously',
@@ -33,6 +33,9 @@ async function load(base, path, { settle = 900 } = {}) {
       Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { get() { return 400; } });
       w.SVGSVGElement.prototype.createSVGRect = () => ({});
       w.fetch = (u, o) => fetch(new URL(u, base), o);
+      // `storage` seeds what the browser already remembers; `breakStorage` imitates private browsing
+      if (breakStorage) Object.defineProperty(w, 'localStorage', { get() { throw new w.Error('storage is blocked'); } });
+      else if (storage) for (const [k, v] of Object.entries(storage)) w.localStorage.setItem(k, v);
       w.addEventListener('error', (e) => errors.push(String(e.message)));
       const original = w.console.error;
       w.console.error = (...a) => errors.push(a.map(String).join(' '));

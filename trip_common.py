@@ -1148,6 +1148,11 @@ img,video{max-width:100%; display:block;}
 .map-legend .sw{display:inline-block; width:.7em; height:.7em; border-radius:2px; margin-right:.4em; vertical-align:middle;}
 
 .day-list{max-width:var(--wide); margin:1rem auto 4rem; padding:0 1.5rem; display:grid; gap:1rem; grid-template-columns:repeat(auto-fill,minmax(280px,1fr));}
+/* card size on the homepage (the default, medium, is the rule above); min(100%, ...) keeps a card from overflowing a narrow screen */
+.day-list.size-small{grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),1fr));}
+.day-list.size-large{grid-template-columns:repeat(auto-fill,minmax(min(100%,400px),1fr));}
+.day-list.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,560px),1fr));}
+.grid-controls.cards{margin-top:1.6rem;}
 .day-card{
   background:var(--navy-light); border-radius:var(--radius); overflow:hidden;
   border:1px solid rgba(237,230,214,.1); transition:transform .15s ease, border-color .15s ease;
@@ -1205,6 +1210,7 @@ img,video{max-width:100%; display:block;}
 .grid{max-width:var(--wide); margin:0 auto 3rem; padding:0 1.5rem; display:grid; gap:.7rem; grid-template-columns:repeat(auto-fill,minmax(clamp(130px,11vw,220px),1fr));}
 .grid.size-small{grid-template-columns:repeat(auto-fill,minmax(clamp(90px,8vw,140px),1fr));}
 .grid.size-large{grid-template-columns:repeat(auto-fill,minmax(clamp(220px,18vw,380px),1fr));}
+.grid.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(300px,30vw,560px)),1fr));}
 .thumb{position:relative; cursor:pointer; border-radius:8px; overflow:hidden; aspect-ratio:1/1; background:var(--navy-deep);}
 .thumb img{width:100%; height:100%; object-fit:contain; display:block; transition:transform .2s ease;}
 .thumb:hover img{transform:scale(1.06);}
@@ -1403,29 +1409,41 @@ async function apiPost(path, body){
   }
 }
 
-// ---------- thumbnail size control (day pages) ----------
-function applyThumbSize(size){
-  const grid = document.getElementById('thumb-grid');
-  if(!grid) return;
-  grid.classList.remove('size-small', 'size-large');
-  if(size === 'small' || size === 'large') grid.classList.add('size-' + size);
-  document.querySelectorAll('.size-btn').forEach(b => {
-    b.classList.toggle('active', b.dataset.size === size);
+// ---------- size controls: thumbnails on day pages, cards on the homepage ----------
+// Each .size-toggle names the element it resizes (data-target) and the browser-storage
+// key that remembers the choice (data-store), so the two pages choose independently.
+const SIZES = ['small', 'medium', 'large', 'xl'];
+
+function applySize(toggle, size){
+  const target = document.getElementById(toggle.dataset.target);
+  if(!target) return;
+  if(SIZES.indexOf(size) < 0) size = 'medium';
+  SIZES.forEach(s => target.classList.remove('size-' + s));
+  if(size !== 'medium') target.classList.add('size-' + size);
+  toggle.querySelectorAll('.size-btn').forEach(b => {
+    const on = b.dataset.size === size;
+    b.classList.toggle('active', on);
+    b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
-  try { localStorage.setItem('tripThumbSize', size); } catch(e) { /* private browsing, etc. */ }
+  try { localStorage.setItem(toggle.dataset.store, size); } catch(e) { /* private browsing, etc. */ }
 }
 
-function initThumbSizeControl(){
-  const buttons = document.querySelectorAll('.size-btn');
-  if(!buttons.length) return;
-  let saved = 'medium';
-  try { saved = localStorage.getItem('tripThumbSize') || 'medium'; } catch(e) {}
-  applyThumbSize(saved);
-  buttons.forEach(b => b.addEventListener('click', () => applyThumbSize(b.dataset.size)));
+function initSizeControls(){
+  document.querySelectorAll('.size-toggle').forEach(toggle => {
+    let saved = 'medium';
+    try { saved = localStorage.getItem(toggle.dataset.store) || 'medium'; } catch(e) {}
+    applySize(toggle, saved);
+    toggle.querySelectorAll('.size-btn').forEach(b => {
+      b.addEventListener('click', () => applySize(toggle, b.dataset.size));
+    });
+  });
 }
 
-// ---------- prev/next day navigation (keyboard + swipe) ----------
-function initDayNav(prevHref, nextHref){
+// ---------- day pages: previous/next day (keys, swipe) and Esc back to the overview ----------
+// Every move from one page to another goes through here.
+function navigateTo(href){ window.location.href = href; }
+
+function initDayNav(prevHref, nextHref, homeHref){
   function slideshowOpen(){
     const el = document.getElementById('slideshow');
     return !!(el && el.classList.contains('open'));
@@ -1434,12 +1452,33 @@ function initDayNav(prevHref, nextHref){
     return !!(el && el.closest && el.closest('.leaflet-container'));
   }
 
+  // Esc backs out one level at a time: an open map popup, then the title/description
+  // form, and only then the page itself.
+  function onEscape(e){
+    const popupClose = document.querySelector('.leaflet-popup-close-button');
+    if(popupClose){ popupClose.click(); return; }
+    const editor = document.getElementById('day-editor');
+    if(editor && !editor.hidden){
+      document.getElementById('day-cancel').click();
+      if(isTyping(e.target)) e.target.blur();
+      return;
+    }
+    if(isTyping(e.target)){ e.target.blur(); return; }     // leaving a text box isn't leaving the page
+    if(homeHref) navigateTo(homeHref);
+  }
+
   document.addEventListener('keydown', (e) => {
-    if(slideshowOpen()) return;                  // the slideshow has its own arrow-key handling
-    if(isTyping(e.target)) return;                // typing in the title/caption boxes
-    if(inMap(document.activeElement)) return;     // let Leaflet's own keyboard map-panning work
-    if(e.key === 'ArrowLeft' && prevHref) window.location.href = prevHref;
-    else if(e.key === 'ArrowRight' && nextHref) window.location.href = nextHref;
+    if(e.defaultPrevented) return;                 // the viewer already used this key press
+    if(e.ctrlKey || e.metaKey || e.altKey) return; // e.g. Alt+Left is the browser's own Back
+    if(slideshowOpen()) return;                    // the slideshow has its own key handling
+    if(e.key === 'Escape'){
+      if(!e.repeat) onEscape(e);                   // holding Esc must not carry on past the first press
+      return;
+    }
+    if(isTyping(e.target)) return;                 // typing in the title/caption boxes
+    if(inMap(document.activeElement)) return;      // let Leaflet's own keyboard map-panning work
+    if(e.key === 'ArrowLeft' && prevHref) navigateTo(prevHref);
+    else if(e.key === 'ArrowRight' && nextHref) navigateTo(nextHref);
   });
 
   let touchStartX = null, touchStartY = null, touchInMap = false;
@@ -1460,8 +1499,8 @@ function initDayNav(prevHref, nextHref){
     // touches that didn't originate inside the map (checked above) and are
     // clearly horizontal, deliberate swipes rather than a scroll or a tap
     if(Math.abs(dx) > 80 && Math.abs(dx) > Math.abs(dy) * 1.8){
-      if(dx < 0 && nextHref) window.location.href = nextHref;
-      else if(dx > 0 && prevHref) window.location.href = prevHref;
+      if(dx < 0 && nextHref) navigateTo(nextHref);
+      else if(dx > 0 && prevHref) navigateTo(prevHref);
     }
   }, {passive: true});
 }
@@ -1534,7 +1573,7 @@ function initOverviewMap(elId, days){
       L.circleMarker(p, {radius:4, color: day.color, fillColor: day.color, fillOpacity:1, weight:1})
         .addTo(map)
         .bindTooltip(day.label, {sticky:true})
-        .on('click', () => { window.location.href = day.href; });
+        .on('click', () => { navigateTo(day.href); });
     });
   });
   if(allPts.length){
@@ -2181,11 +2220,11 @@ function initSlideshow(items, opts){
 
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
-    if(isTyping(e.target)){ if(e.key === 'Escape') e.target.blur(); return; }
+    if(isTyping(e.target)){ if(e.key === 'Escape'){ e.preventDefault(); e.target.blur(); } return; }
     if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }
     else if(e.key === 'ArrowRight') nextSlide();
     else if(e.key === 'ArrowLeft') prevSlide();
-    else if(e.key === 'Escape'){ infoPanelOpen ? closeInfoPanel() : closeSlideshow(); }
+    else if(e.key === 'Escape'){ e.preventDefault(); infoPanelOpen ? closeInfoPanel() : closeSlideshow(); }
     else if(e.key.toLowerCase() === 'f') toggleFullscreen();
     else if(e.key.toLowerCase() === 'i') toggleInfoPanel();
     else if(e.key.toLowerCase() === 'l') playLive();
@@ -2372,7 +2411,19 @@ INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
   </div>
 </div>
 
-<div class="day-list">
+{% if days %}
+<div class="grid-controls cards">
+  <span class="grid-controls-label">Card size</span>
+  <div class="size-toggle" role="group" aria-label="Card size" data-target="day-list" data-store="tripCardSize">
+    <button type="button" class="size-btn" data-size="small">S</button>
+    <button type="button" class="size-btn" data-size="medium">M</button>
+    <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="day-list" id="day-list">
   {% for d in days %}
   <a class="day-card" href="{{ d.href }}">
     <div class="cover" {% if d.cover %}style="background-image:url('{{ d.cover }}')"{% endif %}></div>
@@ -2392,6 +2443,7 @@ INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
 {% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
 <script src="{{ assets_prefix }}assets/script.js"></script>
 <script>
+initSizeControls();
 try { initOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
 </script>
@@ -2419,7 +2471,7 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
     <span>{% if prev_href %}<a href="{{ prev_href }}">&larr; {{ prev_label }}</a>{% endif %}</span>
     <span>{% if next_href %}<a href="{{ next_href }}">{{ next_label }} &rarr;</a>{% endif %}</span>
   </div>
-  {% if prev_href or next_href %}<div class="day-nav-hint">&larr; &rarr; keys or swipe also work</div>{% endif %}
+  <div class="day-nav-hint">{% if prev_href or next_href %}&larr; &rarr; keys or swipe change day &middot; {% endif %}Esc returns to all days</div>
 </div>
 
 {% if editable %}
@@ -2453,10 +2505,11 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <div class="grid-controls">
   <button type="button" class="fav-filter" id="fav-filter" hidden></button>
   <span class="grid-controls-label">Thumbnail size</span>
-  <div class="size-toggle" role="group" aria-label="Thumbnail size">
+  <div class="size-toggle" role="group" aria-label="Thumbnail size" data-target="thumb-grid" data-store="tripThumbSize">
     <button type="button" class="size-btn" data-size="small">S</button>
     <button type="button" class="size-btn" data-size="medium">M</button>
     <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
   </div>
 </div>
 {% endif %}
@@ -2485,8 +2538,8 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
 openSlideshowFromHash();
-initThumbSizeControl();
-initDayNav({{ prev_href_json }}, {{ next_href_json }});
+initSizeControls();
+initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
 {% if editable %}initDayEditor({{ date_key_json }});{% endif %}
 {% if route %}
 try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
@@ -2824,6 +2877,7 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
     return dict(
         page_title=f"{title} \u2014 {trip_title(content)}",
         home_href=urls.home(from_index=False),
+        home_href_json=script_json(urls.home(from_index=False)),
         assets_prefix=urls.assets_prefix(from_index=False),
         vendor=urls.vendor_url(from_index=False),
         tile_url_json=script_json(urls.tile_url),
