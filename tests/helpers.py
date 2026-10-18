@@ -282,3 +282,27 @@ def make_fake_vendor(path: Path) -> Path:
         p.parent.mkdir(parents=True, exist_ok=True)
         p.write_text(text)
     return path
+
+
+def size_toggle(html: str, target: str):
+    """(storage key, [(size, label), ...]) of the S/M/L/XL control that resizes `target`, or None."""
+    m = _re.search(r'<div class="size-toggle"[^>]*data-target="%s" data-store="(\w+)">(.*?)</div>' % _re.escape(target),
+                   html, _re.S)
+    if not m:
+        return None
+    return m.group(1), _re.findall(r'data-size="(\w+)">(\w+)</button>', m.group(2))
+
+
+def day_nav_args(html: str):
+    """The three arguments the day page gives initDayNav: (previous, next, where Esc leads)."""
+    m = _re.search(r"initDayNav\((.*?), (.*?), (\"[^\"]*\")\);", html)
+    if not m:
+        raise AssertionError("initDayNav is not called in the page")
+    return tuple(json.loads(g) for g in m.groups())
+
+
+def css_rule(css: str, selector: str) -> str:
+    m = _re.search(_re.escape(selector) + r"\{([^}]*)\}", css)
+    if not m:
+        raise AssertionError(f"no CSS rule for {selector}")
+    return m.group(1)

@@ -104,6 +104,12 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
     def test_static_site_links_and_favorites(self):
         self.run_js("static_links.test.js")
 
+    def test_escape_and_arrow_keys_on_day_pages(self):
+        self.run_js("navigation.test.js")
+
+    def test_size_controls(self):
+        self.run_js("sizes.test.js")
+
     def test_maps_with_real_leaflet(self):
         if not self.has_leaflet:
             self.skipTest("Leaflet is not installed (run npm install in tests/js)")

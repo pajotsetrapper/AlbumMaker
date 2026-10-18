@@ -10,8 +10,9 @@ from pathlib import Path
 from PIL import Image
 import io
 
-from .helpers import (TempDirMixin, TripServer, install_app, item_ids, make_jpeg, make_video, needs_ffmpeg,
-                      read_json, run_script, slide_for, slides_of, standard_trip, tc, write_json)
+from .helpers import (TempDirMixin, TripServer, day_nav_args, install_app, item_ids, make_jpeg, make_video,
+                      needs_ffmpeg, read_json, run_script, size_toggle, slide_for, slides_of, standard_trip, tc,
+                      write_json)
 
 
 class ServerBasicsTests(TempDirMixin, unittest.TestCase):
@@ -70,6 +71,18 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         self.assertIn("Editing is on", log)
         self.assertIn("--fetch-offline-assets", log)
         self.assertIn(f"http://127.0.0.1:{self.server.port}/", log)
+
+    def test_size_controls_are_on_both_kinds_of_page(self):
+        wanted = [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]
+        self.assertEqual(size_toggle(self.server.text("/day/2026-05-01"), "thumb-grid"), ("tripThumbSize", wanted))
+        self.assertEqual(size_toggle(self.server.text("/"), "day-list"), ("tripCardSize", wanted))
+        self.assertIn('id="day-list"', self.server.text("/"))
+
+    def test_esc_leads_back_to_the_homepage(self):
+        prev, nxt, home = day_nav_args(self.server.text("/day/2026-05-02"))
+        self.assertEqual(home, "/")
+        self.assertEqual(prev, "/day/2026-05-01")
+        self.assertIn("Esc returns to all days", self.server.text("/day/2026-05-02"))
 
     # ---- images and files
     def test_thumbnails_are_small_jpegs(self):
