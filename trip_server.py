@@ -517,6 +517,13 @@ def content_disposition(filename: str) -> str:
     return f"attachment; filename=\"{fallback}\"; filename*=UTF-8''{quote(filename, safe='')}"
 
 
+class TripHTTPServer(ThreadingHTTPServer):
+    # Python's default accept queue holds only 5 waiting connections. A burst of
+    # simultaneous requests (several devices opening a day at once, a page full of
+    # thumbnails) can overflow it, and the overflow is dropped as "connection reset".
+    request_queue_size = 128
+
+
 class RequestHandler(BaseHTTPRequestHandler):
     server_version = "TripServer/1.0"
     protocol_version = "HTTP/1.1"
@@ -598,10 +605,15 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not VENDOR_READY or not rel or any(p in ("", ".", "..") or "\\" in p for p in parts):
             self.send_error(404, "Not found")
             return
-        root = VENDOR_DIR.resolve()
-        target = (VENDOR_DIR / rel).resolve()
+        try:
+            root = VENDOR_DIR.resolve()
+            target = (VENDOR_DIR / rel).resolve()
+            is_file = target.is_file()
+        except (OSError, ValueError):          # e.g. a NUL byte in the path
+            self.send_error(404, "Not found")
+            return
         mime = VENDOR_MIME.get(target.suffix.lower())
-        if root not in target.parents or not target.is_file() or mime is None:
+        if root not in target.parents or not is_file or mime is None:
             self.send_error(404, "Not found")
             return
         self._send_file(target, mime, cache_control="public, max-age=86400")
@@ -1089,7 +1101,7 @@ def main():
 
     host = "0.0.0.0" if args.lan else "127.0.0.1"
     try:
-        server = ThreadingHTTPServer((host, args.port), RequestHandler)
+        server = TripHTTPServer((host, args.port), RequestHandler)
     except OSError as e:
         if e.errno in (errno.EADDRINUSE, 10048):  # 10048: the Windows code
             print(f"Port {args.port} is already in use. Is the server already running? "

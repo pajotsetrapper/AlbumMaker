@@ -757,6 +757,65 @@ so none of this applies there. The exceptions:
   that format. Use "Download original file" from the details panel, or
   play it with a desktop player.
 
+## Running the tests
+
+The `tests/` folder holds a test suite for both scripts. It builds small
+photos (and, with ffmpeg, short videos) in temporary folders, runs the
+generator and the live server exactly as you would, and checks what comes
+out. It never touches your own photos, your `trip_content.json` or your
+`vendor` folder. From the project folder:
+
+```bash
+python -m unittest discover -s tests -t .
+```
+
+`pytest tests` works too, if you prefer it. That's about 300 tests and
+takes roughly 30 seconds. To run one file or one test, name it:
+
+```bash
+python -m unittest tests.test_editing
+python -m unittest tests.test_server.ServerBasicsTests.test_byte_ranges
+```
+
+Some parts are optional, and are skipped with a note when their
+requirements are missing:
+
+- **Video tests** need ffmpeg.
+- **Browser tests** (the viewer's editing controls, links and Back button,
+  autoplay, and the maps with the real Leaflet library, run in jsdom, a
+  browser without a screen) need Node.js 18 or newer and a one-time
+  `npm install` in `tests/js`. They add about a minute.
+- **A check of the real downloads**: set `TRIP_TEST_NETWORK=1` to also
+  download the real packages for `--fetch-offline-assets` and verify them
+  against their pinned checksums. It's off by default so the suite never
+  needs the internet; it's the test to run if npm ever changes a package.
+
+What's covered:
+
+- The pure logic: GPS and date handling, the info-panel text, day
+  grouping, the date check, duplicate detection, Live Photo pairing,
+  output file naming, and every rule for `trip_content.json` (reading it,
+  the per-photo and per-day edits, hidden photos, covers).
+- The static build, run as a command: the files it makes, byte-for-byte
+  copies, converted images, re-runs that only redo what changed, cleanup
+  of what's no longer wanted, odd file names, and the command-line errors.
+- The live server, run for real: pages, thumbnails, byte ranges, the Host
+  check, bursts of simultaneous requests, and hot-reloading of the content
+  file.
+- Editing: what the API saves, everything it refuses, who may use it,
+  hidden photos (including that they can't be fetched by guessing their
+  number), a content file with a mistake never being overwritten, and many
+  edits at once losing nothing.
+- Working offline: the download (against a fake npm registry, so no
+  internet is used), checksum and failure handling, the `vendor` route and
+  attempts to read files outside it, and the tile cache (against a fake
+  tile provider that can go offline, hang, or refuse).
+- The viewer's behaviour in the browser tests above.
+
+What isn't covered: a real browser (jsdom approximates one, with a few
+stand-ins for what Leaflet needs), the real OpenStreetMap and npm
+servers, and HEIC conversion, which needs `pillow-heif`.
+
 ## Customizing the look
 
 The whole design lives in `trip_common.py` and is shared by both
