@@ -1,0 +1,10 @@
+{
+  "name": "trip-site-viewer-tests",
+  "private": true,
+  "description": "Browser-behaviour tests for the viewer, run by tests/test_viewer_js.py (they need the servers it starts)",
+  "engines": { "node": ">=18" },
+  "devDependencies": {
+    "jsdom": "24.1.3",
+    "leaflet": "1.9.4"
+  }
+}
