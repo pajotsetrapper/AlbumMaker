@@ -41,7 +41,7 @@ try:
     from trip_common import (
         BROWSER_NATIVE_IMAGE_EXTS, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SITE_MARKER, VIDEO_EXTS,
         assign_rel_paths, hidden_rels, report_unknown_photo_keys,
-        add_date_check_args, apply_date_check, resolve_date_range,
+        add_date_check_args, apply_date_check, resolve_date_range, large_thumb_size_arg,
         VENDOR_DIR, add_offline_args, fetch_offline_assets, vendor_ready,
         HEIF_SUPPORT, ContentFileError, MediaItem, SiteUrls, atomic_write_text, build_day_context,
         build_index_context, build_media_item, check_ffmpeg, collect_candidates, dedupe_candidates,
@@ -141,12 +141,13 @@ def load_manifest(output_dir: Path) -> dict:
     return data
 
 
-def save_manifest(output_dir: Path, thumb_size: int, records: dict, pages: list):
+def save_manifest(output_dir: Path, thumb_size: int, records: dict, pages: list, large_thumb_size: int = 0):
     data = {
         "version": MANIFEST_VERSION,
         "note": "Build record for generate_site.py. Safe to delete: the next run "
                 "then regenerates everything.",
         "thumb_size": thumb_size,
+        "large_thumb_size": large_thumb_size,
         "pages": sorted(pages),
         "files": records,
     }
@@ -195,7 +196,8 @@ def _copy_is_current(src: Path, dst: Path) -> bool:
 
 def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: str,
                             thumb_size: int, is_mpo: bool,
-                            regen_thumb: bool, regen_converted: bool, force_copy: bool):
+                            regen_thumb: bool, regen_converted: bool, force_copy: bool,
+                            large_thumb_size: int = 0, large_path: Optional[Path] = None):
     """Create the small day-grid thumbnail, and the full-screen 'display'
     version:
       - formats a browser can show directly (jpg/png/webp/bmp) are used
@@ -204,6 +206,9 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
         multi-image/MPO JPEGs) get a full-resolution, near-lossless JPEG
         version for display, plus an untouched copy of the original, which
         the slideshow offers through its "Download original file" link.
+
+    With a large_path, a second, larger thumbnail is made as well (see
+    --large-thumb-size).
 
     regen_thumb / regen_converted: rebuild those even if they exist (the
     source changed, or --thumb-size did). force_copy: re-copy originals
@@ -225,7 +230,7 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
     display_path = media_dir / display_file
     original_file = None
 
-    thumb_needed = regen_thumb or not thumb_path.exists()
+    thumb_needed = regen_thumb or not thumb_path.exists() or (large_path is not None and not large_path.exists())
     if native:
         display_needed = force_copy or not _copy_is_current(src, display_path)
     else:
@@ -240,7 +245,8 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
                 # 1/4 or 1/8 scale instead of decoding all the pixels and
                 # throwing most away (a no-op for non-JPEG formats). It has to
                 # happen before exif_transpose, which loads the image.
-                img.draft("RGB", (thumb_size * 2, thumb_size * 2))
+                biggest = max(thumb_size, large_thumb_size)
+                img.draft("RGB", (biggest * 2, biggest * 2))
             exif = img.getexif()  # grab before transpose: has the original orientation tag
             img = ImageOps.exif_transpose(img)
             if img.mode != "RGB":
@@ -264,6 +270,10 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
                 thumb_img = img.copy()
                 thumb_img.thumbnail((thumb_size, thumb_size), Image.LANCZOS)
                 thumb_img.save(thumb_path, "JPEG", quality=82, optimize=True)
+                if large_path is not None:
+                    large_img = img.copy()
+                    large_img.thumbnail((large_thumb_size, large_thumb_size), Image.LANCZOS)
+                    large_img.save(large_path, "JPEG", quality=82, optimize=True)
 
     if native and display_needed:
         shutil.copy2(src, display_path)
@@ -278,34 +288,47 @@ def make_image_derivatives(src: Path, thumb_path: Path, media_dir: Path, base: s
     return display_file, original_file
 
 
+def _extract_video_frame(src: Path, out_path: Path, size: int) -> bool:
+    """Save one frame of the video, at most size x size pixels, as out_path.
+    Returns True if that worked."""
+    # don't leave an outdated frame behind if extraction fails below
+    try:
+        out_path.unlink()
+    except OSError:
+        pass
+    for seek in ("00:00:01", "00:00:00"):
+        try:
+            subprocess.run(
+                ["ffmpeg", "-y", "-ss", seek, "-i", str(src),
+                 "-frames:v", "1", "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease",
+                 str(out_path)],
+                capture_output=True, timeout=30,
+            )
+            if out_path.exists() and out_path.stat().st_size > 0:
+                return True
+        except Exception:
+            continue
+    return False
+
+
 def make_video_derivatives(src: Path, thumb_path: Path, display_path: Path,
-                            thumb_size: int, regen_thumb: bool, force_copy: bool) -> bool:
-    """Copy the video and extract a preview frame. Returns True if a
-    placeholder had to be used for the preview."""
+                            thumb_size: int, regen_thumb: bool, force_copy: bool,
+                            large_thumb_size: int = 0, large_path: Optional[Path] = None) -> bool:
+    """Copy the video and extract a preview frame (and a larger one, with a
+    large_path). Returns True if a placeholder had to be used for the
+    normal preview."""
     if force_copy or not _copy_is_current(src, display_path):
         shutil.copy2(src, display_path)
 
+    placeholder = False
     if regen_thumb or not thumb_path.exists():
-        # don't leave an outdated frame behind if extraction fails below
-        try:
-            thumb_path.unlink()
-        except OSError:
-            pass
-        for seek in ("00:00:01", "00:00:00"):
-            try:
-                subprocess.run(
-                    ["ffmpeg", "-y", "-ss", seek, "-i", str(src),
-                     "-frames:v", "1", "-vf", f"scale={thumb_size}:{thumb_size}:force_original_aspect_ratio=decrease",
-                     str(thumb_path)],
-                    capture_output=True, timeout=30,
-                )
-                if thumb_path.exists() and thumb_path.stat().st_size > 0:
-                    return False
-            except Exception:
-                continue
-        placeholder_thumbnail(thumb_size).save(thumb_path, "JPEG", quality=82)
-        return True
-    return False
+        if not _extract_video_frame(src, thumb_path, thumb_size):
+            placeholder_thumbnail(thumb_size).save(thumb_path, "JPEG", quality=82)
+            placeholder = True
+    if large_path is not None and (regen_thumb or not large_path.exists()):
+        if not _extract_video_frame(src, large_path, large_thumb_size):
+            placeholder_thumbnail(large_thumb_size).save(large_path, "JPEG", quality=82)
+    return placeholder
 
 
 # --------------------------------------------------------------------------
@@ -314,7 +337,8 @@ def make_video_derivatives(src: Path, thumb_path: Path, display_path: Path,
 
 def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: Path,
                        thumb_size: int, tz_offset: Optional[float], base: str,
-                       regen_thumb: bool, regen_converted: bool, force_copy: bool) -> MediaItem:
+                       regen_thumb: bool, regen_converted: bool, force_copy: bool,
+                       large_thumb_size: int = 0) -> MediaItem:
     """Extract metadata and generate the thumbnail/display derivatives for a
     single file. This is the unit of work handed to each worker process, so
     it must stay a plain top-level function (not a closure/method): that's
@@ -325,19 +349,21 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
     original_file = None
     thumb_is_placeholder = False
     thumb_file = f"{base}.jpg"
+    large_path = (thumbs_dir.parent / "thumbs_large" / thumb_file) if large_thumb_size else None
 
     if media_type == "image":
         meta = read_image_metadata(path)
         display_file, original_file = make_image_derivatives(
             path, thumbs_dir / thumb_file, media_dir, base, thumb_size,
             bool(meta.get("is_mpo")), regen_thumb, regen_converted, force_copy,
+            large_thumb_size, large_path,
         )
     else:
         meta = read_video_metadata(path, tz_offset)
         display_file = f"{base}{path.suffix}"  # preserve original extension case (e.g. .MOV)
         thumb_is_placeholder = make_video_derivatives(
             path, thumbs_dir / thumb_file, media_dir / display_file,
-            thumb_size, regen_thumb, force_copy,
+            thumb_size, regen_thumb, force_copy, large_thumb_size, large_path,
         )
 
     return build_media_item(
@@ -352,7 +378,8 @@ def _process_one_file(path: Path, media_type: str, thumbs_dir: Path, media_dir: 
 def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                 force: bool, tz_offset: Optional[float] = None,
                 workers: Optional[int] = None, dedupe: bool = True,
-                manifest: Optional[dict] = None, skip_rels: Optional[set] = None) -> tuple:
+                manifest: Optional[dict] = None, skip_rels: Optional[set] = None,
+                large_thumb_size: int = 0) -> tuple:
     """Returns (items, records): the processed media, and the build-record
     entry for every processed file (see save_manifest)."""
     manifest = manifest or {}
@@ -360,6 +387,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     media_dir = output_dir / "media"
     thumbs_dir.mkdir(parents=True, exist_ok=True)
     media_dir.mkdir(parents=True, exist_ok=True)
+    if large_thumb_size:
+        (output_dir / "thumbs_large").mkdir(parents=True, exist_ok=True)
 
     # the output folder is excluded explicitly too: on the very first run
     # it doesn't hold a build record yet
@@ -390,7 +419,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     rel_paths = {path: path.relative_to(input_dir).as_posix() for path, _ in candidates}
     previous = manifest.get("files", {})
     bases = compute_output_bases(rel_paths, previous)
-    thumb_size_changed = manifest.get("thumb_size") != thumb_size
+    thumb_size_changed = (manifest.get("thumb_size") != thumb_size
+                          or manifest.get("large_thumb_size", 0) != large_thumb_size)
 
     # decide per file what needs rebuilding. "Unchanged" means the build
     # record has the file with the same output name, size and mtime.
@@ -423,7 +453,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     with ProcessPoolExecutor(max_workers=workers) as executor:
         futures = {
             executor.submit(_process_one_file, path, media_type, thumbs_dir, media_dir,
-                             thumb_size, tz_offset, bases[path], *plan[path]): (path, media_type)
+                             thumb_size, tz_offset, bases[path], *plan[path], large_thumb_size): (path, media_type)
             for path, media_type in candidates
         }
         for future in as_completed(futures):
@@ -437,6 +467,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
             items.append(item)
             print(f"[{done}/{total}] {media_type:5s} {path.name}")
             outputs = [f"thumbs/{item.thumb_file}", f"media/{item.display_file}"]
+            if large_thumb_size:
+                outputs.append(f"thumbs_large/{item.thumb_file}")
             if item.original_file:
                 outputs.append(f"media/{item.original_file}")
             size, mtime_ns = stats[path]
@@ -504,6 +536,13 @@ class StaticUrls(SiteUrls):
     def thumb(self, item, from_index):
         return ("" if from_index else "../") + f"thumbs/{quote(item.thumb_file)}"
 
+    large_thumbs = False   # --large-thumb-size was used, so thumbs_large/ exists
+
+    def hi_thumb(self, item, from_index):
+        if not self.large_thumbs:
+            return None
+        return ("" if from_index else "../") + f"thumbs_large/{quote(item.thumb_file)}"
+
     def display(self, item):
         return f"../media/{quote(item.display_file)}"
 
@@ -516,10 +555,11 @@ class StaticUrls(SiteUrls):
         return f"../media/{quote(item.live_clip.display_file)}"
 
 
-def render_site(days: list, content: dict, output_dir: Path) -> list:
+def render_site(days: list, content: dict, output_dir: Path, large_thumbs: bool = False) -> list:
     """Write all pages. Returns the day pages written (relative paths)."""
     urls = StaticUrls()
     urls.has_vendor = vendor_ready()
+    urls.large_thumbs = large_thumbs
     (output_dir / "days").mkdir(parents=True, exist_ok=True)
     (output_dir / "index.html").write_text(
         INDEX_TEMPLATE.render(**build_index_context(days, content, urls)), encoding="utf-8")
@@ -552,6 +592,10 @@ def main():
                          help="JSON file holding the trip title and per-day descriptions (default: ./trip_content.json)")
     parser.add_argument("--thumb-size", type=positive_thumb_size, default=400,
                          help="Max thumbnail dimension in px (16-4096)")
+    parser.add_argument("--large-thumb-size", type=large_thumb_size_arg, default=0, metavar="PIXELS",
+                         help="Also make a larger thumbnail of this size (e.g. 1600) for each photo and video, "
+                              "which the pages load only where the screen can use more pixels (the L and XL "
+                              "sizes, high-resolution screens). Off by default (0), as it adds files to the site.")
     parser.add_argument("--force", action="store_true",
                          help="Regenerate all thumbnails and media, even for files that haven't changed")
     parser.add_argument("--tz-offset", type=float, default=None,
@@ -580,6 +624,8 @@ def main():
     if args.input is None:
         parser.error("-i/--input is required")
     date_range = resolve_date_range(args, parser)
+    if args.large_thumb_size and args.large_thumb_size <= args.thumb_size:
+        parser.error("--large-thumb-size must be larger than --thumb-size (or 0 to turn it off)")
 
     if not args.input.is_dir():
         print(f"Input folder not found: {args.input}", file=sys.stderr)
@@ -612,7 +658,8 @@ def main():
     manifest = load_manifest(args.output)
     items, records = scan_media(args.input, args.output, args.thumb_size, args.force,
                                 tz_offset=args.tz_offset, workers=args.workers,
-                                dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels)
+                                dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels,
+                                large_thumb_size=args.large_thumb_size)
     if not items:
         print("No supported photos or videos found.", file=sys.stderr)
         sys.exit(1)
@@ -639,13 +686,13 @@ def main():
         sys.exit(1)
 
     report_unknown_photo_keys(content, {it.rel for it in items} | skip_rels)
-    pages = render_site(days, content, args.output)
+    pages = render_site(days, content, args.output, large_thumbs=bool(args.large_thumb_size))
 
     # only after the site was written successfully: drop outputs nothing
     # uses any more, then record this build for the next run
     keep = {o for rec in records.values() for o in rec["outputs"]} | set(pages)
     remove_stale_outputs(args.output, manifest, keep)
-    save_manifest(args.output, args.thumb_size, records, pages)
+    save_manifest(args.output, args.thumb_size, records, pages, args.large_thumb_size)
     print(f"\nSite generated at: {args.output.resolve()}")
     print(f"Open {args.output.resolve() / 'index.html'} in a browser to view it.")
     if vendor_ready():

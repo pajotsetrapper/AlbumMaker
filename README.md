@@ -94,6 +94,11 @@ Options:
   stored (default: `./trip_content.json`). See section 3.
 - `--thumb-size`: maximum thumbnail dimension in px (default 400,
   allowed 16–4096).
+- `--large-thumb-size`: also make a larger thumbnail of this size (for
+  example 1600) of every photo and video. The pages load it only where the
+  screen can use the extra pixels: the L and XL sizes, and high-resolution
+  screens. Off by default (0), because it adds a `thumbs_large` folder to
+  the site. See "Thumbnail and card size" below.
 - `--force`: regenerate all thumbnails and media copies, even for files
   that haven't changed. Normally not needed; see "Re-running the static
   build" below.
@@ -155,6 +160,13 @@ Options:
 - `--thumb-size`, `--tz-offset`, `--date-range`, `--no-date-check`,
   `--no-dedupe`, `--no-live-photos`, `--fetch-offline-assets`: same as
   for `generate_site.py`.
+- `--large-thumb-size PIXELS`: the size of the larger thumbnails that are
+  loaded only where the screen can use more pixels (see "Thumbnail and
+  card size" below). Unlike the static build, the server has it **on by
+  default, at 1600**: the larger thumbnails are made on demand, kept in
+  memory, and cost nothing until a screen asks for them. `0` turns them
+  off. It must be larger than `--thumb-size`; if `--thumb-size` is already
+  1600 or more, nothing larger is offered.
 - `--tile-cache DIR`: keep the map tiles you look at in this folder and
   serve them from there, so maps you've already viewed still work
   without internet. See "Working without internet".
@@ -462,9 +474,24 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
   **M**, **L** and **XL**. M is the original layout of both. The browser
   remembers each choice separately, so a big thumbnail grid on day pages
   doesn't make the homepage cards big, and the choice carries over between
-  days. The larger sizes stretch the thumbnails (400 pixels by default),
-  so for the sharpest XL pass `--thumb-size 800`. The static build then
-  regenerates its thumbnails once; the live server just uses the new size.
+  days.
+
+  **Sharp at every size.** A thumbnail is small (400 pixels by default),
+  which is plenty for S and M but not for the big sizes: an XL tile, or a
+  card that crops a portrait photo to a wide box, is stretched across more
+  screen pixels than the thumbnail has, especially on a high-resolution
+  display. So each tile checks its own size, the screen's pixel density and
+  the thumbnail's real size, and where the thumbnail would be stretched it
+  swaps in the larger version (`--large-thumb-size`, 1600 pixels on the live
+  server). It does this only for tiles near the screen, so a long day
+  doesn't fetch hundreds of large images, and it keeps the normal thumbnail
+  if the download fails. Tiles that are already sharp, such as everything
+  at S and M on an ordinary screen, never download the larger version. The
+  live server needs nothing from you. For a **static site**, build it with
+  `--large-thumb-size 1600`; without it, XL shows the normal thumbnails and
+  looks soft on high-resolution screens. For the very sharpest result
+  everywhere (a 4K screen scaled to 200%, portrait photos on XL cards) use
+  `--large-thumb-size 2400`.
 
 ### Keyboard shortcuts
 
@@ -587,7 +614,9 @@ pressing Live just stays on the photo. Use `--no-live-photos` to list
 the clips as ordinary videos instead.
 
 **Thumbnails** are small separate images (`--thumb-size`), since loading
-full-resolution files just to show a preview would be slow.
+full-resolution files just to show a preview would be slow. Where a bigger
+size or a sharper screen would stretch them, the pages load a larger
+version (`--large-thumb-size`) instead; see "Thumbnail and card size".
 
 **Filenames in the static site are kept as close as possible to the
 original.** `IMG_1234.HEIC` produces output files named `IMG_1234.*`,
@@ -756,6 +785,14 @@ so none of this applies there. The exceptions:
   `generate_site.py`; it removes the photo's files from the output folder.
   Then upload again, using a method that also deletes files that no
   longer exist locally (a plain copy leaves the old ones on the server).
+- **XL (or L) thumbnails and cards look soft.** The thumbnail is being
+  stretched, and the pages should swap in a larger one. On the live server
+  check that you haven't passed `--large-thumb-size 0`, and that it is
+  larger than your `--thumb-size` (the startup message says "Larger
+  thumbnails (1600px)..."). A static site only has larger thumbnails if it
+  was built with `--large-thumb-size`. If it is still not sharp enough,
+  raise it (`--large-thumb-size 2400`). Raising `--thumb-size` instead
+  makes every grid heavier, including the small sizes that don't need it.
 - **The map is blank or grey.** By default the map library and tiles
   load from the internet, so check your connection. To be independent of
   it, see "Working without internet". With the local `vendor` folder in
@@ -786,7 +823,7 @@ out. It never touches your own photos, your `trip_content.json` or your
 python -m unittest discover -s tests -t .
 ```
 
-`pytest tests` works too, if you prefer it. That's about 300 tests and
+`pytest tests` works too, if you prefer it. That's about 340 tests and
 takes roughly 30 seconds. To run one file or one test, name it:
 
 ```bash
