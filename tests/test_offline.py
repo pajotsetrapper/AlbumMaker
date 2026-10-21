@@ -455,6 +455,11 @@ class TileCacheTests(TileCacheTestCase):
         self.assertEqual(results, [200] * 12)
         self.assertEqual(self.upstream.hits.count("/5/10/11.png"), 1)
 
+    def test_the_startup_message_admits_the_tile_cache_writes_to_disk(self):
+        log = self.server.log()
+        self.assertIn("It writes to disk only", log)
+        self.assertIn(f"and the map tile cache in {self.cache}", log)
+
     def test_pages_ask_this_server_for_tiles(self):
         html = self.server.text("/day/2026-05-01")
         self.assertIn('window.TILE_URL = "/tiles/{z}/{x}/{y}.png"', html)

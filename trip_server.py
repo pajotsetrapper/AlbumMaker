@@ -60,7 +60,7 @@ try:
         collect_candidates, dedupe_candidates, default_content, group_by_day, pair_live_photos,
         parse_content_file, placeholder_thumbnail, positive_thumb_size, read_image_metadata,
         read_video_metadata,
-        add_date_check_args, apply_date_check, resolve_date_range,
+        add_date_check_args, apply_date_check, resolve_date_range, large_thumb_size_arg,
         DEFAULT_TILE_URL, VENDOR_DIR, add_offline_args, atomic_write_bytes, fetch_offline_assets,
         vendor_ready,
     )
@@ -242,6 +242,7 @@ class LRUCache:
 
 
 THUMB_CACHE = LRUCache(maxsize=1000)
+HI_THUMB_CACHE = LRUCache(maxsize=150)  # larger thumbnails (--large-thumb-size): fewer, they are several times the size
 FALLBACK_CACHE = LRUCache(maxsize=80)   # full-res, so kept smaller
 
 
@@ -460,6 +461,11 @@ class LiveUrls(SiteUrls):
 
     def thumb(self, item, from_index):
         return item_url("thumb", item, self._v(item))
+
+    def hi_thumb(self, item, from_index):
+        if not ARGS.large_thumb_size:
+            return None
+        return f"{item_url('thumb', item, self._v(item))}&w={ARGS.large_thumb_size}"
 
     def display(self, item):
         return item_url("media", item, self._v(item))
@@ -867,6 +873,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         # connection, so per-request state is reset here
         self._response_started = False
         self._req_version = None
+        self._req_width = None
         self._preview = False
         try:
             if not self._host_allowed():
@@ -876,6 +883,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             raw_path = unquote(parsed.path)
             query = parse_qs(parsed.query)
             self._req_version = (query.get("v") or [None])[0]
+            self._req_width = (query.get("w") or [None])[0]       # ?w=<large thumbnail size>
             self._preview = "1" in query.get("preview", [])   # editor looking at the visitor view
 
             if raw_path in ("/", ""):
@@ -939,14 +947,22 @@ class RequestHandler(BaseHTTPRequestHandler):
             self.send_error(404, "File not found")
             return
         version = item_version(item)
-        cache_key = ("thumb", item.id, version, ARGS.thumb_size)
-        data = THUMB_CACHE.get(cache_key)
+        size, cache = ARGS.thumb_size, THUMB_CACHE
+        if self._req_width is not None:
+            # the larger thumbnail: only the one configured size is offered, so a client
+            # can't make the server build (and cache) thumbnails of arbitrary sizes
+            if not ARGS.large_thumb_size or self._req_width != str(ARGS.large_thumb_size):
+                self.send_error(404, "No such thumbnail size")
+                return
+            size, cache = ARGS.large_thumb_size, HI_THUMB_CACHE
+        cache_key = ("thumb", item.id, version, size)
+        data = cache.get(cache_key)
         if data is None:
-            data = render_thumbnail_bytes(item, ARGS.thumb_size)
+            data = render_thumbnail_bytes(item, size)
             if data is None:
                 self.send_error(404, "Could not generate thumbnail")
                 return
-            THUMB_CACHE.set(cache_key, data)
+            cache.set(cache_key, data)
         self._send_bytes(data, "image/jpeg", cache_control=self._cache_control(version))
 
     def _serve_media(self, item: MediaItem):
@@ -1012,6 +1028,10 @@ def main():
                               "attaching them to their photos.")
     add_date_check_args(parser)
     add_offline_args(parser)
+    parser.add_argument("--large-thumb-size", type=large_thumb_size_arg, default=None, metavar="PIXELS",
+                        help="Size of the larger thumbnails that are loaded only where the screen can use "
+                             "more pixels (the L and XL sizes, high-resolution screens). Default 1600; 0 "
+                             "turns them off. They are made on demand and kept in memory.")
     parser.add_argument("--tile-cache", type=Path, metavar="DIR",
                         help="Keep the map tiles you look at in this folder and serve them from there, "
                              "so maps you have already viewed still work without internet. A tile is "
@@ -1030,6 +1050,10 @@ def main():
     args = parser.parse_args()
     ARGS = args
     date_range = resolve_date_range(args, parser)
+    if args.large_thumb_size is None:             # not given: on, unless the normal thumbnails are already that big
+        args.large_thumb_size = 1600 if args.thumb_size < 1600 else 0
+    elif args.large_thumb_size and args.large_thumb_size <= args.thumb_size:
+        parser.error("--large-thumb-size must be larger than --thumb-size (or 0 to turn it off)")
     if args.fetch_offline_assets:
         sys.exit(fetch_offline_assets())
     if args.tile_url:
@@ -1110,8 +1134,12 @@ def main():
             print(f"Could not start the server on {host}:{args.port}: {e}", file=sys.stderr)
         sys.exit(1)
 
-    print(f"\nNothing has been written to disk except {args.content} — this server generates "
-          f"every page and image on the fly, in memory, per request.")
+    writes = [str(args.content)] + ([f"the map tile cache in {TILE_CACHE}"] if TILE_CACHE is not None else [])
+    print("\nThis server generates every page and image on the fly, in memory. It writes to disk only "
+          + " and ".join(writes) + ".")
+    if args.large_thumb_size:
+        print(f"Larger thumbnails ({args.large_thumb_size}px) are loaded only where the screen can use "
+              f"them (L/XL sizes, high-resolution screens); --large-thumb-size 0 turns that off.")
     if VENDOR_READY:
         print(f"Maps and fonts: using the local copies in {VENDOR_DIR} (no internet needed for them).")
     else:

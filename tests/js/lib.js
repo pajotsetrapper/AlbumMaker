@@ -20,9 +20,59 @@ class Loader extends ResourceLoader {
   }
 }
 
+// What jsdom lacks and the sharper-thumbnail logic needs: element sizes, image sizes, the screen's
+// pixel density, and "which tiles are near the viewport". Each is a function the test supplies:
+//   box(el) -> [width, height] in CSS pixels      natural(img) -> [w, h] of a loaded <img>
+//   sizes(url) -> [w, h] of an image being loaded  failHi(url) -> true to make a download fail
+//   visible(el) -> whether the tile is near the viewport    noObserver -> no IntersectionObserver
+// They can be changed after the page has loaded through w.__box, w.__natural and so on.
+function installLayoutStubs(w, stubs) {
+  if (stubs.dpr) Object.defineProperty(w, 'devicePixelRatio', { value: stubs.dpr, configurable: true });
+  w.__box = stubs.box || null;
+  w.__natural = stubs.natural || null;
+  w.__sizes = stubs.sizes || null;
+  w.__failHi = stubs.failHi || null;
+  w.__visible = stubs.visible || null;
+  w.__downloads = [];
+  w.Element.prototype.getBoundingClientRect = function () {
+    const [width, height] = (w.__box && w.__box(this)) || [0, 0];
+    return { width, height, top: 0, left: 0, right: width, bottom: height, x: 0, y: 0 };
+  };
+  const image = w.HTMLImageElement.prototype;
+  Object.defineProperty(image, 'naturalWidth', { configurable: true, get() { const n = w.__natural && w.__natural(this); return n ? n[0] : 0; } });
+  Object.defineProperty(image, 'naturalHeight', { configurable: true, get() { const n = w.__natural && w.__natural(this); return n ? n[1] : 0; } });
+  Object.defineProperty(image, 'complete', { configurable: true, get() { return true; } });
+  w.Image = class {
+    constructor() { this.onload = null; this.onerror = null; this.naturalWidth = 0; this.naturalHeight = 0; }
+    get src() { return this._src; }
+    set src(value) {
+      this._src = value;
+      w.__downloads.push(value);
+      setTimeout(() => {
+        if (w.__failHi && w.__failHi(value)) { if (this.onerror) this.onerror(); return; }
+        const size = (w.__sizes && w.__sizes(value, w)) || [800, 533];   // (the window is passed in: the page may not be ready yet)
+        this.naturalWidth = size[0];
+        this.naturalHeight = size[1];
+        if (this.onload) this.onload();
+      }, 0);
+    }
+  };
+  if (!stubs.noObserver) {
+    w.IntersectionObserver = class {
+      constructor(callback) { this.callback = callback; }
+      observe(el) {
+        const near = w.__visible ? w.__visible(el) : true;
+        setTimeout(() => this.callback([{ isIntersecting: near, target: el }]), 0);
+      }
+      unobserve() {}
+      disconnect() {}
+    };
+  }
+}
+
 // Loads a page and lets its scripts run. jsdom has no layout engine and no SVG
 // measuring, so the few things Leaflet needs from a real browser are supplied.
-async function load(base, path, { settle = 900, storage = null, breakStorage = false } = {}) {
+async function load(base, path, { settle = 900, storage = null, breakStorage = false, stubs = null } = {}) {
   const errors = [];
   const dom = await JSDOM.fromURL(base + path, {
     runScripts: 'dangerously',
@@ -33,6 +83,7 @@ async function load(base, path, { settle = 900, storage = null, breakStorage = f
       Object.defineProperty(w.HTMLElement.prototype, 'clientHeight', { get() { return 400; } });
       w.SVGSVGElement.prototype.createSVGRect = () => ({});
       w.fetch = (u, o) => fetch(new URL(u, base), o);
+      if (stubs) installLayoutStubs(w, stubs);
       // `storage` seeds what the browser already remembers; `breakStorage` imitates private browsing
       if (breakStorage) Object.defineProperty(w, 'localStorage', { get() { throw new w.Error('storage is blocked'); } });
       else if (storage) for (const [k, v] of Object.entries(storage)) w.localStorage.setItem(k, v);

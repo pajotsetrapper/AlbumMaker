@@ -352,6 +352,13 @@ def same_file_content(a: Path, b: Path) -> bool:
         return False
 
 
+def large_thumb_size_arg(value: str) -> int:
+    """--large-thumb-size: 0 (off), or a size like --thumb-size accepts."""
+    if str(value).strip() == "0":
+        return 0
+    return positive_thumb_size(value)
+
+
 def positive_thumb_size(value: str) -> int:
     try:
         n = int(value)
@@ -1426,6 +1433,7 @@ function applySize(toggle, size){
     b.setAttribute('aria-pressed', on ? 'true' : 'false');
   });
   try { localStorage.setItem(toggle.dataset.store, size); } catch(e) { /* private browsing, etc. */ }
+  sharpenVisible();          // a bigger size may want bigger thumbnails
 }
 
 function initSizeControls(){
@@ -1437,6 +1445,75 @@ function initSizeControls(){
       b.addEventListener('click', () => applySize(toggle, b.dataset.size));
     });
   });
+}
+
+// ---------- sharper thumbnails where the screen can use more pixels ----------
+// A thumbnail is small (see --thumb-size). When the layout (L or XL, a card that crops a
+// portrait photo) or a high-resolution screen would stretch one, the page swaps in the
+// larger version named by data-hi. Only tiles near the viewport are checked, so a long day
+// doesn't download hundreds of large images at once, and a failed download leaves the
+// normal thumbnail in place.
+const hiSeen = new Set();        // tiles near the viewport that have a larger version
+const HI_SLACK = 1.05;           // a 5% stretch is not worth a bigger download
+
+// How many times the screen would stretch the thumbnail along each side (> 1: it wants more pixels).
+function stretchFor(el, nw, nh){
+  const r = el.getBoundingClientRect();
+  if(!r.width || !r.height || !nw || !nh) return 0;
+  // a card's cover fills its box (cropping); a grid tile fits the whole image inside its box
+  const cover = el.classList.contains('cover');
+  const scale = cover ? Math.max(r.width / nw, r.height / nh) : Math.min(r.width / nw, r.height / nh);
+  return scale * (window.devicePixelRatio || 1);
+}
+
+// The normal thumbnail's own size, measured once (before it is ever replaced).
+function baseDims(el, done){
+  if(el.dataset.bw){ done(+el.dataset.bw, +el.dataset.bh); return; }
+  const finish = (w, h) => {
+    if(!w || !h) return;
+    el.dataset.bw = w;
+    el.dataset.bh = h;
+    done(w, h);
+  };
+  if(el.tagName === 'IMG'){
+    if(el.complete && el.naturalWidth) finish(el.naturalWidth, el.naturalHeight);
+    else el.addEventListener('load', () => finish(el.naturalWidth, el.naturalHeight), {once: true});
+  } else {
+    const probe = new Image();
+    probe.onload = () => finish(probe.naturalWidth, probe.naturalHeight);
+    probe.src = el.dataset.lo;
+  }
+}
+
+function sharpen(el){
+  if(!el.dataset.hi || el.dataset.tier === 'hi') return;
+  baseDims(el, (nw, nh) => {
+    if(el.dataset.tier === 'hi' || stretchFor(el, nw, nh) <= HI_SLACK) return;
+    el.dataset.tier = 'hi';      // claimed now, so a second check can't start a second download
+    const loader = new Image();
+    loader.onload = () => {
+      if(el.tagName === 'IMG') el.src = el.dataset.hi;
+      else el.style.backgroundImage = "url('" + el.dataset.hi + "')";
+    };
+    loader.onerror = () => { el.dataset.tier = ''; };   // keep the normal thumbnail; try again later
+    loader.src = el.dataset.hi;
+  });
+}
+
+function sharpenVisible(){ hiSeen.forEach(sharpen); }
+
+function initSharpThumbs(){
+  const els = document.querySelectorAll('img[data-hi], .cover[data-hi]');
+  if(!els.length || !('IntersectionObserver' in window)) return;   // older browsers keep the normal thumbnails
+  const observer = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if(e.isIntersecting){ hiSeen.add(e.target); sharpen(e.target); }
+      else hiSeen.delete(e.target);
+    });
+  }, {rootMargin: '300px'});
+  els.forEach(el => observer.observe(el));
+  let timer = null;     // resizing, zooming the page or moving to another screen changes what is needed
+  window.addEventListener('resize', () => { clearTimeout(timer); timer = setTimeout(sharpenVisible, 250); });
 }
 
 // ---------- day pages: previous/next day (keys, swipe) and Esc back to the overview ----------
@@ -2426,7 +2503,7 @@ INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <div class="day-list" id="day-list">
   {% for d in days %}
   <a class="day-card" href="{{ d.href }}">
-    <div class="cover" {% if d.cover %}style="background-image:url('{{ d.cover }}')"{% endif %}></div>
+    <div class="cover" {% if d.cover %}style="background-image:url('{{ d.cover }}')" data-lo="{{ d.cover }}"{% if d.cover_hi %} data-hi="{{ d.cover_hi }}"{% endif %}{% endif %}></div>
     <div class="body">
       <div class="stamp"><span class="num">{{ d.day_number if d.day_number else '?' }}</span><span class="of">{{ 'N/A' if d.is_unknown else 'DAY' }}</span></div>
       <div class="date">{{ d.date_display }}</div>
@@ -2444,6 +2521,7 @@ INDEX_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <script src="{{ assets_prefix }}assets/script.js"></script>
 <script>
 initSizeControls();
+initSharpThumbs();
 try { initOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
 </script>
@@ -2517,7 +2595,7 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 <div class="grid" id="thumb-grid">
   {% for item in items %}
   <div class="thumb{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
-    <img src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}">
+    <img src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}"{% if item.hi_url %} data-hi="{{ item.hi_url }}"{% endif %}>
     {% if item.media_type == 'video' %}
     <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
     {% endif %}
@@ -2539,6 +2617,7 @@ DAY_TEMPLATE = _JINJA.from_string("""<!doctype html>
 initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
 openSlideshowFromHash();
 initSizeControls();
+initSharpThumbs();
 initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
 {% if editable %}initDayEditor({{ date_key_json }});{% endif %}
 {% if route %}
@@ -2739,6 +2818,12 @@ class SiteUrls:
         or None to use the copies on the internet."""
         return None
 
+    def hi_thumb(self, item: MediaItem, from_index: bool) -> Optional[str]:
+        """The larger thumbnail the page may swap in where a screen can use
+        more pixels (L/XL sizes, high-resolution displays), or None when
+        there is no larger version."""
+        return None
+
     def home(self, from_index: bool) -> str:
         raise NotImplementedError
 
@@ -2796,6 +2881,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "title": title,
             "excerpt": (desc[:110] + "\u2026") if len(desc) > 110 else desc,
             "cover": urls.thumb(pick_cover(d, content), from_index=True) if d.items else None,
+            "cover_hi": urls.hi_thumb(pick_cover(d, content), from_index=True) if d.items else None,
             "photo_count": d.photo_count,
             "video_count": d.video_count,
             "color": UNKNOWN_DAY_COLOR if d.is_unknown else DAY_COLORS[(rank - 1) % len(DAY_COLORS)],
@@ -2834,7 +2920,8 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         pe = photo_entry(content, it.rel)
         item_ctx = {"thumb_url": urls.thumb(it, from_index=False), "media_type": it.media_type,
                     "live": it.live_clip is not None, "caption": pe["caption"],
-                    "favorite": pe["favorite"], "hidden": pe["hidden"]}
+                    "favorite": pe["favorite"], "hidden": pe["hidden"],
+                    "hi_url": urls.hi_thumb(it, from_index=False)}
         if not d.is_unknown:
             # only show a time badge when it's a real capture time: a
             # file-modified fallback time isn't worth presenting as fact

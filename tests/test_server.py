@@ -84,6 +84,13 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(prev, "/day/2026-05-01")
         self.assertIn("Esc returns to all days", self.server.text("/day/2026-05-02"))
 
+    def test_the_startup_message_says_exactly_what_is_written_to_disk(self):
+        log = self.server.log()
+        self.assertIn("It writes to disk only", log)
+        self.assertIn(str(self.server.content), log)
+        self.assertNotIn("tile cache", log, "no tile cache was asked for")
+        self.assertNotIn("Nothing has been written", log, "the old claim, which stopped being true")
+
     # ---- images and files
     def test_thumbnails_are_small_jpegs(self):
         status, headers, body = self.server.get(f"/thumb/{self.ids1[0]}")
