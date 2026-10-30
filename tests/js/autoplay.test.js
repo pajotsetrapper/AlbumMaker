@@ -172,7 +172,9 @@ test('a video that ends while the Details panel is open waits for it, then moves
   thumbs(w)[0].click();
   byId(w, 'slideshow-play').click();
   press(w, 'i');
-  w.document.querySelector('#slideshow-media video').dispatchEvent(new w.Event('ended'));
+  const v = w.document.querySelector('#slideshow-media video');
+  Object.defineProperty(v, 'ended', { value: true });       // as in a browser once it has finished
+  v.dispatchEvent(new w.Event('ended'));
   await stays(w, 700);
   press(w, 'i');                                             // closing the panel must not lose the pending move
   await movesOn(w, 1000);
@@ -188,6 +190,34 @@ test('Play on a video that has already ended (or failed) moves on after the usua
   byId(w, 'slideshow-play').click();
   assert.match(byId(w, 'slideshow-progress-bar').style.transition, /width 150ms linear/);
   await movesOn(w, 600);
+});
+
+test('a video that ended while paused and is replayed still moves on when it ends again', async () => {
+  const { w } = await playing();
+  w.eval("SLIDES[0].type = 'video'");
+  thumbs(w)[0].click();
+  const v = w.document.querySelector('#slideshow-media video');
+  v.dispatchEvent(new w.Event('ended'));                     // finished while paused
+  byId(w, 'slideshow-play').click();                         // ... replayed with its controls, then Play
+  await stays(w, 400);                                       // still playing: it holds the slide
+  v.dispatchEvent(new w.Event('ended'));
+  await movesOn(w, 300);
+});
+
+test('pausing cancels the wait after a video failed, so Play starts a full new wait', async () => {
+  const { w } = await playing(400);
+  w.eval("SLIDES[0].type = 'video'");
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  const v = w.document.querySelector('#slideshow-media video');
+  Object.defineProperty(v, 'error', { value: { code: 4 } });   // as a browser reports it (e.g. HEVC in Chrome)
+  v.dispatchEvent(new w.Event('error'));
+  await sleep(150);
+  press(w, ' ');                                             // pause ...
+  await sleep(100);
+  press(w, ' ');                                             // ... and play again: 400ms from here
+  await stays(w, 300);                                       // the first wait (due at 400ms) must not fire
+  await movesOn(w, 400);
 });
 
 test('typing a space in the caption box does not start playback (editor view)', async () => {

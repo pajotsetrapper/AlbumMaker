@@ -524,17 +524,26 @@ function startProgress(ms){
   bar.style.width = '100%';
 }
 
-function scheduleAdvance(){
+// The one timer (playTimer) that moves the slideshow on: pausing, closing or any
+// change of slide cancels it. `videoEvent` is 'ended' or 'error' when a video
+// slide's own event calls this (see renderSlide).
+function scheduleAdvance(videoEvent){
   clearTimeout(playTimer);
   resetProgress();
   if(!playing || !document.getElementById('slideshow').classList.contains('open')) return;
   const item = SLIDES[currentSlide];
   if(!item) return;
   if(item.type === 'video'){
-    // moves on when the clip ends (see renderSlide); one that has already ended or
-    // failed (Play pressed afterwards) gets the same wait as a photo instead
+    if(videoEvent === 'ended'){
+      // it just finished: move on now, or as soon as nothing holds the slide
+      if(autoBlocked()){ playTimer = setTimeout(() => scheduleAdvance('ended'), 500); return; }
+      stepSlide(1);
+      return;
+    }
+    // still playing: it holds the slide until it ends. One that has already
+    // ended or failed (Play pressed afterwards) gets the same wait as a photo.
     const v = document.querySelector('#slideshow-media video');
-    if(!v || !(v.ended || v.error)) return;
+    if(videoEvent !== 'error' && !(v && (v.ended || v.error))) return;
   }
   if(autoBlocked()){ playTimer = setTimeout(scheduleAdvance, 500); return; }
   startProgress(playMs);
@@ -625,17 +634,12 @@ function renderSlide(){
   if(mediaTag){
     if(item.type === 'video'){
       mediaTag.addEventListener('loadeddata', clearLoading, {once: true});
-      // while playing, a video holds the slide until it finishes, and then
-      // waits like a photo does while someone is typing, reading details, ...
-      // (own timers, not playTimer: scheduleAdvance clears that and leaves videos alone;
-      // these stop by themselves once this video is no longer on screen)
-      const moveOn = () => {
-        if(!playing || !mediaTag.isConnected || SLIDES[currentSlide] !== item) return;
-        if(autoBlocked()){ setTimeout(moveOn, 500); return; }
-        stepSlide(1);
+      // not {once: true}: a clip replayed with its controls can end again
+      const onEnd = (what) => () => {
+        if(mediaTag.isConnected && SLIDES[currentSlide] === item) scheduleAdvance(what);
       };
-      mediaTag.addEventListener('ended', moveOn, {once: true});
-      mediaTag.addEventListener('error', () => { if(playing) setTimeout(moveOn, playMs); }, {once: true});
+      mediaTag.addEventListener('ended', onEnd('ended'));
+      mediaTag.addEventListener('error', onEnd('error'));
     } else if(mediaTag.complete){
       clearLoading();
     } else {

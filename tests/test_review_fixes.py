@@ -153,6 +153,36 @@ class RebuildCleanupTests(TempDirTest):
         self.run_build()
         self.assertEqual(self.media(), before)
 
+    def test_a_damaged_record_for_an_unreadable_file_does_not_crash_the_build(self):
+        self.run_build()
+        path = self.out / scan.SITE_MARKER
+        record = json.loads(path.read_text())
+        del record["files"]["IMG_2.jpg"]["outputs"]                         # hand-edited, say
+        path.write_text(json.dumps(record))
+        real = build.drop_hidden_groups
+
+        def then_unreadable(*a, **kw):
+            groups = real(*a, **kw)
+            os.rename(self.photos / "IMG_2.jpg", self.tmp / "away.jpg")
+            return groups
+        with mock.patch.object(build, "drop_hidden_groups", then_unreadable):
+            self.run_build()                                                 # no KeyError
+        self.assertIn("IMG_1.JPG", json.loads(path.read_text())["files"])
+
+    def test_files_written_by_this_run_are_not_reported_as_leftovers(self):
+        # e.g. the thumbnail of a file whose processing failed later on
+        (self.out / "thumbs").mkdir(parents=True)
+        old = self.out / "thumbs" / "old.jpg"
+        old.write_bytes(b"x")
+        time.sleep(0.05)
+        since = time.time()
+        (self.out / "thumbs" / "new.jpg").write_bytes(b"x")
+        err = __import__("io").StringIO()
+        with mock.patch("sys.stderr", err):
+            build.report_unrecorded_outputs(self.out, set(), since)
+        self.assertIn("1 file(s)", err.getvalue())
+        self.assertIn("thumbs/old.jpg", err.getvalue())
+
     @unittest.skipUnless(sys.platform in ("darwin", "win32"), "needs a disk that ignores letter case")
     def test_a_differently_spelled_output_is_not_reported_as_a_leftover(self):
         self.run_build()
@@ -281,6 +311,15 @@ class HiddenLivePhotoRuleTests(TempDirTest):
         clip = self.item("/p/b/IMG_7.MOV", "video")
         self.assertEqual(self.pair([photo, clip]), [photo])
         self.assertIs(photo.live_clip, clip)
+
+    def test_a_photo_claims_its_own_folder_before_a_copy_of_another_photo_does(self):
+        # A/IMG_1.JPG has a copy in B, but B has its own IMG_1.HEIC: each clip belongs in its own folder
+        jpg = self.item("/p/A/IMG_1.JPG", "image", duplicates=["/p/B/IMG_1.JPG"])
+        heic = self.item("/p/B/IMG_1.HEIC", "image")
+        clip_a, clip_b = self.item("/p/A/IMG_1.MOV", "video"), self.item("/p/B/IMG_1.MOV", "video")
+        self.assertEqual(self.pair([jpg, heic, clip_a, clip_b]), [jpg, heic])
+        self.assertIs(jpg.live_clip, clip_a)
+        self.assertIs(heic.live_clip, clip_b)
 
     def test_a_photo_gets_one_clip_and_a_second_stays_a_video(self):
         photo = self.item("/p/a/IMG_8.jpg", "image", duplicates=["/p/b/IMG_8.jpg"])
@@ -534,10 +573,8 @@ class LiveServerTests(TempDirTest):
         self.start()
         r, html = self.request("GET", "/")
         self.assertIn(f"/assets/script.js?v={server.ASSET_VERSION}".encode(), html)
-        r, _ = self.request("GET", f"/assets/script.js?v={server.ASSET_VERSION}", headers={"Via": "1.1 proxy"})
-        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE)            # a visitor
         r, _ = self.request("GET", f"/assets/script.js?v={server.ASSET_VERSION}")
-        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE_PRIVATE)    # the editor
+        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE)
         r, _ = self.request("GET", "/assets/script.js")
         self.assertEqual(r.getheader("Cache-Control"), server.CACHE_REVALIDATE)
 
@@ -601,23 +638,23 @@ class LiveServerTests(TempDirTest):
         r, data = self.request("GET", f"/media/{one.key}", headers={"Range": "bytes=2-5"})
         self.assertEqual((r.status, len(data)), (206, 4))
 
-    def test_what_an_editor_gets_is_cached_privately_and_the_rest_publicly(self):
-        # a proxy or tunnel in front of the server must not keep an editor-only
-        # photo for others, but may keep what any visitor can see
+    def test_long_lived_responses_are_never_kept_by_a_shared_cache(self):
+        # hiding a photo doesn't change its URL: a proxy or tunnel that kept a copy
+        # would go on serving it, so only browsers may keep anything
         items = self.start()
         one = next(it for it in items if it.rel == "a/one.jpg")
         r, html = self.request("GET", "/day/2026-05-01")
         import re
         url = re.search(rf'/thumb/{one.key}\?v=[^"]+'.encode(), html).group(0).decode()
         visitor = {"Via": "1.1 proxy"}
-        r, _ = self.request("GET", url, headers=visitor)
-        self.assertEqual((r.status, r.getheader("Cache-Control")), (200, server.CACHE_IMMUTABLE))
+        for headers in (visitor, {}):                                       # a visitor, and the editor
+            r, _ = self.request("GET", url, headers=headers)
+            cache = r.getheader("Cache-Control")
+            self.assertEqual((r.status, cache), (200, server.CACHE_IMMUTABLE))
+            self.assertIn("private", cache)
+            self.assertNotIn("public", cache)
         self.app.content.update(lambda c: c["photos"].update({"a/one.jpg": {"hidden": True}}))
-        r, _ = self.request("GET", url)                                     # the editor sees it
-        self.assertEqual((r.status, r.getheader("Cache-Control")), (200, server.CACHE_IMMUTABLE_PRIVATE))
-        self.assertNotIn("public", r.getheader("Cache-Control"))
-        r, _ = self.request("GET", url, headers=visitor)
-        self.assertEqual(r.status, 404)
+        self.assertEqual(self.request("GET", url, headers=visitor)[0].status, 404)
 
     def test_idle_connection_is_closed(self):
         self.start()
