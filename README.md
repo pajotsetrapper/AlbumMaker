@@ -40,7 +40,7 @@ in the page:
 | Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` (and the map tiles, if you turn on the tile cache) |
 | Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site | The same, and map tiles you have already viewed can be kept in a local cache |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
-| Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server), or edit the file and refresh |
+| Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server, or any browser with the editor link), or edit the file and refresh |
 | Cost | A build step | A little CPU on first view of each day |
 
 Both use the same `requirements.txt` and the same `trip_content.json`
@@ -56,11 +56,19 @@ You need Python 3.9+, plus:
 pip install -r requirements.txt
 ```
 
-Keep the three Python files together in one folder: `generate_site.py`,
-`trip_server.py`, and `trip_common.py`. The last one holds the code both
-scripts share, and neither runs without it. Optionally, a `vendor` folder
-next to them holds local copies of the map library and fonts; see
-"Working without internet".
+Keep these together in one folder: `generate_site.py`, `trip_server.py`
+and the `tripsite` folder, which holds the code both scripts share (and
+the page templates, CSS and JavaScript as ordinary files). Neither script
+runs without it. `trip_common.py` is only there so older code that
+imports it keeps working. Optionally, a `vendor` folder next to them holds
+local copies of the map library and fonts; see "Working without
+internet".
+
+**Prefer a single file?** `python tools/build_zipapp.py` packs everything
+into `dist/tripsite.pyz`, which you can copy anywhere and run with
+`python tripsite.pyz serve -i photos` or `python tripsite.pyz build -i
+photos -o site`. The requirements still need to be installed, and a
+`vendor` folder is looked for next to the `.pyz`.
 
 You also need **ffmpeg** installed and on your PATH. It's used to read
 video metadata and grab a thumbnail frame from each video:
@@ -91,7 +99,8 @@ Options:
   It can be inside your photos folder; it's excluded from the scan. It
   can't be the photos folder itself, or a folder that contains it.
 - `-c / --content`: where titles, descriptions and photo notes are
-  stored (default: `./trip_content.json`). See section 3.
+  stored (default: `trip_content.json` in your photos folder). See
+  section 3.
 - `--thumb-size`: maximum thumbnail dimension in px (default 400,
   allowed 16–4096).
 - `--large-thumb-size`: also make a larger thumbnail of this size (for
@@ -142,14 +151,22 @@ Options:
   current folder, so you can also drop the script into your photos
   folder and run it with no arguments).
 - `-c / --content`: where titles, descriptions and photo notes are
-  stored (default: `./trip_content.json`). See section 3.
+  stored (default: `trip_content.json` in your photos folder). See
+  section 3.
 - `--port`: default `8000`.
 - `--lan`: let other devices on your network open the site too. **There
   is no login of any kind**: anyone on your Wi-Fi or network can browse
   your photos while the server runs with this on. Leave it off unless you
-  want that. Other devices can look but never edit; see section 4.
+  want that. Other devices can look but not edit (unless you open the
+  editor link on them); see section 4.
 - `--read-only`: turn off in-page editing completely, even on the
-  computer running the server. See section 4.
+  computer running the server. Nothing is written to `trip_content.json`
+  at all, not even blank entries for new days. See section 4.
+- `--editor-link-only`: don't treat the computer running the server as
+  an editor automatically; only a browser that has opened the editor
+  link can edit. Use this when you put the server behind a reverse proxy
+  or a tunnel (nginx, Tailscale Serve, cloudflared, ngrok, an SSH
+  tunnel...), since those connect from the same computer. See section 4.
 - `--allow-host NAME`: an extra host name the server should answer to
   (repeatable). The server only responds to requests addressed to an IP
   address, `localhost`, or this computer's own name (also with
@@ -173,18 +190,39 @@ Options:
 - `--tile-url TEMPLATE`: where map tiles come from, with `{z}`, `{x}` and
   `{y}` in it (default: OpenStreetMap). For a tile provider you have an
   account with.
+- `--memory-cache-mb MB`: how much memory to use for thumbnails and
+  converted photos kept between requests (default 512). The limit is on
+  their total size, so a few huge converted HEICs can't push the server
+  into gigabytes.
+- `--index-cache FILE`: keep every file's metadata (dates, GPS, camera
+  details) in this file, so the next start only reads new or changed
+  files. Off by default. Without it, metadata is still read in parallel.
+- `--verbose`: log every request. Normally only errors (other than 404)
+  and requests slower than two seconds are printed.
 
-Apart from `trip_content.json` (and the tile folder, if you use
-`--tile-cache`), the server writes nothing to disk, and it writes to the
-JSON file only when you save an edit in the page.
-Thumbnails and converted images are built in memory and kept in a small
-in-memory cache, so revisiting a day is fast. The cache is gone when the
-server stops.
+Apart from `trip_content.json` (and the tile folder or index cache, if you
+use them), the server writes nothing to disk, and it writes to the JSON
+file only when you save an edit in the page (plus, at startup, blank
+entries for new days, unless `--read-only`).
+Thumbnails and converted images are built in memory and kept in a
+size-limited in-memory cache, so revisiting a day is fast. The cache is
+gone when the server stops. At most one image per CPU core is built at a
+time, however many requests arrive, and when several requests ask for the
+same image at once it's only built once.
 
 ## 3. Titles, descriptions and photo notes: `trip_content.json`
 
-The first run of either script creates `trip_content.json` in the folder
-you run it from, with an entry for every day it found:
+The first run of either script creates `trip_content.json` in your
+photos folder, with an entry for every day it found:
+
+Where the file is looked for, unless you pass `-c`:
+
+- `trip_content.json` in your photos folder.
+- If there's none there yet, but there is one in the folder you run the
+  script from (where versions before 2.0 kept it), that one is used, with
+  a note suggesting you move it next to your photos.
+- If the photos folder can't be written to (a read-only network share,
+  say), the folder you run the script from.
 
 ```json
 {
@@ -292,11 +330,23 @@ elsewhere puts you back in the editor.)
 
 Who can edit:
 
-- Only the computer running the server, and that holds whether or not
-  `--lan` is on. With `--lan`, you can still edit from the host computer
-  while other devices on your network can look but never change
-  anything. Using the machine's own network address from the machine
-  itself still counts as local.
+- The computer running the server, whether or not `--lan` is on. Using
+  the machine's own network address from the machine itself still counts.
+  Requests that arrive through a proxy (they carry a `Forwarded`,
+  `X-Forwarded-For`, `X-Real-IP` or `Via` header) don't count, even
+  though they come from the same computer.
+- Any browser that has opened the **editor link** the server prints at
+  startup (`http://.../?key=...`). Opening it once remembers that browser
+  (a cookie) until the server restarts; the key is removed from the
+  address bar straight away. That's how you edit from your phone or
+  another computer. The key is new every time the server starts, so an
+  old link stops working. Treat the link like a password.
+- Other devices on your network (with `--lan`) can look but not change
+  anything, and don't see hidden photos.
+- `--editor-link-only` stops the computer running the server from being
+  an editor automatically, so only the editor link works. Use it behind a
+  reverse proxy or tunnel, which connects from the same computer and
+  might not say so.
 - `--read-only` turns editing off for everyone, including you.
 - Edit requests are only accepted from pages the server itself serves, so
   a web page you visit can't send edits to it.
@@ -321,7 +371,14 @@ touched.
   skips it.
 - **Static site:** hidden photos are **left out of the build entirely**,
   not just not shown, so their files never end up in a folder you might
-  publish. A Live Photo's motion clip goes with its photo.
+  publish. A Live Photo's motion clip goes with its photo (the same rule
+  as the live server: a clip with the same name that looks like a Live
+  Photo clip; with `--no-live-photos`, clips are separate videos you hide
+  separately).
+- **Identical copies are hidden too.** If the same photo is in two
+  folders, only one copy is shown (see "Duplicates"), and hiding either
+  copy hides the photo. A copy elsewhere never slips into the site in
+  its place. Captions and favorites on any copy apply as well.
 
 ## 5. Working without internet
 
@@ -544,8 +601,9 @@ Things to know:
 
 - On the static site the link names the photo's file in `media/`, so
   renaming or re-importing files breaks old links. On the live server it
-  uses a number that can shift when files are added, so treat those links
-  as being for yourself.
+  uses a short code worked out from the file's path in your photos
+  folder, so links keep working across restarts and when other files are
+  added; moving or renaming the file breaks them.
 - A link to a photo that no longer exists is ignored.
 - Links behave best when the site is served over http(s). When a page is
   opened straight from a folder (`file://`), some browsers don't allow
@@ -556,9 +614,9 @@ Things to know:
 
 **Your originals are never modified.** Neither script ever changes,
 moves or renames your photos and videos. The only file either script
-may create in your photos folder is `trip_content.json`, and only if you
-run the script from inside that folder. The live server later updates it
-when you save an edit in the page.
+creates in your photos folder is `trip_content.json` (unless you pass
+`-c` to put it elsewhere). The live server later updates it when you save
+an edit in the page.
 
 **Full-screen viewing uses the real files.** For jpg, png, webp and bmp,
 the slideshow shows your actual file, with no resizing or recompression.
@@ -663,7 +721,8 @@ so none of this applies there. The exceptions:
   first is kept. Files are only treated as duplicates when they're
   identical byte for byte. Re-exported or re-compressed versions of a
   photo are different files, so they're kept. Use `--no-dedupe` to
-  include everything.
+  include everything. A caption, favorite or hidden flag on any copy
+  applies to the one that's shown.
 - **Day grouping.** Photos are placed by their EXIF capture date
   (`DateTimeOriginal`, falling back to the other EXIF date fields), and
   videos by their `creation_time`.
@@ -739,18 +798,22 @@ so none of this applies there. The exceptions:
     inside the output folder.
   - Captions, favorites and covers don't touch the photo files, so
     re-running after changing only those is quick.
-  - The scan still reads every file's metadata on each run, which takes
-    a moment on large trips.
+  - The build record also keeps every file's metadata, so unchanged
+    files aren't even opened again; a re-run with nothing new takes
+    well under a second for most trips.
   - Deleting the build record is safe: the next run just regenerates
     thumbnails and converted images, and re-checks the copies.
 - **Editing is for the live server.** The static site only displays what
   `trip_content.json` says. Edits you make in the live server don't
   appear in a static site until you re-run `generate_site.py`.
 - **Live server: new photos need a restart.** The folder is scanned once
-  at startup. Your `trip_content.json` is untouched by a restart; new
-  days just get a blank entry added.
-- **Live server: no authentication.** It's meant for your own computer or
-  home network. Don't port-forward it to the internet.
+  at startup (in parallel; with `--index-cache`, only new or changed
+  files are read). Your `trip_content.json` is untouched by a restart;
+  new days just get a blank entry added.
+- **Live server: no login for viewing.** Anyone who can reach the server
+  can look at the (non-hidden) photos. It's meant for your own computer
+  or home network. Don't port-forward it to the internet. Editing needs
+  the computer itself or the editor link (see section 4).
 - **Live server: first view of a day is slower.** Thumbnails are built
   the first time a day is opened, which takes a moment for days with
   many photos. Revisiting is fast, thanks to the in-memory cache.
@@ -772,8 +835,10 @@ so none of this applies there. The exceptions:
   `--date-range START END`. If a video has no date, check that ffmpeg is
   installed.
 - **I can't see the editing buttons.** They only appear when you open the
-  server from the computer running it, and not with `--read-only`. If
-  you're looking at a page that has "Preview as visitor" applied, open
+  server from the computer running it, or in a browser that has opened
+  the editor link printed at startup, and not with `--read-only`. Behind
+  a proxy or tunnel, or with `--editor-link-only`, use the editor link.
+  If you're looking at a page that has "Preview as visitor" applied, open
   the day again from the homepage.
 - **"Nothing was saved" when editing.** `trip_content.json` currently
   has a syntax error. Fix it (the message says where), and edits work
@@ -829,7 +894,12 @@ takes roughly 30 seconds. To run one file or one test, name it:
 ```bash
 python -m unittest tests.test_editing
 python -m unittest tests.test_server.ServerBasicsTests.test_byte_ranges
+python -m unittest tests.test_review_fixes
 ```
+
+Tests that patch module-level names should patch them in the `tripsite`
+module that uses them (for example `tripsite.offline._NPM_REGISTRY`), not
+in `trip_common`, which only re-exports them.
 
 Some parts are optional, and are skipped with a note when their
 requirements are missing:
@@ -872,20 +942,23 @@ servers, and HEIC conversion, which needs `pillow-heif`.
 
 ## Customizing the look
 
-The whole design lives in `trip_common.py` and is shared by both
-scripts, so a change there shows up in the static site and the live
-server alike:
+The whole design is shared by both scripts, so a change shows up in the
+static site and the live server alike. It lives in ordinary files in the
+`tripsite` folder:
 
-- **The `CSS` string.** Colours are CSS variables at the top (`--navy`,
-  `--gold`, `--teal`, etc.), so they're easy to swap.
-- **The `DAY_COLORS` list.** This is the palette used for each day on the
-  overview map.
-- **The templates.** The page layout is plain Jinja2 templates
-  (`INDEX_TEMPLATE`, `DAY_TEMPLATE`) in the same file.
-- **The continent outline.** The offline fallback map is generated data
-  (Natural Earth, public domain) at the very end of `trip_common.py`; the
-  colours it's drawn in are in the `addBaseMap` function in the `JS`
-  string.
-- **The `JS` string.** The slideshow, maps, autoplay and editing code.
-  Like `CSS`, it's a raw string, so backslashes in it are passed to the
-  browser unchanged.
+- **`tripsite/static/style.css`.** Colours are CSS variables at the top
+  (`--navy`, `--gold`, `--teal`, etc.), so they're easy to swap.
+- **`DAY_COLORS` in `tripsite/model.py`.** This is the palette used for
+  each day on the overview map.
+- **`tripsite/templates/`.** The page layout: plain Jinja2 templates
+  (`index.html`, `day.html`, and the `head.html` and `slideshow.html`
+  parts they include).
+- **`tripsite/static/world_land.json`.** The continent outline the maps
+  fall back to offline (Natural Earth, public domain). The colours it's
+  drawn in are in the `addBaseMap` function in `script.js`.
+- **`tripsite/static/script.js`.** The slideshow, maps, autoplay and
+  editing code.
+
+The live server reads these files when it starts, so restart it after a
+change. Its pages link to the CSS and JavaScript with a version code that
+changes with their content, so browsers pick up the new files at once.
