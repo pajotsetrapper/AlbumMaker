@@ -10,6 +10,31 @@ in by hand except the titles and descriptions, if you want them. With the
 live server you can also add captions, mark favorites, hide photos and
 pick each day's cover photo right in the page.
 
+It also names the places you visited (offline, no account needed), can
+use a GPS track from a watch or phone app to put camera photos on the map
+and draw the route you travelled, and can gather all your trips on one
+page, wherever their folders are.
+
+**New here?** Start with [Step by step](#step-by-step). The numbered
+sections after it are the full reference.
+
+**Contents:**
+[Quick start](#quick-start) ·
+[Step by step](#step-by-step) ·
+[1. Install](#1-install) ·
+[2a. Static site](#2a-build-a-static-site-generate_sitepy) ·
+[2b. Live server](#2b-serve-it-live-trip_serverpy) ·
+[2c. Several trips](#2c-several-trips-a-library) ·
+[3. Titles and notes](#3-titles-descriptions-and-photo-notes-trip_contentjson) ·
+[4. Editing in the page](#4-editing-in-the-page-live-server) ·
+[5. Without internet](#5-working-without-internet) ·
+[6. GPS tracks and place names](#6-gps-tracks-and-place-names) ·
+[What you get](#what-you-get) ·
+[How your photos are handled](#how-your-photos-are-handled) ·
+[Notes & limitations](#notes--limitations) ·
+[Troubleshooting](#troubleshooting) ·
+[Running the tests](#running-the-tests)
+
 ## Quick start
 
 ```bash
@@ -24,7 +49,13 @@ python generate_site.py -i /path/to/your/photos -o site
 # Optional, once, while online: so the pages work without internet
 # (see "Working without internet"):
 python trip_server.py --fetch-offline-assets
+
+# Several trips at once, one page linking them (see "Several trips"):
+python generate_site.py --library trips.txt -o ~/TripSites
 ```
+
+A `.gpx` track in the photos folder is picked up by itself (see "GPS
+tracks and place names").
 
 You also need ffmpeg (see "Install"). Everything below explains the
 details.
@@ -47,6 +78,136 @@ Both use the same `requirements.txt` and the same `trip_content.json`
 format, so you can switch between them, or use both, at any time. A
 typical workflow is to curate in the live server, then run
 `generate_site.py` to produce the version you share.
+
+## Step by step
+
+This walks you through it from the start, assuming you don't use a
+terminal much. Each step links to the detailed section if you want to
+know more.
+
+**Typing the commands.** The commands below go in a terminal: on a Mac
+the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
+*Command Prompt* from the Start menu. Two tips:
+
+- Instead of typing a folder's path, type the start of the command, then
+  drag the folder from Finder or Explorer into the terminal window: its
+  path appears. Put quotes around paths that contain spaces, as in the
+  examples.
+- The examples say `python`. On a Mac that is often `python3`, and on
+  Windows `py`. Use whichever works on your computer.
+
+### 1. Get the programs ready (once)
+
+1. Check that Python 3.9 or newer is installed: `python --version`. If
+   it isn't, get it from [python.org](https://www.python.org/downloads/).
+2. Install **ffmpeg**, which handles the videos: `brew install ffmpeg` on
+   a Mac, `winget install ffmpeg` on Windows, `sudo apt install ffmpeg` on
+   Ubuntu. Without it photos work fine, but videos have no date or preview.
+3. Go to the folder holding these scripts (`cd`, then drag the folder in)
+   and install what they need:
+
+   ```bash
+   cd "/path/to/TripServer"
+   python -m pip install -r requirements.txt
+   ```
+
+Details: [1. Install](#1-install).
+
+### 2. Put a trip in one folder
+
+Copy the trip's photos and videos into one folder, from as many phones
+and cameras as you like. Subfolders are fine, and so are duplicates (the
+same photo imported twice is shown once). Nothing in this folder is ever
+changed, moved or renamed; the scripts only add one small file,
+`trip_content.json`, for your titles and notes.
+
+Did you record your route with a GPS watch or an app like Strava? Put
+its `.gpx` file in the folder too: photos from a camera without GPS then
+appear on the map, and the maps show the way you went. See [6. GPS tracks
+and place names](#6-gps-tracks-and-place-names).
+
+### 3. Look at it
+
+```bash
+python trip_server.py -i "/path/to/Japan 2024"
+```
+
+Open <http://127.0.0.1:8000/> in your browser. You see the trip's
+homepage with a map and a card per day; click a day, then a photo for the
+full-screen viewer. Press **Ctrl+C** in the terminal to stop the server
+when you're done. The first view of each day takes a moment while
+thumbnails are made.
+
+Days are worked out from when each photo was taken. Photos without a
+usable date go on a separate "Unsorted" page; [Troubleshooting](#troubleshooting)
+says what to do about that.
+
+### 4. Tell the story
+
+While the server runs, you can edit right in the page:
+
+- On a day page, **Edit title & description**. A day without a title
+  offers one made of the places you visited that day.
+- In the full-screen viewer: type a **caption**, mark a **★ Favorite**
+  (or press `S`), **Hide** a photo from visitors, or **Set as cover** for
+  the day's card.
+- **Preview as visitor** shows the page the way others will see it.
+
+Everything is saved straight away into `trip_content.json` in the photos
+folder. The trip's own title and subtitle are set in that file: open it
+in any text editor and change `"title"`. See [3. Titles and
+notes](#3-titles-descriptions-and-photo-notes-trip_contentjson) and
+[4. Editing in the page](#4-editing-in-the-page-live-server).
+
+### 5. Make a copy to share
+
+Stop the server (Ctrl+C), then build a standalone version:
+
+```bash
+python generate_site.py -i "/path/to/Japan 2024" -o "/path/to/Japan 2024 site"
+```
+
+Open `index.html` in the new folder to check it. That folder is the whole
+site: copy it to a USB stick, put it in a shared cloud folder, or upload
+it to any web host. No Python is needed to view it, and photos you hid
+are not in it at all. Run the same command again after adding photos or
+changing notes; only what changed is redone.
+
+To make it work without internet (apart from the map tiles), run
+`python generate_site.py --fetch-offline-assets` once while online, then
+build again. See [5. Working without internet](#5-working-without-internet).
+
+### 6. All your trips on one page
+
+Make a text file listing your trips' folders, one per line:
+
+```
+/path/to/Japan 2024
+/path/to/Italy 2025
+/Volumes/External drive/Iceland
+```
+
+Then build them all, with a page linking them:
+
+```bash
+python generate_site.py --library trips.txt -o "/path/to/All trips"
+```
+
+or look at them all live with `python trip_server.py --library trips.txt`.
+See [2c. Several trips](#2c-several-trips-a-library).
+
+### Common tasks
+
+| I want to… | Do this |
+|---|---|
+| Add photos I copied later | Put them in the folder. Restart the server, or run `generate_site.py` again (only the new ones are processed). |
+| See my camera's photos on the map | Add a `.gpx` track of the trip to the folder ([6](#6-gps-tracks-and-place-names)). |
+| Keep a photo out of what others see | Open it and click **Hide**. It stays visible (dimmed) to you only, and isn't copied into a static site. |
+| Let family on my home Wi-Fi look | Start the server with `--lan`; it prints the address to give them ([2b](#2b-serve-it-live-trip_serverpy)). |
+| Edit from my phone or another computer | Open the editor link the server prints at startup on that device ([4](#4-editing-in-the-page-live-server)). |
+| Fix photos that landed on the wrong day or in "Unsorted" | See [Troubleshooting](#troubleshooting) (`--date-range`, `--tz-offset`). |
+| Use it without internet | Run `--fetch-offline-assets` once while online ([5](#5-working-without-internet)). |
+| Keep my route private | Leave the `.gpx` file out of the folder, or add `--no-gpx`. |
 
 ## 1. Install
 
@@ -94,7 +255,10 @@ Then open `site_output/index.html` in a browser. No server is needed.
 Options:
 
 - `-i / --input`: folder with your photos and videos. Subfolders are
-  scanned too. Required.
+  scanned too. Required, unless you use `--library`.
+- `--library LIST`: build several trips at once, each into its own
+  folder under `-o`, plus a page linking them. See "Several trips: a
+  library" below.
 - `-o / --output`: where the website is written (default: `./site`).
   It can be inside your photos folder; it's excluded from the scan. It
   can't be the photos folder itself, or a folder that contains it.
@@ -154,8 +318,11 @@ the server with Ctrl+C.
 Options:
 
 - `-i / --input`: folder with your photos and videos (default: the
-  current folder, so you can also drop the script into your photos
-  folder and run it with no arguments).
+  current folder, so run from inside your photos folder you can leave
+  it out).
+- `--library LIST`: serve several trips: a page at `/` linking them all,
+  each trip under its own `/<name>/`. See "Several trips: a library"
+  below.
 - `-c / --content`: where titles, descriptions and photo notes are
   stored (default: `trip_content.json` in your photos folder). See
   section 3.
@@ -542,20 +709,73 @@ among loaded ones don't trigger the notice.
 To try it, open the site in Chrome, press F12, choose the Network tab and
 set it to "Offline", then reload. Turning Wi-Fi off works too.
 
+## 6. GPS tracks and place names
+
+### GPS tracks (`.gpx`)
+
+A track recorded during the trip (a `.gpx` file from a GPS watch, a
+phone app such as Strava or OsmAnd, or a GPS logger) can be dropped into
+the photos folder, or given with `--gpx`. Most watches and apps can
+export an activity as GPX; several files (one per day, or from two
+devices) are fine. Both scripts then:
+
+- **Give a location to files that have none**, such as most cameras'
+  photos: the track's position at the moment each was taken, marked
+  "(from GPX track)" in the details panel. A file's own GPS always wins.
+  Between two track points the position is interpolated, as long as
+  they're at most 10 minutes apart; within 2 minutes before or after a
+  stretch of track, its first or last point is used. Otherwise the file
+  stays without a location: nothing is made up across a gap. Several
+  tracks may overlap (a watch and a phone both recording): each is kept
+  apart, and the one with a point closest in time is used.
+- **Draw the way you went** on the day maps and the overview map, and
+  measure each day's distance along it rather than from photo to photo.
+
+Matching needs the moment each photo was taken in UTC, but cameras
+record local clock time. The offset comes from the file where it's
+recorded (the EXIF offset most phones and newer cameras write, a phone's
+GPS time stamp, an iPhone video's local time). For a file that doesn't
+say, the offset most of that day's other files state is used, else
+`--tz-offset`, else the one most of the trip states. If none of these is
+known, the startup message says so: pass `--tz-offset`. A camera whose
+clock was simply set wrong will be placed wrongly; fix its clock (or the
+files' times) first.
+
+The track itself is shown as recorded, also on days where you've hidden
+photos. Leave a `.gpx` file out of the folder (or pass `--no-gpx`) if
+the way you went should stay private.
+
+### Place names
+
+Place names come from a list of about 160,000 towns shipped with
+these scripts (GeoNames, every place with at least 1000 inhabitants), so
+they work without internet. Each located photo gets a "Place" row in the
+details panel ("Kyoto, Japan", or "near Kyoto, Japan" outside the town
+itself; a big city counts from further out than a village). Each day gets
+a line with its main towns in the order you visited them ("Kyoto ·
+Nara") under its date. In the editor, a day without a title offers
+those names as one ("Use 'Kyoto · Nara'"); nothing is filled in unless
+you click it. On the live server, a visitor's day line only names towns
+of photos they can see. `--no-places` turns place names off.
+
 ## What you get
 
 - **Homepage:** the trip title, stats (days / photos / videos / km
-  tracked, where km is the straight-line distance between each day's
-  consecutive geotagged photos, Unsorted included), an overview map with
-  every geotagged photo as a point coloured by day, and a card per day.
+  tracked: along the GPS track where there is one, otherwise the
+  straight-line distance between each day's consecutive geotagged photos),
+  an overview map with every geotagged photo as a point coloured by day
+  (and each day's GPS track, if any), and a card per day showing the
+  towns visited that day.
   Click a point or a card to jump to that day. A Card size control
   (S / M / L / XL) above the cards makes them bigger or smaller; see
   "Thumbnail and card size" below.
-- **Day pages:** the description, a map of that day's photo and video
-  locations, a thumbnail grid, and previous/next day links.
-  - The map shows points only, with no connecting line. Photos aren't
-    taken in a tidy walking order, so a line through them gets messy
-    fast.
+- **Day pages:** the description, the day's towns under its date, a map
+  of that day's photo and video locations, a thumbnail grid, and
+  previous/next day links.
+  - The map shows the photos as points. With a GPS track it also draws
+    the way you actually went; without one there's no connecting line,
+    since photos aren't taken in a tidy walking order and a line through
+    them gets messy fast.
   - Clicking a point shows a preview of that photo; clicking the preview
     opens it in the slideshow.
   - `←` / `→` (or a swipe on a touchscreen) go to the previous or next
@@ -577,8 +797,8 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
   - The caption, if there is one, appears at the bottom of the viewer
     along with the time the photo was taken and its position in the day.
   - `I`: toggle a details panel with camera, lens, aperture, shutter
-    speed, ISO, focal length, resolution, file size, and a small map of
-    where the file was captured. Videos show duration, codec and frame
+    speed, ISO, focal length, resolution, file size, the place ("Kyoto,
+    Japan"), and a small map of where the file was captured. Videos show duration, codec and frame
     rate instead of camera settings. The panel also has a "Download
     original file" link.
   - `F`: toggle true full-screen, with no bar, caption or on-screen
@@ -591,6 +811,8 @@ set it to "Offline", then reload. Turning Wi-Fi off works too.
     the grid. See "Live Photos" below.
   - Neighbouring photos preload in the background, so navigation feels
     instant. Videos play inline with normal video controls.
+- **In a library** (see "Several trips"): an "All trips" link at the top
+  of every page, and `Esc` on a trip's homepage goes back to the list.
 - **Responsive layout:** the maps and thumbnail grid scale with the
   screen, from a big monitor down to a phone.
 - **Thumbnail and card size:** day pages have a Thumbnail size control
@@ -739,48 +961,6 @@ The clips are HEVC, which Safari plays everywhere. Other browsers only
 play them where the system has an HEVC decoder; where it doesn't,
 pressing Live just stays on the photo. Use `--no-live-photos` to list
 the clips as ordinary videos instead.
-
-**GPS tracks and place names.** A track recorded during the trip (a
-`.gpx` file from a GPS watch, a phone app such as Strava or OsmAnd, or a
-GPS logger) can be dropped into the photos folder, or given with `--gpx`.
-Both scripts then:
-
-- **Give a location to files that have none**, such as most cameras'
-  photos: the track's position at the moment each was taken, marked
-  "(from GPX track)" in the details panel. A file's own GPS always wins.
-  Between two track points the position is interpolated, as long as
-  they're at most 10 minutes apart; within 2 minutes before or after a
-  stretch of track, its first or last point is used. Otherwise the file
-  stays without a location: nothing is made up across a gap. Several
-  tracks may overlap (a watch and a phone both recording): each is kept
-  apart, and the one with a point closest in time is used.
-- **Draw the way you went** on the day maps and the overview map, and
-  measure each day's distance along it rather than from photo to photo.
-
-Matching needs the moment each photo was taken in UTC, but cameras
-record local clock time. The offset comes from the file where it's
-recorded (the EXIF offset most phones and newer cameras write, a phone's
-GPS time stamp, an iPhone video's local time). For a file that doesn't
-say, the offset most of that day's other files state is used, else
-`--tz-offset`, else the one most of the trip states. If none of these is
-known, the startup message says so: pass `--tz-offset`. A camera whose
-clock was simply set wrong will be placed wrongly; fix its clock (or the
-files' times) first.
-
-**Place names** come from a list of about 160,000 towns shipped with
-these scripts (GeoNames, every place with at least 1000 inhabitants), so
-they work without internet. Each located photo gets a "Place" row in the
-details panel ("Kyoto, Japan", or "near Kyoto, Japan" outside the town
-itself; a big city counts from further out than a village). Each day gets
-a line with its main towns in the order you visited them ("Kyoto ·
-Nara") under its date. In the editor, a day without a title offers
-those names as one ("Use 'Kyoto · Nara'"); nothing is filled in unless
-you click it. On the live server, a visitor's day line only names towns
-of photos they can see. `--no-places` turns place names off.
-
-The track itself is shown as recorded, also on days where you've hidden
-photos. Leave a `.gpx` file out of the folder (or pass `--no-gpx`) if
-the way you went should stay private.
 
 **Thumbnails** are small separate images (`--thumb-size`), since loading
 full-resolution files just to show a preview would be slow. Where a bigger
@@ -987,6 +1167,28 @@ so none of this applies there. The exceptions:
 - **I use `--tile-cache` but tiles don't appear.** The server has to be
   able to reach the tile provider the first time it needs a tile. Watch
   the terminal for a message, and make sure the cache folder is writable.
+- **Photos without GPS weren't placed on my GPX track.** The startup
+  message says how many were placed. Check that the track covers the
+  time the photos were taken (a track that ends before you took them
+  can't place them). If the message says their time zone is unknown,
+  pass `--tz-offset` with the trip's UTC offset in hours, e.g.
+  `--tz-offset 9` for Japan.
+- **Photos were placed at the wrong spot on the track.** Usually the
+  camera's clock was off (set to home time, or not changed for daylight
+  saving). Placing uses the time each photo was taken, so fix the camera
+  time (or `--tz-offset` for a whole trip) and build again.
+- **No place names appear, or an odd town is named.** Only photos with a
+  location get one. The name comes from a list of every place with at
+  least 1000 inhabitants, weighing distance against size, so in the
+  countryside it can be a village you've never heard of; more than 50 km
+  from any town, nothing is shown. `--no-places` turns them off.
+- **A trip is missing from the library page.** The build or server
+  messages say why: usually the folder isn't there (a drive that isn't
+  plugged in) or its `trip_content.json` has a mistake. A static library
+  keeps showing the version of a trip it built earlier.
+- **The library shows a trip under its folder's name.** Its title in
+  `trip_content.json` is still the default "My Trip". Give it a real one
+  (`"title"` in that file).
 - **A video shows a preview but won't play.** The browser can't decode
   that format. Use "Download original file" from the details panel, or
   play it with a desktop player.
@@ -1050,6 +1252,9 @@ What's covered:
   internet is used), checksum and failure handling, the `vendor` route and
   attempts to read files outside it, and the tile cache (against a fake
   tile provider that can go offline, hang, or refuse).
+- GPS tracks (reading `.gpx` files, time zones, placing photos, the day
+  tracks) and place names, and the library of trips (the list file, the
+  static build and the live server).
 - The viewer's behaviour in the browser tests above.
 
 What isn't covered: a real browser (jsdom approximates one, with a few
