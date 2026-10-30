@@ -705,6 +705,11 @@ class ZipappTests(unittest.TestCase):
                                cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("--large-thumb-size", r.stdout)
+            # data files are read from inside the archive too (the place names)
+            code = ("import sys; sys.path.insert(0, sys.argv[1]); from tripsite import places; "
+                    "print(places.describe(places.Gazetteer().nearest(34.9858, 135.7588)))")
+            r = subprocess.run([sys.executable, "-c", code, str(pyz)], capture_output=True, text=True, cwd=tmp)
+            self.assertEqual((r.returncode, r.stdout.strip()), (0, "Kyoto, Japan"), r.stderr)
 
 
 if __name__ == "__main__":

@@ -13,6 +13,7 @@ from markupsafe import Markup  # noqa: F401
 from .content import _text, day_text, photo_entry, trip_title
 from .model import DAY_COLORS, UNKNOWN_DAY_COLOR, DayGroup, MediaItem
 from .offline import DEFAULT_TILE_URL
+from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .scan import format_long_date
 from .util import read_resource, script_json
 
@@ -96,6 +97,11 @@ def pick_cover(d: DayGroup, content: dict) -> MediaItem:
     return d.items[0]
 
 
+def _places_credit(days: list) -> str:
+    """GeoNames' licence asks for credit wherever its place names are shown."""
+    return PLACES_ATTRIBUTION if any(it.place for d in days for it in d.items) else ""
+
+
 def _day_ranks(days: list) -> dict:
     """1-based rank among *real* days only, so "Day 3 of 5" always means
     "day 3 of 5 actual trip days": the unknown-date bucket (if any)
@@ -136,6 +142,8 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "video_count": d.video_count,
             "color": UNKNOWN_DAY_COLOR if d.is_unknown else DAY_COLORS[(rank - 1) % len(DAY_COLORS)],
             "route": d.route,
+            "track": d.track_overview,
+            "places": d.places,
             "label": ("Unsorted" if d.is_unknown else f"Day {rank}") + f" \u2014 {d.date_key}",
             "is_unknown": d.is_unknown,
             "day_number": rank,
@@ -157,6 +165,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         distance_km=round(sum(d.distance_km for d in days), 1),
         days=summaries,
         days_json=script_json(summaries),
+        places_credit=_places_credit(days),
     )
 
 
@@ -238,6 +247,12 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         description=[p.strip() for p in desc.split("\n\n") if p.strip()],
         route=d.route,
         route_json=script_json(d.route),
+        track=d.track,
+        track_json=script_json(d.track),
+        places=d.places,
+        # offered to the editor for a day that has no title yet
+        title_suggestion="" if day_text(content, d.date_key)[0] else " \u00b7 ".join(d.places),
+        places_credit=_places_credit([d]),
         route_thumbs_json=script_json(route_thumbs),
         route_slide_indices_json=script_json(route_slide_indices),
         items=items_ctx,

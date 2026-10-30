@@ -45,15 +45,18 @@ def _dms(value: float):
 
 
 def make_jpeg(path: Path, when: str | None = "2026:05:01 09:00:00", gps=None,
-              size=(320, 240), color=(90, 120, 200)) -> Path:
+              size=(320, 240), color=(90, 120, 200), offset: str | None = None) -> Path:
     """A small JPEG. `when` is the EXIF capture time ('YYYY:MM:DD HH:MM:SS',
-    or None for no date at all); `gps` is (lat, lon) in decimal degrees."""
+    or None for no date at all); `gps` is (lat, lon) in decimal degrees;
+    `offset` is the EXIF OffsetTimeOriginal of `when`, e.g. '+02:00'."""
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
     exif = Image.Exif()
     if when:
         exif[306] = when
         exif.get_ifd(0x8769)[36867] = when
+        if offset:
+            exif.get_ifd(0x8769)[36881] = offset
     if gps:
         g = exif.get_ifd(0x8825)
         g[1], g[2] = ("N" if gps[0] >= 0 else "S"), _dms(gps[0])
@@ -72,6 +75,20 @@ def make_video(path: Path, creation_time: str | None = None, seconds: float = 2,
     if creation_time:
         cmd += ["-metadata", f"creation_time={creation_time}"]
     subprocess.run(cmd + [str(path)], check=True)
+    return path
+
+
+def make_gpx(path: Path, segments, version: str = "1.1") -> Path:
+    """A GPX file: `segments` is a list of lists of (UTC 'YYYY-MM-DDTHH:MM:SSZ', lat, lon)."""
+    ns = {"1.1": "http://www.topografix.com/GPX/1/1", "1.0": "http://www.topografix.com/GPX/1/0"}[version]
+    segs = "".join(
+        "<trkseg>" + "".join(f'<trkpt lat="{lat}" lon="{lon}"><ele>10</ele><time>{t}</time></trkpt>'
+                             for t, lat, lon in seg) + "</trkseg>"
+        for seg in segments)
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(f'<?xml version="1.0" encoding="UTF-8"?>\n<gpx version="{version}" creator="test" '
+                    f'xmlns="{ns}"><trk><name>t</name>{segs}</trk></gpx>', encoding="utf-8")
     return path
 
 

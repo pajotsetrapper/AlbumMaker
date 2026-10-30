@@ -39,12 +39,13 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlsplit
 
 from markupsafe import Markup
 
-from .cli import (add_content_arg, add_date_check_args, add_offline_args, large_thumb_size_arg,
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, large_thumb_size_arg,
                   positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, default_content, hidden_rels, is_hidden,
                       load_or_init_content, parse_content_file, report_unknown_photo_keys,
                       resolve_content_path, set_cover, set_day_text, set_photo_fields, write_content)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
+from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
@@ -1212,6 +1213,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Show iPhone Live Photo clips as separate videos instead of "
                              "attaching them to their photos.")
     add_date_check_args(parser)
+    add_location_args(parser)
     add_offline_args(parser)
     parser.add_argument("--large-thumb-size", type=large_thumb_size_arg, default=None, metavar="PIXELS",
                         help="Size of the larger thumbnails that are loaded only where the screen can use "
@@ -1313,6 +1315,7 @@ def main(argv=None):
 
     if not args.no_date_check:
         apply_date_check(items, date_range)
+    located = locate_items(items, args)
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
     print(f"\nFound {len(items)} media files "
@@ -1320,6 +1323,7 @@ def main(argv=None):
           f"{gps_count} with GPS location).")
 
     days = group_by_day(items)
+    describe_days(days, items, located, args)
     print(f"Grouped into {len(days)} day(s).")
 
     try:

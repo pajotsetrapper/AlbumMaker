@@ -91,3 +91,32 @@ test('the outline data covers the world and is cut at the date line', { skip }, 
     return m / 10; })))`);
   assert.ok(worst <= 180, 'largest longitude jump: ' + worst);
 });
+
+test('a day with a GPS track draws it under the photo points; other days have none', { skip }, async () => {
+  const track = (w, el) => w.document.querySelectorAll(`#${el} .leaflet-overlay-pane path[stroke="#4FA5A0"]`);
+  const day1 = await load(fixture.server, '/day/2026-05-01?preview=1');
+  assert.equal(track(day1.w, 'day-map').length, 1);
+  assert.deepEqual(realErrors(day1.errors), []);
+  const day2 = await load(fixture.server, '/day/2026-05-02?preview=1');
+  assert.equal(track(day2.w, 'day-map').length, 0);
+});
+
+test('the overview map draws each day\'s track in that day\'s colour', { skip }, async () => {
+  const { w, d, errors } = await load(fixture.server, '/?preview=1');
+  const html = d.documentElement.outerHTML;
+  const days = JSON.parse(html.match(/initOverviewMap\('overview-map', (.*)\); }/)[1]);
+  const withTrack = days.filter((day) => day.track.length);
+  assert.equal(withTrack.length, 1);
+  const lines = w.document.querySelectorAll(`#overview-map .leaflet-overlay-pane path[stroke="${withTrack[0].color}"][stroke-opacity="0.7"]`);
+  assert.equal(lines.length, 1);
+  assert.deepEqual(realErrors(errors), []);
+});
+
+test('the Details panel names the place', async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  thumbs(w)[0].click();                                  // a1 has GPS
+  press(w, 'i');
+  const rows = [...w.document.querySelectorAll('#info-rows .info-row')].map((r) => r.textContent);
+  const place = rows.find((r) => r.startsWith('Place'));
+  assert.ok(place && place.length > 'Place'.length + 2, rows.join(' | '));
+});

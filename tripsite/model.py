@@ -8,6 +8,8 @@ from math import asin, cos, radians, sin, sqrt
 from pathlib import Path
 from typing import Optional
 
+from .places import day_places
+
 IMAGE_EXTS = {".jpg", ".jpeg", ".png", ".heic", ".heif", ".tif", ".tiff", ".bmp", ".webp"}
 VIDEO_EXTS = {".mp4", ".mov", ".m4v", ".avi", ".mkv", ".3gp"}
 
@@ -58,6 +60,12 @@ class MediaItem:
     # hash of `rel`; generate_site: the display file's name
     key: str = ""
     outputs: Optional[StaticOutputs] = None      # generate_site only
+    # minutes east of UTC of `dt`, and where that came from: "exif", "gps",
+    # "apple" (the file says so) or "utc" (a video's exact UTC time converted
+    # with an assumed offset). None: unknown. See tripsite.gpx.
+    utc_offset: Optional[int] = None
+    utc_offset_src: str = ""
+    place: str = ""               # nearest town, e.g. "Kyoto" (see tripsite.places)
 
     @property
     def has_gps(self) -> bool:
@@ -81,6 +89,12 @@ class DayGroup:
     date_obj: Optional[datetime]        # None for the unknown-date bucket
     is_unknown: bool = False
     items: list = field(default_factory=list)
+    # the day's part of a GPX track (see tripsite.gpx.attach_day_tracks): for the
+    # day map ([[[lat, lon], ...], ...], one list per stretch), a coarser copy for
+    # the overview map, and its length (measured before simplifying for the maps)
+    track: list = field(default_factory=list)
+    track_overview: list = field(default_factory=list)
+    track_km: float = 0.0
 
     @property
     def route(self):
@@ -96,7 +110,14 @@ class DayGroup:
 
     @property
     def distance_km(self) -> float:
-        return route_distance_km(self.route)
+        """Along the GPX track, or from photo to photo, whichever is longer: a
+        track may cover only part of the day (a hike, but not the drive there)."""
+        return max(self.track_km, route_distance_km(self.route))
+
+    @property
+    def places(self) -> list:
+        """The day's main towns, in visiting order (see tripsite.places)."""
+        return [] if self.is_unknown else day_places(self.items)
 
 
 def route_distance_km(points) -> float:

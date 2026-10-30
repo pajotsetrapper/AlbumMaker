@@ -29,11 +29,12 @@ from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
 
-from .cli import (add_content_arg, add_date_check_args, add_offline_args, large_thumb_size_arg,
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, large_thumb_size_arg,
                   positive_thumb_size, resolve_date_range)
 from .content import (ContentFileError, hidden_rels, load_or_init_content, parse_content_file,
                       report_unknown_photo_keys, resolve_content_path)
 from .imaging import display_jpeg, image_thumbnails, open_upright, thumbnails_from, video_thumbnails
+from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, check_ffmpeg, meta_from_json, meta_to_json, read_metadata
 from .model import BROWSER_NATIVE_IMAGE_EXTS, VIDEO_EXTS, StaticOutputs
 from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
@@ -666,6 +667,7 @@ def main(argv=None):
                         help="Show iPhone Live Photo clips as separate videos instead of "
                              "attaching them to their photos.")
     add_date_check_args(parser)
+    add_location_args(parser)
     add_offline_args(parser)
     args = parser.parse_args(argv)
     if args.fetch_offline_assets:
@@ -723,6 +725,7 @@ def main(argv=None):
 
     if not args.no_date_check:
         apply_date_check(items, date_range)
+    located = locate_items(items, args, exclude_dirs=(args.output,))
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
     print(f"\nFound {len(items)} media files "
@@ -730,6 +733,7 @@ def main(argv=None):
           f"{gps_count} with GPS location).")
 
     days = group_by_day(items)
+    describe_days(days, items, located, args)
     print(f"Grouped into {len(days)} day(s).")
 
     try:
