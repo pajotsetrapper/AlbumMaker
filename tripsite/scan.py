@@ -156,9 +156,12 @@ def drop_hidden_groups(groups: list, root: Path, hidden: set, live_photos: bool,
     Runs AFTER duplicate detection and drops the whole set of identical
     files if any of them is hidden, so hiding a photo can never publish an
     identical copy of it from another folder. A hidden photo's Live Photo
-    clip goes too, decided exactly as the pairing does (same folder and
-    name, and the clip looks like a Live Photo clip), so the static site
-    and the live server hide the same things."""
+    clip goes too: a clip that looks like a Live Photo clip and has the
+    same folder and name as the hidden photo or any copy of it, the places
+    pair_live_photos looks. In a rare layout (the clip's copies sit next to
+    two different photos of the same name, one hidden) this leaves out a
+    clip the live server would show with the other photo: it errs on the
+    side of hiding."""
     if not hidden:
         return groups
 
@@ -253,10 +256,12 @@ def pair_live_photos(items: list) -> list:
         return [(p.parent, p.stem.lower()) for p in [it.path, *it.duplicates]]
 
     photos = {}
-    for it in items:
-        if it.media_type == "image":
-            for place in places(it):
-                photos.setdefault(place, it)
+    image_items = [it for it in items if it.media_type == "image"]
+    for it in image_items:          # where each photo really is comes first ...
+        photos.setdefault((it.path.parent, it.path.stem.lower()), it)
+    for it in image_items:          # ... then where its identical copies are
+        for place in places(it)[1:]:
+            photos.setdefault(place, it)
     kept = []
     paired = 0
     for it in items:

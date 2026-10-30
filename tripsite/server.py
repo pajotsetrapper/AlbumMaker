@@ -68,10 +68,11 @@ VENDOR_MIME = {".js": "application/javascript", ".css": "text/css", ".woff2": "f
 
 RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")   # one range only; others get the whole file
 KEY_RE = re.compile(r"^[0-9a-f]{10,40}$")
-CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
-# for an editor: a shared cache (a proxy or tunnel in front of the server) must not
-# keep what only an editor may see, such as a hidden photo, and hand it to others
-CACHE_IMMUTABLE_PRIVATE = "private, max-age=31536000, immutable"
+# private: browsers keep it, but a shared cache (a proxy, or a tunnel such as
+# Cloudflare's in front of the server) must not. Hiding a photo doesn't change
+# its URL, so a shared copy would go on being served to anyone with the link,
+# and only an editor's browser may hold a hidden photo at all.
+CACHE_IMMUTABLE = "private, max-age=31536000, immutable"
 CACHE_REVALIDATE = "no-cache"
 PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
                  "X-Real-IP", "Via")
@@ -842,9 +843,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         # URL carries the file's current version -> its bytes can never
         # change, so let the browser keep it. Anything else (an old or
         # missing ?v=) must be revalidated rather than trusted.
-        if self._req_version != current_version:
-            return CACHE_REVALIDATE
-        return CACHE_IMMUTABLE_PRIVATE if self._can_edit() else CACHE_IMMUTABLE
+        return CACHE_IMMUTABLE if self._req_version == current_version else CACHE_REVALIDATE
 
     def _send_file(self, path: Path, content_type: str, download_name: Optional[str] = None,
                    cache_control: str = CACHE_REVALIDATE):

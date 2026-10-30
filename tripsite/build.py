@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import sys
+import time
 import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
@@ -244,11 +245,12 @@ def _kept_twin(output_dir: Path, rel: str, spellings: dict) -> Optional[str]:
     return None
 
 
-def report_unrecorded_outputs(output_dir: Path, keep: set):
+def report_unrecorded_outputs(output_dir: Path, keep: set, since: float):
     """Without a build record (deleted, unreadable, or from an older version)
     nothing can be cleaned up, since only recorded files are ever deleted. Say
     so when the site's folders hold files this build didn't make: they may be
-    left over from earlier builds, including photos that are now hidden."""
+    left over from earlier builds, including photos that are now hidden. Files
+    written since `since` (part of a file that failed this time) don't count."""
     spellings = _kept_spellings(keep)
     extra = []
     for sub in ("days", "media", "thumbs", "thumbs_large"):
@@ -257,7 +259,8 @@ def report_unrecorded_outputs(output_dir: Path, keep: set):
             for p in folder.iterdir():
                 rel = f"{sub}/{p.name}"
                 if (p.is_file() and not p.name.startswith(".") and rel not in keep
-                        and _kept_twin(output_dir, rel, spellings) is None):
+                        and _kept_twin(output_dir, rel, spellings) is None
+                        and not _written_since(p, since)):
                     extra.append(p)
     if extra:
         print(f"! {len(extra)} file(s) in {output_dir} are not part of this build, for example "
@@ -265,6 +268,15 @@ def report_unrecorded_outputs(output_dir: Path, keep: set):
               f"whether an earlier run made them, so they were left alone. They may include photos "
               f"you have since hidden: if the folder holds only this site, delete it and build again.",
               file=sys.stderr)
+
+
+def _written_since(path: Path, since: float) -> bool:
+    # st_ctime, not st_mtime: copies of originals keep the source's mtime, but
+    # writing or renaming a file always updates its ctime (its creation time on Windows)
+    try:
+        return path.stat().st_ctime >= since
+    except OSError:
+        return False
 
 
 def _copy_is_current(src: Path, dst: Path) -> bool:
@@ -456,7 +468,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     def carry(path):
         prev = previous.get(rel_paths[path])
-        if isinstance(prev, dict):
+        outputs = prev.get("outputs") if isinstance(prev, dict) else None
+        if isinstance(outputs, list) and all(isinstance(o, str) for o in outputs):   # (a hand-edited record)
             carried[rel_paths[path]] = prev
 
     for path, media_type, dups in groups:
@@ -694,6 +707,7 @@ def main(argv=None):
     check_ffmpeg()
     print(f"Scanning {args.input} ...")
     manifest = load_manifest(args.output)
+    started = time.time()
     items, records = scan_media(args.input, args.output, args.thumb_size, args.force,
                                 tz_offset=args.tz_offset, workers=args.workers,
                                 dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels,
@@ -733,7 +747,7 @@ def main(argv=None):
     keep = {o for rec in records.values() for o in rec["outputs"]} | set(pages)
     remove_stale_outputs(args.output, manifest, keep)
     if not manifest:
-        report_unrecorded_outputs(args.output, keep)
+        report_unrecorded_outputs(args.output, keep, started)
     save_manifest(args.output, args.thumb_size, records, pages, args.large_thumb_size)
     print(f"\nSite generated at: {args.output.resolve()}")
     print(f"Open {args.output.resolve() / 'index.html'} in a browser to view it.")
