@@ -11,6 +11,7 @@
   <div class="stamp"><span class="num">{{ day_number if day_number else '?' }}</span><span class="of">{{ 'N/A' if is_unknown else 'DAY' }}</span></div>
   <h1>{{ day_title }}</h1>
   <div class="date">{{ date_display }}</div>
+  {% if places %}<div class="places">{{ places | join(' · ') }}</div>{% endif %}
   {% if editable %}
   <div><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
   {% endif %}
@@ -24,7 +25,8 @@
 {% if editable %}
 <div class="day-editor" id="day-editor" hidden>
   <label for="edit-title">Title</label>
-  <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="Day title">
+  <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="{{ title_suggestion or 'Day title' }}">
+  {% if title_suggestion %}<button type="button" class="suggestion" id="use-suggestion" data-title="{{ title_suggestion }}">Use &ldquo;{{ title_suggestion }}&rdquo;</button>{% endif %}
   <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
   <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
   <div class="day-editor-actions">
@@ -42,7 +44,7 @@
   {% endif %}
 </div>
 
-{% if route %}
+{% if route or track %}
 <div class="map-wrap">
   <div class="map" id="day-map"></div>
 </div>
@@ -76,7 +78,7 @@
   {% endfor %}
 </div>
 
-<footer class="site-footer">{{ footer }}</footer>
+<footer class="site-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
 
 {% include "slideshow.html" %}
 {% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
@@ -89,8 +91,8 @@ initSizeControls();
 initSharpThumbs();
 initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
 {% if editable %}initDayEditor({{ date_key_json }});{% endif %}
-{% if route %}
-try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
+{% if route or track %}
+try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}, {{ track_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
 {% endif %}
 </script>

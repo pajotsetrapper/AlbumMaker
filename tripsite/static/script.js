@@ -278,6 +278,11 @@ function initOverviewMap(elId, days){
 
   const allPts = [];
   days.forEach(day => {
+    // the way travelled (GPX track), under the photo points
+    (day.track || []).forEach(stretch => {
+      L.polyline(stretch, {color: day.color, weight: 2, opacity: 0.7, interactive: false}).addTo(map);
+      stretch.forEach(p => allPts.push(p));
+    });
     day.route.forEach(p => {
       allPts.push(p);
       L.circleMarker(p, {radius:4, color: day.color, fillColor: day.color, fillOpacity:1, weight:1})
@@ -293,11 +298,18 @@ function initOverviewMap(elId, days){
   }
 }
 
-function initDayMap(elId, route, thumbs, slideIndices){
+function initDayMap(elId, route, thumbs, slideIndices, track){
   const map = L.map(elId, {scrollWheelZoom:false});
   addBaseMap(map, {attribution: '&copy; OpenStreetMap contributors'});
 
-  if(route.length){
+  // the way travelled (GPX track), under the photo markers
+  const trackPts = [];
+  (track || []).forEach(stretch => {
+    L.polyline(stretch, {color: '#4FA5A0', weight: 3, opacity: 0.8, interactive: false}).addTo(map);
+    stretch.forEach(p => trackPts.push(p));
+  });
+
+  if(route.length || trackPts.length){
     route.forEach((p, i) => {
       const marker = L.circleMarker(p, {radius:6, color:'#E3A857', fillColor:'#16233B', fillOpacity:1, weight:2}).addTo(map);
       if(thumbs[i]){
@@ -316,7 +328,7 @@ function initDayMap(elId, route, thumbs, slideIndices){
         marker.bindPopup(popup);
       }
     });
-    map.fitBounds(route, {padding:[30,30]});
+    map.fitBounds(route.concat(trackPts), {padding:[30,30]});
   } else {
     map.setView([20,0], 2);
   }
@@ -343,11 +355,11 @@ const INFO_LABELS = {
   filename: 'File', dimensions: 'Dimensions', filesize: 'File size',
   camera: 'Camera', lens: 'Lens', aperture: 'Aperture', shutter: 'Shutter',
   iso: 'ISO', focal_length: 'Focal length', codec: 'Codec', fps: 'Frame rate',
-  duration: 'Duration', gps_display: 'Location', altitude: 'Altitude',
+  duration: 'Duration', place: 'Place', gps_display: 'Location', altitude: 'Altitude',
   date_note: 'Date'
 };
 const INFO_ORDER = ['filename','date_note','dimensions','filesize','camera','lens','aperture','shutter',
-                    'iso','focal_length','codec','fps','duration','gps_display','altitude'];
+                    'iso','focal_length','codec','fps','duration','place','gps_display','altitude'];
 
 function buildSlideStage(item){
   // Returns a DOM element (not an HTML string): URLs and filenames are set
@@ -910,6 +922,9 @@ function initDayEditor(dateKey){
   const title = document.getElementById('edit-title');
   const desc = document.getElementById('edit-desc');
   openBtn.addEventListener('click', () => { box.hidden = false; openBtn.hidden = true; title.focus(); });
+  // a day without a title is offered one made of its place names
+  const suggestion = document.getElementById('use-suggestion');
+  if(suggestion) suggestion.addEventListener('click', () => { title.value = suggestion.dataset.title; title.focus(); });
   document.getElementById('day-cancel').addEventListener('click', () => {
     title.value = title.defaultValue;
     desc.value = desc.defaultValue;

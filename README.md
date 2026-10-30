@@ -125,6 +125,12 @@ Options:
   See "Duplicates" below.
 - `--no-live-photos`: show iPhone Live Photo clips as separate videos
   instead of attaching them to their photos. See "Live Photos" below.
+- `--gpx FILE`: a GPS track (`.gpx`, or a folder of them) recorded
+  during the trip, for files that are somewhere else. Repeatable.
+  `.gpx` files inside the photos folder are used without asking. See
+  "GPS tracks and place names" below.
+- `--no-gpx`: ignore GPS tracks, including those in the photos folder.
+- `--no-places`: don't show place names.
 - `--fetch-offline-assets`: download the map library and fonts into a
   `vendor` folder (needs internet, once), then exit. See "Working
   without internet".
@@ -175,8 +181,8 @@ Options:
   through its own domain name. You only need this if you reach the
   computer through a custom local DNS name.
 - `--thumb-size`, `--tz-offset`, `--date-range`, `--no-date-check`,
-  `--no-dedupe`, `--no-live-photos`, `--fetch-offline-assets`: same as
-  for `generate_site.py`.
+  `--no-dedupe`, `--no-live-photos`, `--gpx`, `--no-gpx`, `--no-places`,
+  `--fetch-offline-assets`: same as for `generate_site.py`.
 - `--large-thumb-size PIXELS`: the size of the larger thumbnails that are
   loaded only where the screen can use more pixels (see "Thumbnail and
   card size" below). Unlike the static build, the server has it **on by
@@ -415,6 +421,11 @@ copies automatically. Details:
 - Licenses: Leaflet is BSD-2-Clause and the fonts (Fraunces, IBM Plex
   Sans, IBM Plex Mono) are under the SIL Open Font License. The licenses
   are saved in `vendor/licenses`, and the static build copies them along.
+- The place names (`tripsite/data/places.tsv.gz`) are from
+  [GeoNames](https://www.geonames.org/), under the Creative Commons
+  Attribution 4.0 licence. Pages that show place names say so in their
+  footer, as that licence asks. `python tools/build_places.py` rebuilds
+  the file from GeoNames' current data.
 - To go back to loading everything from the internet, delete the
   `vendor` folder. To refresh the files, run the command again.
 
@@ -673,6 +684,48 @@ play them where the system has an HEVC decoder; where it doesn't,
 pressing Live just stays on the photo. Use `--no-live-photos` to list
 the clips as ordinary videos instead.
 
+**GPS tracks and place names.** A track recorded during the trip (a
+`.gpx` file from a GPS watch, a phone app such as Strava or OsmAnd, or a
+GPS logger) can be dropped into the photos folder, or given with `--gpx`.
+Both scripts then:
+
+- **Give a location to files that have none**, such as most cameras'
+  photos: the track's position at the moment each was taken, marked
+  "(from GPX track)" in the details panel. A file's own GPS always wins.
+  Between two track points the position is interpolated, as long as
+  they're at most 10 minutes apart; within 2 minutes before or after a
+  stretch of track, its first or last point is used. Otherwise the file
+  stays without a location: nothing is made up across a gap. Several
+  tracks may overlap (a watch and a phone both recording): each is kept
+  apart, and the one with a point closest in time is used.
+- **Draw the way you went** on the day maps and the overview map, and
+  measure each day's distance along it rather than from photo to photo.
+
+Matching needs the moment each photo was taken in UTC, but cameras
+record local clock time. The offset comes from the file where it's
+recorded (the EXIF offset most phones and newer cameras write, a phone's
+GPS time stamp, an iPhone video's local time). For a file that doesn't
+say, the offset most of that day's other files state is used, else
+`--tz-offset`, else the one most of the trip states. If none of these is
+known, the startup message says so: pass `--tz-offset`. A camera whose
+clock was simply set wrong will be placed wrongly; fix its clock (or the
+files' times) first.
+
+**Place names** come from a list of about 160,000 towns shipped with
+these scripts (GeoNames, every place with at least 1000 inhabitants), so
+they work without internet. Each located photo gets a "Place" row in the
+details panel ("Kyoto, Japan", or "near Kyoto, Japan" outside the town
+itself; a big city counts from further out than a village). Each day gets
+a line with its main towns in the order you visited them ("Kyoto ·
+Nara") under its date. In the editor, a day without a title offers
+those names as one ("Use 'Kyoto · Nara'"); nothing is filled in unless
+you click it. On the live server, a visitor's day line only names towns
+of photos they can see. `--no-places` turns place names off.
+
+The track itself is shown as recorded, also on days where you've hidden
+photos. Leave a `.gpx` file out of the folder (or pass `--no-gpx`) if
+the way you went should stay private.
+
 **Thumbnails** are small separate images (`--thumb-size`), since loading
 full-resolution files just to show a preview would be slow. Where a bigger
 size or a sharper screen would stretch them, the pages load a larger
@@ -894,7 +947,7 @@ out. It never touches your own photos, your `trip_content.json` or your
 python -m unittest discover -s tests -t .
 ```
 
-`pytest tests` works too, if you prefer it. That's about 360 tests and
+`pytest tests` works too, if you prefer it. That's about 400 tests and
 takes roughly 45 seconds without the browser tests below. To run one file or one test, name it:
 
 ```bash

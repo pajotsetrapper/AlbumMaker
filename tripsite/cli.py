@@ -60,3 +60,16 @@ def add_content_arg(parser):
     parser.add_argument("-c", "--content", type=Path, default=None,
                         help="Where titles, descriptions and photo notes are stored (default: "
                              "trip_content.json in your photos folder). See README.md.")
+
+
+def add_location_args(parser):
+    parser.add_argument("--gpx", type=Path, action="append", default=[], metavar="FILE",
+                        help="A GPS track (.gpx file, or a folder of them) recorded during the trip. "
+                             "Repeatable. .gpx files inside the photos folder are used anyway. Files "
+                             "without a location are placed on the track, and the maps show the way "
+                             "you went. See README.md.")
+    parser.add_argument("--no-gpx", action="store_true",
+                        help="Ignore GPS tracks, including .gpx files in the photos folder.")
+    parser.add_argument("--no-places", action="store_true",
+                        help="Don't show place names (the nearest town to each photo, looked up "
+                             "offline).")

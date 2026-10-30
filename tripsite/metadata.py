@@ -62,6 +62,35 @@ def _parse_iso_datetime(s: str) -> Optional[datetime]:
         return None
 
 
+def parse_utc_offset(value) -> Optional[int]:
+    """EXIF OffsetTime* ("+02:00", "-0530") as minutes east of UTC, or None."""
+    m = re.match(r"^\s*([+-])(\d{2}):?(\d{2})\s*$", str(value or ""))
+    if not m:
+        return None
+    minutes = int(m.group(2)) * 60 + int(m.group(3))
+    minutes = -minutes if m.group(1) == "-" else minutes
+    return minutes if abs(minutes) <= 14 * 60 else None
+
+
+def _offset_from_gps_stamp(local: datetime, gps_ifd: dict) -> Optional[int]:
+    """A phone writes the GPS fix's UTC date and time next to the local capture
+    time; their difference is the UTC offset, give or take the age of the fix.
+    Every time zone is a whole quarter hour from UTC, so a difference within 3
+    minutes of one is taken as that offset; anything further (an old fix) says
+    nothing reliable and gives None."""
+    try:
+        y, mo, d = (int(x) for x in str(gps_ifd["GPSDateStamp"]).strip().split(":"))
+        h, mi, sec = (float(x) for x in gps_ifd["GPSTimeStamp"])
+        utc = datetime(y, mo, d) + timedelta(hours=h, minutes=mi, seconds=sec)
+    except (KeyError, TypeError, ValueError, ZeroDivisionError):
+        return None
+    diff = (local - utc).total_seconds() / 60
+    minutes = round(diff / 15) * 15
+    if abs(diff - minutes) > 3 or abs(minutes) > 14 * 60:
+        return None
+    return minutes
+
+
 def check_ffmpeg():
     missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
     if missing:
@@ -215,12 +244,23 @@ def read_image_metadata(path: Path) -> dict:
                 except Exception:
                     pass
 
-                dt_str = exif_ifd.get(36867) or exif_ifd.get(36868) or exif.get(306)
-                if dt_str:
+                # each time has its own offset tag (EXIF 2.31): DateTimeOriginal ->
+                # OffsetTimeOriginal, DateTimeDigitized -> OffsetTimeDigitized,
+                # DateTime -> OffsetTime. The offset places the photo on a GPX
+                # track (see tripsite.gpx), so it must belong to the time used.
+                for time_tag, offset_tag, where in ((36867, 36881, exif_ifd), (36868, 36882, exif_ifd),
+                                                    (306, 36880, exif)):
+                    dt_str = where.get(time_tag)
+                    if not dt_str:
+                        continue
                     try:
                         meta["dt"] = datetime.strptime(str(dt_str).strip(), "%Y:%m:%d %H:%M:%S")
                     except Exception:
-                        pass
+                        continue
+                    offset = parse_utc_offset(exif_ifd.get(offset_tag))
+                    if offset is not None:
+                        meta["utc_offset"], meta["utc_offset_src"] = offset, "exif"
+                    break
 
                 try:
                     gps_ifd_raw = exif.get_ifd(0x8825)
@@ -228,6 +268,10 @@ def read_image_metadata(path: Path) -> dict:
                     gps = _gps_from_exif(gps_ifd)
                     if gps:
                         meta["gps"] = gps
+                    if "dt" in meta and "utc_offset" not in meta:
+                        offset = _offset_from_gps_stamp(meta["dt"], gps_ifd)
+                        if offset is not None:
+                            meta["utc_offset"], meta["utc_offset_src"] = offset, "gps"
                     if "GPSAltitude" in gps_ifd:
                         alt = format_altitude(gps_ifd["GPSAltitude"], gps_ifd.get("GPSAltitudeRef"))
                         if alt:
@@ -315,6 +359,9 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
         parsed = _parse_iso_datetime(local_ct)
         if parsed is not None:
             meta["dt"] = parsed.replace(tzinfo=None)
+            if parsed.utcoffset() is not None:
+                meta["utc_offset"] = int(parsed.utcoffset().total_seconds() // 60)
+                meta["utc_offset_src"] = "apple"
 
     ct = tags.get("creation_time")
     if ct and "dt" not in meta:
@@ -322,11 +369,16 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
             ct_clean = ct.replace("Z", "+00:00")
             parsed = datetime.fromisoformat(ct_clean)
             if parsed.tzinfo is not None:
+                utc = parsed.astimezone(timezone.utc).replace(tzinfo=None)
                 if tz_offset_hours is not None:
-                    parsed = (parsed.astimezone(timezone.utc)
-                              + timedelta(hours=tz_offset_hours)).replace(tzinfo=None)
+                    parsed = utc + timedelta(hours=tz_offset_hours)
                 else:
                     parsed = parsed.astimezone().replace(tzinfo=None)
+                # the instant is exact, but the offset is only an assumption
+                # (--tz-offset, or this computer's timezone): "utc", not a vote
+                # for the trip's timezone (see tripsite.gpx.TimeZones)
+                meta["utc_offset"] = int(round((parsed - utc).total_seconds() / 60))
+                meta["utc_offset_src"] = "utc"
             meta["dt"] = parsed
         except Exception:
             pass
@@ -394,7 +446,7 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
 # keyed on the file's size and modification time.
 # --------------------------------------------------------------------------
 
-META_FORMAT = 1   # bump when read_*_metadata start returning something new
+META_FORMAT = 2   # bump when read_*_metadata start returning something new (2: utc_offset)
 
 
 def meta_to_json(meta: dict, tz_offset: Optional[float] = None) -> dict:

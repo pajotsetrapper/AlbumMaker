@@ -88,6 +88,10 @@ img,video{max-width:100%; display:block;}
 .day-header .stamp{position:static; transform:rotate(-6deg); display:inline-flex; margin-bottom:1rem;}
 .day-header h1{font-family:var(--serif); font-size:clamp(1.8rem,4.5vw,2.8rem); margin:.2rem 0;}
 .day-header .date{font-family:var(--mono); color:var(--teal); font-size:.85rem;}
+.places{font-family:var(--mono); color:var(--cream); opacity:.7; letter-spacing:.03em;}
+.day-card .places{font-size:.7rem; margin-top:.15rem;}
+.day-header .places{font-size:.8rem; margin-top:.2rem;}
+.day-editor .suggestion{display:inline-block; background:none; border:1px dashed rgba(237,230,214,.35); color:var(--cream); font-family:var(--mono); font-size:.72rem; border-radius:6px; padding:.25rem .55rem; margin:.35rem 0 .2rem; cursor:pointer;}
 .day-nav{display:flex; justify-content:space-between; gap:1rem; font-family:var(--mono); font-size:.8rem; margin-top:1.2rem;}
 .day-nav a{
   display:inline-flex; align-items:center; gap:.4rem; padding:.5rem .9rem;

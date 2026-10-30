@@ -46,6 +46,7 @@
     <div class="body">
       <div class="stamp"><span class="num">{{ d.day_number if d.day_number else '?' }}</span><span class="of">{{ 'N/A' if d.is_unknown else 'DAY' }}</span></div>
       <div class="date">{{ d.date_display }}</div>
+      {% if d.places %}<div class="places">{{ d.places | join(' · ') }}</div>{% endif %}
       <h3>{{ d.title }}</h3>
       {% if d.excerpt %}<p>{{ d.excerpt }}</p>{% endif %}
       <div class="meta">{{ d.photo_count }} photo{{ 's' if d.photo_count != 1 else '' }}{% if d.video_count %} &middot; {{ d.video_count }} video{{ 's' if d.video_count != 1 else '' }}{% endif %}</div>
@@ -54,7 +55,7 @@
   {% endfor %}
 </div>
 
-<footer class="site-footer">{{ footer }}</footer>
+<footer class="site-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
 
 {% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
 <script src="{{ js_href }}"></script>

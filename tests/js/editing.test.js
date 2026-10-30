@@ -124,6 +124,19 @@ test('the day title and description can be edited and saved', async () => {
   assert.equal(day.description, 'First.\n\nSecond.');
 });
 
+test('a day without a title is offered one made of its place names', async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-02');     // no title saved for this day
+  byId(w, 'day-edit').click();
+  const offer = byId(w, 'use-suggestion');
+  assert.ok(offer, 'the suggestion button is there');
+  assert.ok(offer.dataset.title.length > 0);
+  assert.equal(byId(w, 'edit-title').placeholder, offer.dataset.title);
+  offer.click();
+  assert.equal(byId(w, 'edit-title').value, offer.dataset.title);
+  assert.equal(w.document.activeElement, byId(w, 'edit-title'));
+  assert.equal(readContent().days?.['2026-05-02']?.title ?? '', '', 'nothing is saved until Save');
+});
+
 test('Cancel puts the form back as it was', async () => {
   const { w } = await load(fixture.server, DAY);
   const saved = () => readContent().days?.['2026-05-01']?.title ?? '';

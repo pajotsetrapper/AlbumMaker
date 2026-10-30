@@ -15,8 +15,8 @@ import threading
 import unittest
 from pathlib import Path
 
-from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, TripServer, install_app, make_jpeg, make_video,
-                      run_script, standard_trip, write_json)
+from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, TripServer, install_app, make_gpx, make_jpeg,
+                      make_video, run_script, standard_trip, write_json)
 
 JS_DIR = Path(__file__).resolve().parent / "js"
 NODE = shutil.which("node")
@@ -46,6 +46,10 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
         cls.tmp = cls.make_tmp()
         cls.photos = cls.tmp / "photos"
         standard_trip(cls.photos)
+        # a GPS track for day 1 only, ending before sub/a3.jpg (11:00) so no photo moves
+        make_gpx(cls.photos / "track.gpx", [[(f"2026-05-01T{8 + m // 60:02d}:{m % 60:02d}:00Z",
+                                              round(50 + m / 150, 5), round(4 + (m % 7) / 1000, 5))
+                                             for m in range(0, 151, 5)]])
         make_jpeg(cls.photos / "Caf\u00e9 #1 & more (final).jpg", "2026:05:02 13:00:00", color=(9, 9, 9))
         if HAVE_FFMPEG:
             make_video(cls.photos / "clip.mp4", "2026-05-02T12:00:00Z", seconds=4)
