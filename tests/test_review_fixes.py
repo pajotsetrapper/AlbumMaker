@@ -96,6 +96,72 @@ class StaticHiddenDuplicateTests(TempDirTest):
         self.assertIn("meta", manifest["files"]["a/ok.jpg"])   # metadata cached for the next run
 
 
+class RebuildCleanupTests(TempDirTest):
+    """What a rebuild deletes, and what it must not."""
+
+    def setUp(self):
+        super().setUp()
+        make_jpeg(self.photos / "IMG_1.JPG", 1, color=(10, 20, 30))
+        make_jpeg(self.photos / "IMG_2.jpg", 1, hour=13, color=(40, 50, 60))
+        self.out = self.tmp / "site"
+
+    def run_build(self, *extra):
+        err = __import__("io").StringIO()
+        with mock.patch("sys.stdout"), mock.patch("sys.stderr", err):
+            build.main(["-i", str(self.photos), "-o", str(self.out), "--workers", "1", *extra])
+        return err.getvalue()
+
+    def media(self):
+        return sorted(p.name for p in (self.out / "media").iterdir())
+
+    def test_renaming_only_the_letter_case_keeps_the_output(self):
+        self.run_build()
+        os.rename(self.photos / "IMG_1.JPG", self.photos / "IMG_1.jpg")
+        self.run_build()
+        self.assertEqual(self.media(), ["IMG_1.jpg", "IMG_2.jpg"])          # present, with the new spelling
+        page = (self.out / "days" / "2026-05-01.html").read_text(encoding="utf-8")
+        self.assertIn("../media/IMG_1.jpg", page)
+
+    def test_without_a_build_record_leftovers_are_reported(self):
+        self.run_build()
+        (self.out / scan.SITE_MARKER).unlink()
+        self.write_content({"photos": {"IMG_2.jpg": {"hidden": True}}})
+        err = self.run_build()
+        self.assertIn("not part of this build", err)
+        self.assertIn("IMG_2", err)
+        self.assertIn("IMG_2.jpg", self.media(), "nothing is deleted without a record to go by")
+        err = self.run_build()                                              # with a record again: quiet
+        self.assertNotIn("not part of this build", err)
+
+    def test_a_crashed_worker_stops_the_build_before_anything_is_deleted(self):
+        from concurrent.futures import Future
+        from concurrent.futures.process import BrokenProcessPool
+        self.run_build()
+        record = (self.out / scan.SITE_MARKER).read_bytes()
+        before = self.media()
+
+        class CrashedPool:
+            def __init__(self, *a, **kw):
+                pass
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return False
+
+            def submit(self, *a, **kw):
+                f = Future()
+                f.set_exception(BrokenProcessPool("a worker died"))
+                return f
+        with mock.patch.object(build, "ProcessPoolExecutor", CrashedPool):
+            with self.assertRaises(SystemExit) as stopped:
+                self.run_build("--force")
+        self.assertIn("worker process stopped", str(stopped.exception.code))
+        self.assertEqual(self.media(), before)
+        self.assertEqual((self.out / scan.SITE_MARKER).read_bytes(), record)
+
+
 class OutputNameTests(unittest.TestCase):
     def test_display_name_of_a_jpeg_is_reserved(self):
         a, b = Path("/p/IMG_1.jpg"), Path("/p/x/IMG_1_display.jpg")
@@ -130,6 +196,27 @@ class HiddenLivePhotoRuleTests(TempDirTest):
         (self.photos / "IMG_9.mov").write_bytes(b"x")
         kept = scan.drop_hidden_groups(self.groups(), self.photos, {"IMG_9.jpg"}, True,
                                        lambda p: {"duration_s": 2.0})
+        self.assertEqual(kept, [])
+
+    def test_the_clip_goes_even_when_the_copy_kept_is_in_another_folder(self):
+        make_jpeg(self.photos / "A" / "IMG_6.jpg", 1)
+        (self.photos / "0").mkdir()
+        for folder in ("A", "0"):                      # identical clips; dedupe keeps the one in 0/
+            (self.photos / folder / "IMG_6.MOV").write_bytes(b"same clip")
+        with mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            groups = scan.dedupe_groups(scan.collect_candidates(self.photos))
+            kept = scan.drop_hidden_groups(groups, self.photos, {"A/IMG_6.jpg"}, True,
+                                           lambda p: {"duration_s": 2.0})
+        self.assertEqual(kept, [])
+
+    def test_a_clip_that_cannot_be_read_is_left_out_rather_than_crashing_the_build(self):
+        make_jpeg(self.photos / "IMG_9.jpg", 1)
+        (self.photos / "IMG_9.mov").write_bytes(b"x")
+
+        def unreadable(path):
+            raise ValueError("ffprobe could not read this file")
+        with mock.patch("sys.stdout"):
+            kept = scan.drop_hidden_groups(self.groups(), self.photos, {"IMG_9.jpg"}, True, unreadable)
         self.assertEqual(kept, [])
 
     def test_no_live_photos_keeps_the_clip(self):
@@ -383,6 +470,79 @@ class LiveServerTests(TempDirTest):
         r, _ = self.request("GET", "/assets/script.js")
         self.assertEqual(r.getheader("Cache-Control"), server.CACHE_REVALIDATE)
 
+    def test_the_editor_cookie_survives_other_odd_cookies_on_the_same_host(self):
+        # browsers share localhost cookies across ports, so another app's cookies arrive too;
+        # one outside SimpleCookie's grammar used to make it drop the editor cookie silently
+        self.start(editor_link_only=True)
+        r, _ = self.request("GET", f"/?key={self.app.editor_token}")
+        cookie = r.getheader("Set-Cookie").split(";")[0]
+        for others in ('prefs={"theme":"dark"}', "a=b c", 'q="unbalanced', "flag"):
+            with self.subTest(others=others):
+                r, _ = self.request("POST", "/api/day", {"date": "2026-05-01", "title": "x"},
+                                    headers={"Cookie": f"{others}; {cookie}; z=1"})
+                self.assertEqual(r.status, 200)
+        r, _ = self.request("POST", "/api/day", {"date": "2026-05-01", "title": "x"},
+                            headers={"Cookie": f"{self.app.editor_cookie}=wrong"})
+        self.assertEqual(r.status, 403)
+
+    def test_a_non_ascii_key_or_cookie_is_refused_not_a_crash(self):
+        items = self.start(editor_link_only=True)
+        r, _ = self.request("GET", "/?key=%C3%A9t%C3%A9")
+        self.assertEqual(r.status, 403)
+        one = next(it for it in items if it.rel == "a/one.jpg")
+        self.app.content.update(lambda c: c["photos"].update({"a/one.jpg": {"hidden": True}}))
+        odd = {"Cookie": f"{self.app.editor_cookie}=été"}          # sent as Latin-1
+        with mock.patch("sys.stderr"):
+            r, _ = self.request("GET", f"/thumb/{one.key}", headers=odd)
+            self.assertEqual(r.status, 404)                                  # a visitor, not a 500
+            r, _ = self.request("POST", "/api/day", {"date": "2026-05-01", "title": "x"}, headers=odd)
+            self.assertEqual(r.status, 403)
+
+    def test_malformed_edits_are_a_400_not_a_500(self):
+        self.start()
+        for path, body in (("/api/cover", {"date": [], "rel": None}), ("/api/day", {"date": {"a": 1}, "title": "x"}),
+                           ("/api/cover", {"date": None})):
+            with self.subTest(path=path, body=body):
+                r, data = self.request("POST", path, body)
+                self.assertEqual(r.status, 400, data)
+                self.assertEqual(json.loads(data)["error"], "Unknown day")
+
+    def test_a_save_that_fails_on_disk_says_so_and_leaves_the_file_alone(self):
+        self.start()
+        path = self.photos / "trip_content.json"
+        before = path.read_bytes()
+        full = OSError(28, "No space left on device")
+        with mock.patch.object(server, "write_content", side_effect=full), mock.patch("sys.stderr"):
+            r, data = self.request("POST", "/api/day", {"date": "2026-05-01", "title": "x"})
+        self.assertEqual(r.status, 500)
+        self.assertIn("Nothing was saved", json.loads(data)["error"])
+        self.assertIn("No space left", json.loads(data)["error"])
+        self.assertEqual(path.read_bytes(), before)
+        r, _ = self.request("POST", "/api/day", {"date": "2026-05-01", "title": "x"})   # and it recovers
+        self.assertEqual(r.status, 200)
+
+    def test_only_a_single_byte_range_is_answered_with_206(self):
+        items = self.start()
+        one = next(it for it in items if it.rel == "a/one.jpg")
+        size = (self.photos / "a" / "one.jpg").stat().st_size
+        r, data = self.request("GET", f"/media/{one.key}", headers={"Range": "bytes=0-1,5-9"})
+        self.assertEqual((r.status, len(data)), (200, size))          # not just the first range
+        r, data = self.request("GET", f"/media/{one.key}", headers={"Range": "bytes=2-5"})
+        self.assertEqual((r.status, len(data)), (206, 4))
+
+    def test_long_lived_responses_are_private(self):
+        # a proxy or tunnel in front of the server must not keep an editor-only photo for others
+        items = self.start()
+        one = next(it for it in items if it.rel == "a/one.jpg")
+        r, html = self.request("GET", "/day/2026-05-01")
+        import re
+        url = re.search(rf'/thumb/{one.key}\?v=[^"]+'.encode(), html).group(0).decode()
+        r, _ = self.request("GET", url)
+        cache = r.getheader("Cache-Control")
+        self.assertIn("immutable", cache)
+        self.assertIn("private", cache)
+        self.assertNotIn("public", cache)
+
     def test_idle_connection_is_closed(self):
         self.start()
         with mock.patch.object(server.RequestHandler, "timeout", 0.5):
@@ -393,6 +553,33 @@ class LiveServerTests(TempDirTest):
             self.assertEqual(s.recv(1), b"")   # the server hangs up on a silent client
             self.assertLess(time.monotonic() - start, 4)
             s.close()
+
+
+class TileProviderGarbageTests(unittest.TestCase):
+    def test_a_garbled_answer_is_a_failed_download_not_a_crash(self):
+        # http.client raises BadStatusLine (an HTTPException, not an OSError) for this
+        import socket
+        listener = socket.socket()
+        listener.bind(("127.0.0.1", 0))
+        listener.listen(4)
+        self.addCleanup(listener.close)
+
+        def answer():
+            for _ in range(2):
+                try:
+                    conn, _ = listener.accept()
+                except OSError:
+                    return
+                conn.recv(4096)
+                conn.sendall(b"NOT HTTP AT ALL\r\n\r\n")
+                conn.close()
+        threading.Thread(target=answer, daemon=True).start()
+        port = listener.getsockname()[1]
+        with tempfile.TemporaryDirectory() as tmp:
+            tiles = server.TileCache(Path(tmp), f"http://127.0.0.1:{port}/{{z}}/{{x}}/{{y}}.png")
+            with mock.patch.dict(os.environ, {"no_proxy": "127.0.0.1", "NO_PROXY": "127.0.0.1"}):
+                self.assertIsNone(tiles.get(1, 0, 0))
+            self.assertTrue(tiles._blocked(), "backs off like for any other network failure")
 
 
 class ZipappTests(unittest.TestCase):

@@ -101,7 +101,8 @@ async function load(base, path, { settle = 900, storage = null, breakStorage = f
 const realErrors = (errors) => errors.filter((e) => !/Not implemented|Could not load|ECONNREFUSED/.test(e));
 
 function press(w, key, target) {
-  (target || w.document).dispatchEvent(new w.KeyboardEvent('keydown', { key, bubbles: true }));
+  // cancelable, like a real key press: the page's handlers rely on preventDefault()
+  (target || w.document).dispatchEvent(new w.KeyboardEvent('keydown', { key, bubbles: true, cancelable: true }));
 }
 
 const thumbs = (w) => [...w.document.querySelectorAll('.thumb')];

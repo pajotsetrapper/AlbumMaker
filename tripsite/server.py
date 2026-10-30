@@ -16,6 +16,7 @@ import argparse
 import errno
 import hashlib
 import hmac
+import http.client
 import ipaddress
 import json
 import mimetypes
@@ -31,7 +32,6 @@ import urllib.error
 import urllib.request
 from collections import OrderedDict
 from concurrent.futures import ThreadPoolExecutor
-from http.cookies import CookieError, SimpleCookie
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from typing import Callable, Optional
@@ -66,9 +66,11 @@ MIME_OVERRIDES = {
 VENDOR_MIME = {".js": "application/javascript", ".css": "text/css", ".woff2": "font/woff2",
                ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
 
-RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")
+RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")   # one range only; others get the whole file
 KEY_RE = re.compile(r"^[0-9a-f]{10,40}$")
-CACHE_IMMUTABLE = "public, max-age=31536000, immutable"
+# private: a shared cache (a proxy or tunnel in front of the server) must not keep
+# what only an editor may see, such as a hidden photo
+CACHE_IMMUTABLE = "private, max-age=31536000, immutable"
 CACHE_REVALIDATE = "no-cache"
 PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
                  "X-Real-IP", "Via")
@@ -331,8 +333,8 @@ class TileCache:
                 if e.code in (403, 429, 503):   # being refused: back off, don't hammer
                     self._block(300)
                 return None
-            except (urllib.error.URLError, OSError, TimeoutError):
-                self._block(30)
+            except (urllib.error.URLError, OSError, TimeoutError, http.client.HTTPException):
+                self._block(30)              # (HTTPException: a cut-off or garbled answer)
                 return None
         if len(data) > 1_000_000 or sniff_image(data) is None:
             return None
@@ -730,16 +732,23 @@ class RequestHandler(BaseHTTPRequestHandler):
         except OSError:
             return False
 
+    def _token_matches(self, value: str) -> bool:
+        # bytes: compare_digest raises TypeError for a str with non-ASCII characters
+        return hmac.compare_digest(value.encode("utf-8", "surrogateescape"),
+                                   self.app.editor_token.encode("ascii"))
+
     def _has_editor_cookie(self) -> bool:
-        raw = self.headers.get("Cookie")
-        if not raw:
-            return False
-        try:
-            jar = SimpleCookie(raw)
-        except CookieError:
-            return False
-        morsel = jar.get(self.app.editor_cookie)
-        return morsel is not None and hmac.compare_digest(morsel.value, self.app.editor_token)
+        # Parsed by hand: SimpleCookie silently drops *every* cookie when one of
+        # them is outside its grammar (e.g. a JSON value set by another app on
+        # localhost: browsers share cookies across ports), which would quietly
+        # take away edit rights.
+        for raw in self.headers.get_all("Cookie") or ():
+            for part in raw.split(";"):
+                name, sep, value = part.partition("=")
+                if sep and name.strip() == self.app.editor_cookie:
+                    if self._token_matches(value.strip().strip('"')):
+                        return True
+        return False
 
     def _can_edit(self) -> bool:
         """Editing (and seeing hidden photos) is for the owner: whoever sits
@@ -774,7 +783,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         key = (query.get("key") or [None])[0]
         if key is None:
             return False
-        if self.app.args.read_only or not hmac.compare_digest(key, self.app.editor_token):
+        if self.app.args.read_only or not self._token_matches(key):
             self.send_error(403, "This editor link isn't valid (it changes every time the server starts)")
             return True
         rest = {k: v for k, v in query.items() if k != "key"}
@@ -850,7 +859,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         status = 200
         range_header = self.headers.get("Range")
         if range_header:
-            m = RANGE_RE.match(range_header)
+            m = RANGE_RE.fullmatch(range_header.strip())
             if m and (m.group(1) or m.group(2)):
                 if m.group(1):
                     start = int(m.group(1))
@@ -938,6 +947,10 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self._send_json({"ok": False, "error": f"Nothing was saved: {e}"}, 409)
         except ValueError as e:
             return self._send_json({"ok": False, "error": str(e)}, 400)
+        except OSError as e:      # disk full, no permission, ...: the file itself is untouched
+            print(f"! Could not save {self.app.content.path}: {e}", file=sys.stderr)
+            return self._send_json({"ok": False, "error": f"Nothing was saved: could not write "
+                                                         f"{self.app.content.path.name} ({e.strerror or e})"}, 500)
         self._send_json({"ok": True, **result})
 
     def _item_by_rel(self, rel) -> MediaItem:
@@ -968,7 +981,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _api_cover(self, body: dict) -> dict:
         date, rel = body.get("date"), body.get("rel")
-        if date not in self.app.day_keys:
+        if not isinstance(date, str) or date not in self.app.day_keys:
             raise ValueError("Unknown day")
         if rel is not None:
             if not isinstance(rel, str) or rel not in self.app.known_rels:
@@ -980,7 +993,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def _api_day(self, body: dict) -> dict:
         date = body.get("date")
-        if date not in self.app.day_keys:
+        if not isinstance(date, str) or date not in self.app.day_keys:
             raise ValueError("Unknown day")
         fields = {}
         for key, limit in (("title", 200), ("description", 20000)):
@@ -1162,11 +1175,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 
 def _lan_ip() -> Optional[str]:
     try:
-        s = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        s.connect(("8.8.8.8", 80))   # no packet is sent; this just picks the outgoing interface
-        ip = s.getsockname()[0]
-        s.close()
-        return ip
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))   # no packet is sent; this just picks the outgoing interface
+            return s.getsockname()[0]
     except Exception:
         return None
 
@@ -1235,6 +1246,11 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None):
+    # the server runs until stopped, so when its output goes to a file or a
+    # pipe (a log, a service manager), each message must appear as it is printed,
+    # not when a block buffer happens to fill (the editor link would never show)
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     args = parser.parse_args(argv)
     date_range = resolve_date_range(args, parser)

@@ -76,7 +76,10 @@ def script_json(obj) -> Markup:
 
 def read_resource(*parts: str) -> str:
     """A text file shipped inside the tripsite package (static/, templates/)."""
-    return resources.files("tripsite").joinpath(*parts).read_text(encoding="utf-8")
+    path = resources.files("tripsite")
+    for part in parts:      # one at a time: joinpath(a, b) needs Python 3.11 inside a zipapp
+        path = path.joinpath(part)
+    return path.read_text(encoding="utf-8")
 
 
 def project_dir() -> Path:

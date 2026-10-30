@@ -68,7 +68,8 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
 
     def test_the_startup_message_explains_editing_and_offline_options(self):
         log = self.server.log()
-        self.assertIn("Editing is on", log)
+        self.assertIn("Editing works", log)
+        self.assertRegex(log, rf"Editor link .*: http://127\.0\.0\.1:{self.server.port}/\?key=[\w-]{{20,}}")
         self.assertIn("--fetch-offline-assets", log)
         self.assertIn(f"http://127.0.0.1:{self.server.port}/", log)
 
@@ -108,7 +109,7 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
 
     def test_versioned_urls_may_be_cached_forever_and_others_must_revalidate(self):
         html = self.server.text("/day/2026-05-01")
-        url = re.search(r'src="(/thumb/\d+\?v=[^"]+)"', html).group(1)
+        url = re.search(r'src="(/thumb/[0-9a-f]+\?v=[^"]+)"', html).group(1)
         self.assertIn("immutable", self.server.get(url)[1]["cache-control"])
         self.assertNotIn("immutable", self.server.get(url.split("?")[0] + "?v=stale")[1]["cache-control"])
 

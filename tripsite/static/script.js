@@ -602,6 +602,7 @@ function renderCaption(){
 }
 
 function renderSlide(){
+  leaveCaptionBox();
   liveActive = false;
   resetZoom();
   const item = SLIDES[currentSlide];
@@ -615,16 +616,17 @@ function renderSlide(){
   if(mediaTag){
     if(item.type === 'video'){
       mediaTag.addEventListener('loadeddata', clearLoading, {once: true});
-      // while playing, a video holds the slide until it finishes
-      mediaTag.addEventListener('ended', () => {
-        if(playing && SLIDES[currentSlide] === item) stepSlide(1);
-      }, {once: true});
-      mediaTag.addEventListener('error', () => {
-        if(playing && SLIDES[currentSlide] === item){
-          clearTimeout(playTimer);
-          playTimer = setTimeout(() => stepSlide(1), playMs);
-        }
-      }, {once: true});
+      // while playing, a video holds the slide until it finishes, and then
+      // waits like a photo does while someone is typing, reading details, ...
+      // (own timers, not playTimer: scheduleAdvance clears that and leaves videos alone;
+      // these stop by themselves once this video is no longer on screen)
+      const moveOn = () => {
+        if(!playing || !mediaTag.isConnected || SLIDES[currentSlide] !== item) return;
+        if(autoBlocked()){ setTimeout(moveOn, 500); return; }
+        stepSlide(1);
+      };
+      mediaTag.addEventListener('ended', moveOn, {once: true});
+      mediaTag.addEventListener('error', () => { if(playing) setTimeout(moveOn, playMs); }, {once: true});
     } else if(mediaTag.complete){
       clearLoading();
     } else {
@@ -827,8 +829,9 @@ function syncEditBar(){
   if(document.activeElement !== cap) cap.value = item.caption || '';
 }
 
-async function saveSlide(fields){
-  const idx = currentSlide, item = SLIDES[idx];
+async function saveSlide(fields, idx){
+  if(idx === undefined) idx = currentSlide;
+  const item = SLIDES[idx];
   if(!item || !item.rel) return null;
   const res = await apiPost('/api/photo', Object.assign({rel: item.rel}, fields));
   if(res){
@@ -866,9 +869,25 @@ function initEditBar(){
   document.getElementById('edit-hide').addEventListener('click', toggleHidden);
   document.getElementById('edit-cover').addEventListener('click', setCover);
   const cap = document.getElementById('edit-caption');
+  // The viewer can move to another photo while the box has focus (a swipe, the end
+  // of a video), so the caption is saved for the photo it was typed for.
+  let capIdx = -1;
+  cap.addEventListener('focus', () => { capIdx = currentSlide; });
+  cap.addEventListener('blur', () => { capIdx = -1; });         // (browsers fire 'change' first)
   // 'change' fires when the box loses focus (or Enter is pressed) with new text
-  cap.addEventListener('change', () => saveSlide({caption: cap.value}));
+  cap.addEventListener('change', async () => {
+    const idx = capIdx >= 0 ? capIdx : currentSlide, typed = cap.value;
+    const res = await saveSlide({caption: typed}, idx);
+    // not saved (the toast says why): keep what was typed rather than wiping it
+    if(!res && currentSlide === idx && document.activeElement !== cap) cap.value = typed;
+  });
   cap.addEventListener('keydown', (e) => { if(e.key === 'Enter') cap.blur(); });
+}
+
+// Before another photo is shown: finish a caption edit (saving it for its own photo).
+function leaveCaptionBox(){
+  const cap = document.getElementById('edit-caption');
+  if(cap && document.activeElement === cap) cap.blur();
 }
 
 function initDayEditor(dateKey){
@@ -898,6 +917,8 @@ function initSlideshow(items, opts){
   document.querySelectorAll('[data-slide-index]').forEach(el => {
     el.addEventListener('click', () => openSlideshow(parseInt(el.dataset.slideIndex, 10)));
     el.addEventListener('keydown', (e) => {
+      // a clicked thumbnail keeps the focus behind the open viewer: its keys are the viewer's then
+      if(document.getElementById('slideshow').classList.contains('open')) return;
       if(e.key === 'Enter' || e.key === ' '){
         e.preventDefault();
         e.stopPropagation();   // the viewer's own Space (play/pause) must not see this key press
@@ -931,6 +952,7 @@ function initSlideshow(items, opts){
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
     if(isTyping(e.target)){ if(e.key === 'Escape'){ e.preventDefault(); e.target.blur(); } return; }
+    if(e.ctrlKey || e.metaKey || e.altKey) return;   // the browser's shortcuts (Ctrl+S, Cmd+F, Alt+Left ...)
     if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }
     else if(e.key === 'ArrowRight') nextSlide();
     else if(e.key === 'ArrowLeft') prevSlide();

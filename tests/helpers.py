@@ -89,13 +89,16 @@ def standard_trip(photos: Path) -> dict:
 
 
 def install_app(dest: Path, with_vendor: Path | None = None) -> Path:
-    """Copy the three scripts into `dest` (the way a user keeps them: together
-    in one folder) so a test can run them, optionally with a vendor folder
-    beside them, without touching the project's own vendor folder."""
+    """Copy the three scripts and the tripsite package into `dest` (the way a
+    user keeps them: together in one folder) so a test can run them,
+    optionally with a vendor folder beside them, without touching the
+    project's own vendor folder."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     for name in SCRIPTS:
         shutil.copy2(ROOT / name, dest / name)
+    shutil.copytree(ROOT / "tripsite", dest / "tripsite",
+                    ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     if with_vendor is not None:
         shutil.copytree(with_vendor, dest / "vendor")
     return dest
@@ -233,10 +236,10 @@ class TripServer:
 
 
 def item_ids(server: TripServer, day: str) -> list:
-    """The numeric ids a day page uses for its photos, in page order."""
+    """The URL keys a day page uses for its photos, in page order."""
     import re
     html = server.text(f"/day/{day}")
-    return [int(i) for i in re.findall(r'class="thumb[^"]*"[^>]*>\s*<img src="/thumb/(\d+)\?v=', html)]
+    return re.findall(r'class="thumb[^"]*"[^>]*>\s*<img src="/thumb/([0-9a-f]+)\?v=', html)
 
 
 # ---------------------------------------------------------------- shared page helpers
