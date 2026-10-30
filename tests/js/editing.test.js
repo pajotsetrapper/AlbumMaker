@@ -171,6 +171,24 @@ test('a caption typed before the viewer moves on (a swipe, a video ending) is sa
   assert.equal(cap.value, '', 'the box shows the new photo\'s (empty) caption');
 });
 
+test('typing a caption while a Live Photo clip plays is not interrupted when the clip ends', async () => {
+  const { w } = await load(fixture.server, DAY);
+  w.eval("SLIDES[1].live = '/no-such-clip.mov'");          // a2 presented as a Live Photo
+  w.HTMLMediaElement.prototype.play = () => Promise.resolve();   // jsdom has no media playback
+  thumbs(w)[1].click();
+  w.eval('playLive()');
+  const cap = byId(w, 'edit-caption');
+  cap.focus();
+  cap.value = 'Half-typ';
+  w.document.querySelector('#slideshow-media video').dispatchEvent(new w.Event('ended'));   // back to the photo
+  assert.ok(w.document.querySelector('#slideshow-media img'), 'the photo is shown again');
+  assert.equal(w.document.activeElement, cap, 'still typing');
+  assert.equal(cap.value, 'Half-typ');
+  press(w, 's', cap);                                      // ... so a letter is text, not a shortcut
+  await sleep(300);
+  assert.equal(thumbs(w)[1].classList.contains('is-fav'), false);
+});
+
 test('a caption that could not be saved stays in the box', async () => {
   const { w } = await load(fixture.server, DAY);
   thumbs(w)[1].click();

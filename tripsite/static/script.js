@@ -484,6 +484,7 @@ function closeSlideshow(fromHistory){
   stopPlaying();
   overlay.classList.remove('open');
   document.getElementById('slideshow-media').innerHTML = '';
+  shownSlide = -1;
   document.body.style.overflow = '';
   closeInfoPanel();
   if(document.fullscreenElement) document.exitFullscreen();
@@ -529,7 +530,12 @@ function scheduleAdvance(){
   if(!playing || !document.getElementById('slideshow').classList.contains('open')) return;
   const item = SLIDES[currentSlide];
   if(!item) return;
-  if(item.type === 'video') return;   // moves on when the clip ends (see renderSlide)
+  if(item.type === 'video'){
+    // moves on when the clip ends (see renderSlide); one that has already ended or
+    // failed (Play pressed afterwards) gets the same wait as a photo instead
+    const v = document.querySelector('#slideshow-media video');
+    if(!v || !(v.ended || v.error)) return;
+  }
   if(autoBlocked()){ playTimer = setTimeout(scheduleAdvance, 500); return; }
   startProgress(playMs);
   playTimer = setTimeout(() => {
@@ -601,8 +607,11 @@ function renderCaption(){
   capEl.appendChild(meta);
 }
 
+let shownSlide = -1;      // the slide renderSlide last drew (it also redraws the same one)
+
 function renderSlide(){
-  leaveCaptionBox();
+  if(currentSlide !== shownSlide) leaveCaptionBox();   // not when only redrawing, e.g. after a Live clip
+  shownSlide = currentSlide;
   liveActive = false;
   resetZoom();
   const item = SLIDES[currentSlide];

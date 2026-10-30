@@ -21,6 +21,7 @@ import os
 import re
 import shutil
 import sys
+import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
@@ -191,9 +192,7 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
     old.update(p for p in previous.get("pages", []) if isinstance(p, str))
 
     root = output_dir.resolve()
-    kept_by_folded = {}
-    for k in keep:
-        kept_by_folded.setdefault(k.casefold(), []).append(k)
+    twins = _kept_spellings(keep)
     removed = 0
     for rel in sorted(old - keep):
         try:
@@ -205,8 +204,7 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
         # On a case-insensitive disk (macOS, Windows) an old "IMG_1.JPG" and a
         # new "IMG_1.jpg" are one and the same file: deleting the old name would
         # delete the new output. Give it the new name's spelling instead.
-        twin = next((k for k in kept_by_folded.get(rel.casefold(), ())
-                     if _same_file(target, output_dir / k)), None)
+        twin = _kept_twin(output_dir, rel, twins)
         if twin is not None:
             try:
                 os.replace(target, output_dir / twin)
@@ -222,11 +220,28 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
         print(f"Removed {removed} output file(s) the site no longer uses.")
 
 
-def _same_file(a: Path, b: Path) -> bool:
-    try:
-        return os.path.samefile(a, b)
-    except OSError:
-        return False
+def _fold(rel: str) -> str:
+    # how a case-insensitive, normalization-insensitive disk (macOS, Windows) compares names
+    return unicodedata.normalize("NFC", rel).casefold()
+
+
+def _kept_spellings(keep: set) -> dict:
+    out = {}
+    for k in keep:
+        out.setdefault(_fold(k), []).append(k)
+    return out
+
+
+def _kept_twin(output_dir: Path, rel: str, spellings: dict) -> Optional[str]:
+    """The kept output that `rel` is the very same file as, under another
+    spelling (only possible on a disk that ignores case or normalization)."""
+    for k in spellings.get(_fold(rel), ()):
+        try:
+            if os.path.samefile(output_dir / rel, output_dir / k):
+                return k
+        except OSError:
+            pass
+    return None
 
 
 def report_unrecorded_outputs(output_dir: Path, keep: set):
@@ -234,13 +249,16 @@ def report_unrecorded_outputs(output_dir: Path, keep: set):
     nothing can be cleaned up, since only recorded files are ever deleted. Say
     so when the site's folders hold files this build didn't make: they may be
     left over from earlier builds, including photos that are now hidden."""
+    spellings = _kept_spellings(keep)
     extra = []
     for sub in ("days", "media", "thumbs", "thumbs_large"):
         folder = output_dir / sub
         if folder.is_dir():
-            extra += [p for p in folder.iterdir()
-                      if p.is_file() and not p.name.startswith(".")
-                      and f"{sub}/{p.name}" not in keep]
+            for p in folder.iterdir():
+                rel = f"{sub}/{p.name}"
+                if (p.is_file() and not p.name.startswith(".") and rel not in keep
+                        and _kept_twin(output_dir, rel, spellings) is None):
+                    extra.append(p)
     if extra:
         print(f"! {len(extra)} file(s) in {output_dir} are not part of this build, for example "
               f"{extra[0].relative_to(output_dir).as_posix()}. There was no build record to tell "
@@ -431,11 +449,23 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     jobs, ready = [], []
     stats = {}
     changed = 0
+    # Files that couldn't be read or processed this time keep their previous
+    # record, so the cleanup at the end doesn't delete their existing outputs
+    # (a drive that drops out for a moment must not empty the site).
+    carried = {}
+
+    def carry(path):
+        prev = previous.get(rel_paths[path])
+        if isinstance(prev, dict):
+            carried[rel_paths[path]] = prev
+
     for path, media_type, dups in groups:
         try:
             st = path.stat()
         except OSError as e:          # removed or unplugged since the scan
             print(f"  ! skipping {path.name}: {e}", file=sys.stderr)
+            total -= 1
+            carry(path)
             continue
         stats[path] = (st.st_size, st.st_mtime_ns)
         prev = previous.get(rel_paths[path])
@@ -457,7 +487,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
               f"{changed} new or changed."
               + (" Thumbnail size changed, so all thumbnails will be rebuilt." if thumb_size_changed else ""))
 
-    items, records = [], {}
+    items, records = [], carried
 
     def add(path, media_type, dups, meta, out):
         item = build_media_item(path, media_type, meta, outputs=out, key=out.display_file,
@@ -477,34 +507,40 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
             add(path, media_type, dups, meta, out)
         except OSError as e:
             print(f"  ! {path.name}: {e}", file=sys.stderr)
+            carry(path)
 
     if jobs:
         workers = max(1, workers or min(os.cpu_count() or 1, len(jobs)))
         print(f"Processing {len(jobs)} file(s) with {workers} worker process(es)...")
         done = 0
-        with ProcessPoolExecutor(max_workers=workers) as executor:
-            futures = {
-                executor.submit(_process_one_file, path, media_type, output_dir, thumb_size, tz_offset,
-                                bases[path], *flags, large_thumb_size, meta): (path, media_type, dups)
-                for path, media_type, dups, flags, meta in jobs
-            }
-            for future in as_completed(futures):
-                path, media_type, dups = futures[future]
-                done += 1
-                try:
-                    meta, out = future.result()
-                    add(path, media_type, dups, meta, out)
-                except BrokenProcessPool:
-                    # a worker died (out of memory on a huge photo, killed, ...) and took
-                    # every unfinished file with it. Carrying on would build a site
-                    # without them AND delete their existing thumbnails and copies.
-                    raise SystemExit("! A worker process stopped unexpectedly (out of memory?), so the "
-                                     "build was stopped before changing the site's pages. Run it again; "
-                                     "if it keeps happening, try --workers 1.")
-                except Exception as e:
-                    print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}  ! failed: {e}", file=sys.stderr)
-                    continue
-                print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}")
+        try:
+            with ProcessPoolExecutor(max_workers=workers) as executor:
+                futures = {
+                    executor.submit(_process_one_file, path, media_type, output_dir, thumb_size, tz_offset,
+                                    bases[path], *flags, large_thumb_size, meta): (path, media_type, dups)
+                    for path, media_type, dups, flags, meta in jobs
+                }
+                for future in as_completed(futures):
+                    path, media_type, dups = futures[future]
+                    done += 1
+                    try:
+                        meta, out = future.result()
+                        add(path, media_type, dups, meta, out)
+                    except BrokenProcessPool:
+                        raise
+                    except Exception as e:
+                        print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}  ! failed: {e}", file=sys.stderr)
+                        carry(path)
+                        continue
+                    print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}")
+        except BrokenProcessPool:
+            # a worker died (out of memory on a huge photo, killed, ...) and took every
+            # unfinished file with it (it can surface from submit() as well as from a
+            # result). Carrying on would build a site without them AND delete their
+            # existing thumbnails and copies.
+            raise SystemExit("! A worker process stopped unexpectedly (out of memory?), so the "
+                             "build was stopped before changing the site's pages. Run it again; "
+                             "if it keeps happening, try --workers 1.")
     else:
         print("Nothing to (re)generate.")
 
