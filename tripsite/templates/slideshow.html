@@ -1,0 +1,41 @@
+<div class="slideshow" id="slideshow" role="dialog" aria-modal="true" aria-label="Photo viewer">
+  <div class="slideshow-progress" aria-hidden="true"><div id="slideshow-progress-bar"></div></div>
+  <div class="slideshow-bar">
+    <span class="slideshow-hint">&larr; &rarr; navigate &middot; Space play/pause &middot; Scroll/pinch to zoom &middot; I info &middot; F fullscreen &middot; Esc close</span>
+    <div>
+      <button class="slideshow-btn" id="slideshow-play" type="button" aria-pressed="false" title="Play slideshow (Space)">&#9654; Play</button>
+      <button class="slideshow-btn" id="slideshow-speed" type="button" hidden title="Time per photo">5s</button>
+      <button class="slideshow-btn" id="slideshow-live" type="button" hidden title="Play Live Photo (L)">Live</button>
+      <button class="slideshow-btn" id="slideshow-info" type="button">Info</button>
+      <button class="slideshow-btn" id="slideshow-fs" type="button">Fullscreen</button>
+      <button class="slideshow-btn" id="slideshow-close" type="button">Close &times;</button>
+    </div>
+  </div>
+  <div class="slideshow-stage" id="slideshow-stage">
+    <div class="slideshow-media" id="slideshow-media"></div>
+    <div class="slideshow-nav prev" id="slideshow-prev"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M15 5l-7 7 7 7"/></svg></div>
+    <div class="slideshow-nav next" id="slideshow-next"><svg viewBox="0 0 24 24" fill="none" stroke-width="2"><path d="M9 5l7 7-7 7"/></svg></div>
+    <div class="slideshow-caption" id="slideshow-caption"></div>
+  </div>
+  {% if editable %}
+  <div class="slideshow-edit" id="slideshow-edit">
+    <button class="slideshow-btn" id="edit-fav" type="button" title="Favorite (S)">&#9734; Favorite</button>
+    <input id="edit-caption" type="text" maxlength="2000" placeholder="Add a caption (press Enter to save)" aria-label="Caption">
+    <button class="slideshow-btn" id="edit-cover" type="button" title="Use this as the cover photo for the day">Set as cover</button>
+    <button class="slideshow-btn" id="edit-hide" type="button" title="Hide from visitors">Hide</button>
+  </div>
+  {% endif %}
+  <div class="info-panel" id="info-panel">
+    <div class="info-panel-inner">
+      <button class="info-close" id="info-close" type="button" aria-label="Close details">&times;</button>
+      <div class="info-eyebrow">Details</div>
+      <h2 id="info-title"></h2>
+      <div class="info-rows" id="info-rows"></div>
+      <div class="info-map-wrap" id="info-map-wrap">
+        <div class="info-map" id="info-map"></div>
+      </div>
+      <div class="info-no-gps" id="info-no-gps">No location data for this file.</div>
+      <a class="info-download" id="info-download" href="#" download>Download original file</a>
+    </div>
+  </div>
+</div>

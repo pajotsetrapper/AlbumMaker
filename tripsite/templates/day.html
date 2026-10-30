@@ -1,0 +1,98 @@
+<!doctype html>
+<html lang="en">
+{% include "head.html" %}
+<body>
+<header class="site-header">
+  <span class="brand"><a href="{{ home_href }}">{{ trip_title }}</a></span>
+  <span class="crumb">{{ 'Unsorted' if is_unknown else 'Day ' ~ day_number ~ ' of ' ~ day_total }}</span>
+</header>
+
+<div class="day-header">
+  <div class="stamp"><span class="num">{{ day_number if day_number else '?' }}</span><span class="of">{{ 'N/A' if is_unknown else 'DAY' }}</span></div>
+  <h1>{{ day_title }}</h1>
+  <div class="date">{{ date_display }}</div>
+  {% if editable %}
+  <div><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+  {% endif %}
+  <div class="day-nav">
+    <span>{% if prev_href %}<a href="{{ prev_href }}">&larr; {{ prev_label }}</a>{% endif %}</span>
+    <span>{% if next_href %}<a href="{{ next_href }}">{{ next_label }} &rarr;</a>{% endif %}</span>
+  </div>
+  <div class="day-nav-hint">{% if prev_href or next_href %}&larr; &rarr; keys or swipe change day &middot; {% endif %}Esc returns to all days</div>
+</div>
+
+{% if editable %}
+<div class="day-editor" id="day-editor" hidden>
+  <label for="edit-title">Title</label>
+  <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="Day title">
+  <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
+  <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
+  <div class="day-editor-actions">
+    <button type="button" class="editor-btn" id="day-save">Save</button>
+    <button type="button" class="editor-btn secondary" id="day-cancel">Cancel</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="description {{ 'empty' if not description else '' }}">
+  {% if description %}
+    {% for para in description %}<p>{{ para }}</p>{% endfor %}
+  {% else %}
+    <p>No description yet — add one for {{ date_key }} in trip_content.json{{ edit_hint }}</p>
+  {% endif %}
+</div>
+
+{% if route %}
+<div class="map-wrap">
+  <div class="map" id="day-map"></div>
+</div>
+{% endif %}
+
+{% if items %}
+<div class="grid-controls">
+  <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+  <span class="grid-controls-label">Thumbnail size</span>
+  <div class="size-toggle" role="group" aria-label="Thumbnail size" data-target="thumb-grid" data-store="tripThumbSize">
+    <button type="button" class="size-btn" data-size="small">S</button>
+    <button type="button" class="size-btn" data-size="medium">M</button>
+    <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
+  </div>
+</div>
+{% endif %}
+
+<div class="grid" id="thumb-grid">
+  {% for item in items %}
+  <div class="thumb{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
+    <img src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}"{% if item.hi_url %} data-hi="{{ item.hi_url }}"{% endif %}>
+    {% if item.media_type == 'video' %}
+    <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
+    {% endif %}
+    {% if item.live %}<span class="live-badge" title="Live Photo">LIVE</span>{% endif %}
+    {% if item.time_display %}<span class="badge">{{ item.time_display }}</span>{% endif %}
+    <span class="fav-badge" title="Favorite">&#9733;</span>
+    <span class="hidden-badge">HIDDEN</span>
+  </div>
+  {% endfor %}
+</div>
+
+<footer class="site-footer">{{ footer }}</footer>
+
+{% include "slideshow.html" %}
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+// slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
+initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
+openSlideshowFromHash();
+initSizeControls();
+initSharpThumbs();
+initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
+{% if editable %}initDayEditor({{ date_key_json }});{% endif %}
+{% if route %}
+try { initDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+{% endif %}
+</script>
+</body>
+</html>
