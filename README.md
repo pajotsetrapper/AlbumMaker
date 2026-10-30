@@ -802,7 +802,11 @@ so none of this applies there. The exceptions:
     files aren't even opened again; a re-run with nothing new takes
     well under a second for most trips.
   - Deleting the build record is safe: the next run just regenerates
-    thumbnails and converted images, and re-checks the copies.
+    thumbnails and converted images, and re-checks the copies. It can no
+    longer tell which old files earlier runs made, though, so it cleans
+    nothing up; it warns if the output folder holds files the new build
+    didn't make (for example a photo you have hidden since). Delete the
+    output folder for a clean result.
 - **Editing is for the live server.** The static site only displays what
   `trip_content.json` says. Edits you make in the live server don't
   appear in a static site until you re-run `generate_site.py`.
@@ -888,8 +892,8 @@ out. It never touches your own photos, your `trip_content.json` or your
 python -m unittest discover -s tests -t .
 ```
 
-`pytest tests` works too, if you prefer it. That's about 340 tests and
-takes roughly 30 seconds. To run one file or one test, name it:
+`pytest tests` works too, if you prefer it. That's about 360 tests and
+takes roughly 45 seconds without the browser tests below. To run one file or one test, name it:
 
 ```bash
 python -m unittest tests.test_editing
@@ -906,9 +910,10 @@ requirements are missing:
 
 - **Video tests** need ffmpeg.
 - **Browser tests** (the viewer's editing controls, links and Back button,
-  autoplay, and the maps with the real Leaflet library, run in jsdom, a
-  browser without a screen) need Node.js 18 or newer and a one-time
-  `npm install` in `tests/js`. They add about a minute.
+  autoplay, the day pages' arrow and Esc keys, the size controls, the
+  sharper thumbnails, and the maps with the real Leaflet library, run in
+  jsdom, a browser without a screen) need Node.js 18 or newer and a
+  one-time `npm install` in `tests/js`. They add about a minute and a half.
 - **A check of the real downloads**: set `TRIP_TEST_NETWORK=1` to also
   download the real packages for `--fetch-offline-assets` and verify them
   against their pinned checksums. It's off by default so the suite never
@@ -927,8 +932,8 @@ What's covered:
   check, bursts of simultaneous requests, and hot-reloading of the content
   file.
 - Editing: what the API saves, everything it refuses, who may use it,
-  hidden photos (including that they can't be fetched by guessing their
-  number), a content file with a mistake never being overwritten, and many
+  hidden photos (including that they can't be fetched by working out
+  their URL key), a content file with a mistake never being overwritten, and many
   edits at once losing nothing.
 - Working offline: the download (against a fake npm registry, so no
   internet is used), checksum and failure handling, the `vendor` route and

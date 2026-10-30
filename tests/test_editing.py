@@ -325,28 +325,26 @@ class ReadOnlyServerTests(EditingTestCase):
         for needle in ("day-editor", "edit-caption", '"rel"', "a3.jpg"):
             self.assertNotIn(needle, html)
 
-    def test_hidden_files_cannot_be_fetched_even_by_guessing_their_number(self):
-        import hashlib
-        md5 = lambda b: hashlib.md5(b).hexdigest()
-        visible = {md5(p.read_bytes()) for p in (self.photos / n for n in ("a1.jpg", "a2.jpg", "b1.jpg", "b2.jpg", "nodate.jpg"))}
-        hidden = md5((self.photos / A3).read_bytes())
-        for kind in ("media", "download"):
-            served, refused = set(), 0
-            for i in range(0, 8):                                       # every number the server could have handed out
-                status, _, body = self.server.get(f"/{kind}/{i}")
-                if status == 200:
-                    served.add(md5(body))
-                else:
-                    self.assertEqual(status, 404)
-                    refused += 1
-            self.assertEqual(served, visible, kind)                    # everything visible is served, and only that
-            self.assertNotIn(hidden, served)
-            self.assertEqual(refused, 8 - len(visible))                # the hidden photo and numbers past the end
-        thumb_statuses = [self.server.get(f"/thumb/{i}")[0] for i in range(0, 8)]
-        self.assertEqual(thumb_statuses.count(200), len(visible))
+    def test_hidden_files_cannot_be_fetched_even_by_working_out_their_key(self):
+        # a URL key is a hash of the file's path, so anyone who can guess the
+        # path can compute the key: being hidden must be enforced on every fetch
+        from types import SimpleNamespace
+        from tripsite.server import assign_keys
+        names = ("a1.jpg", "a2.jpg", "b1.jpg", "b2.jpg", "nodate.jpg", A3)
+        items = [SimpleNamespace(rel=n) for n in names]
+        assign_keys(items)
+        keys = {it.rel: it.key for it in items}
+        for kind in ("thumb", "media", "download"):
+            for name in names[:-1]:
+                self.assertEqual(self.server.get(f"/{kind}/{keys[name]}")[0], 200, (kind, name))
+            self.assertEqual(self.server.get(f"/{kind}/{keys[A3]}")[0], 404, kind)
+            self.assertEqual(self.server.get(f"/{kind}/0")[0], 404, kind)
 
     def test_the_startup_message_does_not_offer_editing(self):
-        self.assertNotIn("Editing is on", self.server.log())
+        log = self.server.log()
+        self.assertIn("Serving at", log)                # the startup message was written ...
+        self.assertNotIn("Editing works", log)          # ... and doesn't offer editing
+        self.assertNotIn("Editor link", log)
 
 
 class LanModeEditingTests(TempDirMixin, unittest.TestCase):

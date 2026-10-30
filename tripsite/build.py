@@ -22,6 +22,7 @@ import re
 import shutil
 import sys
 from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures.process import BrokenProcessPool
 from pathlib import Path
 from typing import Optional
 from urllib.parse import quote
@@ -168,8 +169,8 @@ def load_manifest(output_dir: Path) -> dict:
 def save_manifest(output_dir: Path, thumb_size: int, records: dict, pages: list, large_thumb_size: int = 0):
     data = {
         "version": MANIFEST_VERSION,
-        "note": "Build record for generate_site.py. Safe to delete: the next run "
-                "then regenerates everything.",
+        "note": "Build record for generate_site.py. If it is deleted, the next run "
+                "regenerates everything, but can no longer remove files from earlier runs.",
         "thumb_size": thumb_size,
         "large_thumb_size": large_thumb_size,
         "pages": sorted(pages),
@@ -190,6 +191,9 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
     old.update(p for p in previous.get("pages", []) if isinstance(p, str))
 
     root = output_dir.resolve()
+    kept_by_folded = {}
+    for k in keep:
+        kept_by_folded.setdefault(k.casefold(), []).append(k)
     removed = 0
     for rel in sorted(old - keep):
         try:
@@ -198,6 +202,17 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
             continue
         if root not in target.parents or not target.is_file():
             continue
+        # On a case-insensitive disk (macOS, Windows) an old "IMG_1.JPG" and a
+        # new "IMG_1.jpg" are one and the same file: deleting the old name would
+        # delete the new output. Give it the new name's spelling instead.
+        twin = next((k for k in kept_by_folded.get(rel.casefold(), ())
+                     if _same_file(target, output_dir / k)), None)
+        if twin is not None:
+            try:
+                os.replace(target, output_dir / twin)
+            except OSError:
+                pass
+            continue
         try:
             target.unlink()
             removed += 1
@@ -205,6 +220,33 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
             print(f"  ! could not remove {target}: {e}", file=sys.stderr)
     if removed:
         print(f"Removed {removed} output file(s) the site no longer uses.")
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
+
+
+def report_unrecorded_outputs(output_dir: Path, keep: set):
+    """Without a build record (deleted, unreadable, or from an older version)
+    nothing can be cleaned up, since only recorded files are ever deleted. Say
+    so when the site's folders hold files this build didn't make: they may be
+    left over from earlier builds, including photos that are now hidden."""
+    extra = []
+    for sub in ("days", "media", "thumbs", "thumbs_large"):
+        folder = output_dir / sub
+        if folder.is_dir():
+            extra += [p for p in folder.iterdir()
+                      if p.is_file() and not p.name.startswith(".")
+                      and f"{sub}/{p.name}" not in keep]
+    if extra:
+        print(f"! {len(extra)} file(s) in {output_dir} are not part of this build, for example "
+              f"{extra[0].relative_to(output_dir).as_posix()}. There was no build record to tell "
+              f"whether an earlier run made them, so they were left alone. They may include photos "
+              f"you have since hidden: if the folder holds only this site, delete it and build again.",
+              file=sys.stderr)
 
 
 def _copy_is_current(src: Path, dst: Path) -> bool:
@@ -390,7 +432,11 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     stats = {}
     changed = 0
     for path, media_type, dups in groups:
-        st = path.stat()
+        try:
+            st = path.stat()
+        except OSError as e:          # removed or unplugged since the scan
+            print(f"  ! skipping {path.name}: {e}", file=sys.stderr)
+            continue
         stats[path] = (st.st_size, st.st_mtime_ns)
         prev = previous.get(rel_paths[path])
         unchanged = (isinstance(prev, dict) and prev.get("base") == bases[path]
@@ -448,6 +494,13 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                 try:
                     meta, out = future.result()
                     add(path, media_type, dups, meta, out)
+                except BrokenProcessPool:
+                    # a worker died (out of memory on a huge photo, killed, ...) and took
+                    # every unfinished file with it. Carrying on would build a site
+                    # without them AND delete their existing thumbnails and copies.
+                    raise SystemExit("! A worker process stopped unexpectedly (out of memory?), so the "
+                                     "build was stopped before changing the site's pages. Run it again; "
+                                     "if it keeps happening, try --workers 1.")
                 except Exception as e:
                     print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}  ! failed: {e}", file=sys.stderr)
                     continue
@@ -643,6 +696,8 @@ def main(argv=None):
     # uses any more, then record this build for the next run
     keep = {o for rec in records.values() for o in rec["outputs"]} | set(pages)
     remove_stale_outputs(args.output, manifest, keep)
+    if not manifest:
+        report_unrecorded_outputs(args.output, keep)
     save_manifest(args.output, args.thumb_size, records, pages, args.large_thumb_size)
     print(f"\nSite generated at: {args.output.resolve()}")
     print(f"Open {args.output.resolve() / 'index.html'} in a browser to view it.")

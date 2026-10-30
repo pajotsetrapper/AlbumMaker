@@ -19,6 +19,8 @@ from unittest import mock
 
 from PIL import Image
 
+from tripsite import offline
+
 from .helpers import (QuietHTTPServer, TempDirMixin, TripServer, free_port, install_app, local_env, make_fake_vendor,
                       standard_trip, tc)
 
@@ -73,7 +75,7 @@ class FakeRegistry:
     """Serves the synthetic packages the way registry.npmjs.org serves tarballs."""
 
     def __init__(self):
-        self.routes, self.port = {}, free_port()
+        self.routes, self.port, self.served = {}, free_port(), []
         outer = self
 
         class Handler(http.server.BaseHTTPRequestHandler):
@@ -81,6 +83,7 @@ class FakeRegistry:
                 pass
 
             def do_GET(self):
+                outer.served.append(self.path)
                 data = outer.routes.get(self.path)
                 if data is None:
                     self.send_response(404); self.end_headers(); return
@@ -141,9 +144,10 @@ class RegistryTestCase(TempDirMixin, unittest.TestCase):
     def fetch(self, vendor, packages=None, **patches):
         packages = packages or synthetic_packages(self.registry)
         out, err = io.StringIO(), io.StringIO()
-        with mock.patch.object(tc, "_VENDOR_PACKAGES", packages), \
-             mock.patch.object(tc, "_NPM_REGISTRY", self.registry.url), \
-             mock.patch.multiple(tc, **patches) if patches else mock.patch.dict(os.environ, {}), \
+        # patch the module that does the work: trip_common only re-exports its names
+        with mock.patch.object(offline, "_VENDOR_PACKAGES", packages), \
+             mock.patch.object(offline, "_NPM_REGISTRY", self.registry.url), \
+             mock.patch.multiple(offline, **patches) if patches else mock.patch.dict(os.environ, {}), \
              mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             code = tc.fetch_offline_assets(vendor)
         return code, out.getvalue(), err.getvalue()
@@ -154,6 +158,8 @@ class FetchOfflineAssetsTests(RegistryTestCase):
         vendor = self.tmp / "vendor"
         code, out, err = self.fetch(vendor)
         self.assertEqual(code, 0, err)
+        # every package came from the fake registry: none from the real one
+        self.assertEqual(len(self.registry.served), len(offline._VENDOR_PACKAGES))
         self.assertTrue(tc.vendor_ready(vendor))
         for rel in ("leaflet/leaflet.js", "leaflet/leaflet.css", "leaflet/images/layers.png",
                     "leaflet/images/marker-shadow.png", "fonts/fonts.css", "VERSIONS.txt",

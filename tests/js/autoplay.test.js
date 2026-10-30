@@ -6,6 +6,16 @@ const { fixture, sleep, load, press, thumbs, isOpen } = require('./lib');
 const DAY = '/day/2026-05-02?preview=1';      // b1, b2 and (when ffmpeg is available) a video
 const byId = (w, id) => w.document.getElementById(id);
 
+// Every slide shown during the next `ms`, sampled often: with a short playMs a single
+// look at the end could land on the starting slide again after a full loop.
+async function slidesSeen(w, ms) {
+  const seen = new Set([w.eval('currentSlide')]);
+  for (let t = 0; t < ms; t += 25) { await sleep(25); seen.add(w.eval('currentSlide')); }
+  return seen;
+}
+const stays = async (w, ms) => assert.equal((await slidesSeen(w, ms)).size, 1, 'it should not have moved on');
+const movesOn = async (w, ms) => assert.ok((await slidesSeen(w, ms)).size > 1, 'it should have moved on');
+
 async function playing(playMs = 150, path = DAY) {
   const page = await load(fixture.server, path);
   page.w.eval(`playMs = ${playMs}`);
@@ -55,13 +65,10 @@ test('Space pauses and resumes', async () => {
   byId(w, 'slideshow-play').click();
   press(w, ' ');
   assert.equal(w.eval('playing'), false);
-  const frozen = w.eval('currentSlide');
-  await sleep(500);
-  assert.equal(w.eval('currentSlide'), frozen);
+  await stays(w, 500);
   press(w, ' ');
   assert.equal(w.eval('playing'), true);
-  await sleep(400);
-  assert.notEqual(w.eval('currentSlide'), frozen);
+  await movesOn(w, 500);
 });
 
 test('using the arrows keeps it playing', async () => {
@@ -77,12 +84,9 @@ test('it waits while the Details panel is open and carries on afterwards', async
   thumbs(w)[0].click();
   byId(w, 'slideshow-play').click();
   press(w, 'i');
-  const at = w.eval('currentSlide');
-  await sleep(600);
-  assert.equal(w.eval('currentSlide'), at);
+  await stays(w, 600);
   press(w, 'i');
-  await sleep(500);
-  assert.notEqual(w.eval('currentSlide'), at);
+  await movesOn(w, 500);
 });
 
 test('it waits while zoomed in', async () => {
@@ -90,12 +94,9 @@ test('it waits while zoomed in', async () => {
   thumbs(w)[0].click();
   byId(w, 'slideshow-play').click();
   w.eval('ZOOM.scale = 2');
-  const at = w.eval('currentSlide');
-  await sleep(600);
-  assert.equal(w.eval('currentSlide'), at);
+  await stays(w, 600);
   w.eval('resetZoom()');
-  await sleep(500);
-  assert.notEqual(w.eval('currentSlide'), at);
+  await movesOn(w, 1000);           // the blocked check looks again every 500ms
 });
 
 test('it holds while a Live Photo clip is playing', async () => {
@@ -103,9 +104,7 @@ test('it holds while a Live Photo clip is playing', async () => {
   thumbs(w)[0].click();
   byId(w, 'slideshow-play').click();
   w.eval('liveActive = true; scheduleAdvance()');
-  const at = w.eval('currentSlide');
-  await sleep(600);
-  assert.equal(w.eval('currentSlide'), at);
+  await stays(w, 600);
 });
 
 test('closing the viewer stops it, and reopening starts paused', async () => {
@@ -117,9 +116,7 @@ test('closing the viewer stops it, and reopening starts paused', async () => {
   thumbs(w)[0].click();
   assert.match(byId(w, 'slideshow-play').textContent, /Play/);
   assert.equal(byId(w, 'slideshow-speed').hidden, true);
-  const at = w.eval('currentSlide');
-  await sleep(500);
-  assert.equal(w.eval('currentSlide'), at);
+  await stays(w, 500);
 });
 
 test('Space on a focused thumbnail opens the viewer without starting playback', async () => {
@@ -129,6 +126,19 @@ test('Space on a focused thumbnail opens the viewer without starting playback', 
   t.dispatchEvent(new w.KeyboardEvent('keydown', { key: ' ', bubbles: true }));
   assert.ok(isOpen(w));
   assert.equal(w.eval('playing'), false);
+});
+
+test('Space with the clicked thumbnail still focused behind the viewer plays, and does not jump back', async () => {
+  const { w } = await playing(5000);
+  const t = thumbs(w)[0];
+  t.focus();                                                // a click focuses it in a real browser
+  t.click();
+  const entries = w.history.length;
+  press(w, 'ArrowRight');
+  t.dispatchEvent(new w.KeyboardEvent('keydown', { key: ' ', bubbles: true, cancelable: true }));
+  assert.equal(w.eval('playing'), true);
+  assert.equal(w.eval('currentSlide'), 1);
+  assert.equal(w.history.length, entries, 'no second history entry');
 });
 
 test('the speed button cycles and the choice is remembered', async () => {
@@ -153,6 +163,19 @@ test('a video holds the slide until it ends', async (t) => {
   w.document.querySelector('#slideshow-media video').dispatchEvent(new w.Event('ended'));
   await sleep(100);
   assert.notEqual(w.eval('currentSlide'), vi);
+});
+
+test('a video that ends while the Details panel is open waits for it, then moves on', async () => {
+  // works without ffmpeg: the first photo is presented as a video, and its end is announced by hand
+  const { w } = await playing();
+  w.eval("SLIDES[0].type = 'video'");
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  press(w, 'i');
+  w.document.querySelector('#slideshow-media video').dispatchEvent(new w.Event('ended'));
+  await stays(w, 700);
+  press(w, 'i');                                             // closing the panel must not lose the pending move
+  await movesOn(w, 1000);
 });
 
 test('typing a space in the caption box does not start playback (editor view)', async () => {

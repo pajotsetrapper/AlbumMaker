@@ -176,10 +176,15 @@ def drop_hidden_groups(groups: list, root: Path, hidden: set, live_photos: bool,
     if live_photos and hidden_stems:
         out = []
         for path, kind, dups in kept:
-            if (kind == "video" and (path.parent, path.stem.lower()) in hidden_stems
-                    and is_live_photo_clip(video_meta(path))):
-                dropped += 1 + len(dups)
-                continue
+            # any copy of the clip may be the one next to the hidden photo
+            if kind == "video" and any((p.parent, p.stem.lower()) in hidden_stems for p in [path, *dups]):
+                try:
+                    is_clip = is_live_photo_clip(video_meta(path))
+                except Exception:
+                    is_clip = True     # can't be read, so can't be cleared: leave it out to be safe
+                if is_clip:
+                    dropped += 1 + len(dups)
+                    continue
             out.append((path, kind, dups))
         kept = out
     if dropped:

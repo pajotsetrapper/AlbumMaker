@@ -155,6 +155,54 @@ test('when the file cannot be saved the screen says so and nothing changes', asy
   }
 });
 
+test('a caption typed before the viewer moves on (a swipe, a video ending) is saved for its own photo', async () => {
+  const { w } = await load(fixture.server, DAY);
+  thumbs(w)[1].click();                                  // a2
+  const cap = byId(w, 'edit-caption');
+  // a browser fires 'change' (before 'blur') when a box with new text loses focus; jsdom doesn't
+  w.addEventListener('blur', (e) => { if (e.target === cap) cap.dispatchEvent(new w.Event('change')); }, true);
+  cap.focus();
+  cap.value = 'Typed for a2';
+  w.eval('nextSlide()');                                 // what a swipe does, with the box still focused
+  await sleep(500);
+  assert.equal(w.eval('currentSlide'), 2);
+  assert.equal(readContent().photos['a2.jpg'].caption, 'Typed for a2');
+  assert.equal(readContent().photos['sub/a3.jpg'].caption, undefined, 'not saved onto the photo now shown');
+  assert.equal(cap.value, '', 'the box shows the new photo\'s (empty) caption');
+});
+
+test('a caption that could not be saved stays in the box', async () => {
+  const { w } = await load(fixture.server, DAY);
+  thumbs(w)[1].click();
+  writeContent('{"broken": ');
+  try {
+    const cap = byId(w, 'edit-caption');
+    cap.value = 'Not lost';
+    cap.dispatchEvent(new w.Event('change'));
+    await sleep(500);
+    assert.ok(byId(w, 'toast').classList.contains('error'));
+    assert.equal(cap.value, 'Not lost');
+  } finally {
+    writeContent(fixture.initialContent);
+  }
+});
+
+test('Ctrl/Cmd/Alt shortcuts in the viewer are left to the browser', async () => {
+  const { w } = await load(fixture.server, DAY);
+  thumbs(w)[1].click();                                  // a2: not a favorite
+  const key = (k, mod) => w.document.dispatchEvent(
+    new w.KeyboardEvent('keydown', { key: k, [mod]: true, bubbles: true, cancelable: true }));
+  key('s', 'ctrlKey');                                   // "save page" must not star the photo
+  key('s', 'metaKey');
+  key('ArrowRight', 'altKey');
+  key('i', 'metaKey');
+  await sleep(400);
+  assert.equal(w.eval('currentSlide'), 1);
+  assert.equal(w.eval('infoPanelOpen'), false);
+  assert.equal(thumbs(w)[1].classList.contains('is-fav'), false);
+  assert.equal(readContent().photos['a2.jpg']?.favorite, undefined);
+});
+
 test('a visitor preview has no controls and no hidden photo', async () => {
   const { w } = await load(fixture.server, DAY + '?preview=1');
   assert.equal(byId(w, 'edit-caption'), null);
