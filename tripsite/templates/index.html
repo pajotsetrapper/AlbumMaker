@@ -3,6 +3,7 @@
 {% include "head.html" %}
 <body>
 <header class="site-header">
+  {% if library_href %}<a class="crumb library-link" href="{{ library_href }}">&larr; All trips</a>{% endif %}
   <span class="brand"><a href="{{ home_href }}">{{ title }}</a></span>
 </header>
 
@@ -62,6 +63,7 @@
 <script>
 initSizeControls();
 initSharpThumbs();
+{% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
 try { initOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
 </script>

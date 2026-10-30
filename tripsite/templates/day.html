@@ -3,6 +3,7 @@
 {% include "head.html" %}
 <body>
 <header class="site-header">
+  {% if library_href %}<a class="crumb library-link" href="{{ library_href }}">&larr; All trips</a>{% endif %}
   <span class="brand"><a href="{{ home_href }}">{{ trip_title }}</a></span>
   <span class="crumb">{{ 'Unsorted' if is_unknown else 'Day ' ~ day_number ~ ' of ' ~ day_total }}</span>
 </header>
@@ -84,6 +85,7 @@
 {% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
 <script src="{{ js_href }}"></script>
 <script>
+window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
 openSlideshowFromHash();

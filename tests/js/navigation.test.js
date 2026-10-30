@@ -117,3 +117,19 @@ test('Esc on the overview page does nothing', async () => {
   await sleep(100);
   assert.equal(w.location.href, before);
 });
+
+test("in a library, Esc on a trip's homepage goes back to the list of trips", async () => {
+  const { w, went } = await page(fixture.server, '/?preview=1');
+  w.eval("initHomeNav('/')");                                // what a trip's homepage in a library calls
+  key(w, 'Escape', { repeat: true });
+  key(w, 'Escape', { metaKey: true });
+  assert.deepEqual(went(), []);
+  const close = w.document.createElement('a');               // an open map popup closes first
+  close.className = 'leaflet-popup-close-button';
+  close.addEventListener('click', (e) => { e.preventDefault(); close.remove(); });
+  w.document.body.appendChild(close);
+  key(w, 'Escape');
+  assert.deepEqual(went(), []);
+  key(w, 'Escape');
+  assert.deepEqual(went(), ['/']);
+});

@@ -203,14 +203,18 @@ def write_content(path: Path, content: dict):
     atomic_write_text(path, json.dumps(content, indent=2, ensure_ascii=False) + "\n")
 
 
-def load_or_init_content(content_path: Path, day_keys, write: bool = True) -> dict:
+def load_or_init_content(content_path: Path, day_keys, write: bool = True,
+                         title: Optional[str] = None) -> dict:
     """Load trip_content.json and add blank entries for any new days. Only
     ever adds; never overwrites. If the existing file can't be parsed this
     raises ContentFileError WITHOUT writing anything, since falling back to
     defaults and saving would wipe every title and description. With
-    write=False (--read-only) nothing is written at all."""
+    write=False (--read-only) nothing is written at all. A new file starts
+    with `title` as the trip's title, if given."""
     exists = content_path.exists()
     content = parse_content_file(content_path) if exists else default_content()
+    if not exists and title:
+        content["title"] = title
     changed = not exists
     for key in day_keys:
         if key not in content["days"]:
@@ -222,15 +226,33 @@ def load_or_init_content(content_path: Path, day_keys, write: bool = True) -> di
     return content
 
 
-def resolve_content_path(given: Optional[Path], input_dir: Path) -> Path:
+def resolve_content_path(given: Optional[Path], input_dir: Path, fallback: Optional[Path] = None) -> Path:
     """Where trip_content.json lives. Given with -c: that file. Otherwise the
     photos folder, so the notes travel with the photos. Earlier versions
     used the folder the script was run from; such a file is still found and
     used (with a note) when the photos folder has none yet, and the current
-    folder is the fallback when the photos folder can't be written to."""
+    folder is the fallback when the photos folder can't be written to.
+
+    A trip in a library passes its own `fallback` file instead: the current
+    folder is shared by every trip, so it must not be looked at at all."""
     if given is not None:
         return Path(given)
     preferred = Path(input_dir) / CONTENT_FILENAME
+    if fallback is not None:
+        fallback = Path(fallback)
+        if preferred.exists():
+            return preferred
+        if fallback.exists():
+            # used before, while the photos folder was read-only: keep using it
+            # rather than starting an empty file now that the folder is writable
+            print(f"Note: using {fallback} for {input_dir}. Move it to {preferred} to keep the notes "
+                  f"with the photos.", file=sys.stderr)
+            return fallback
+        if os.access(input_dir, os.W_OK):
+            return preferred
+        print(f"Note: the photos folder {input_dir} can't be written to, so its titles and notes "
+              f"go in {fallback}.", file=sys.stderr)
+        return fallback
     legacy = Path.cwd() / CONTENT_FILENAME
     try:
         same = preferred.exists() and legacy.exists() and os.path.samefile(preferred, legacy)

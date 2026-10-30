@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import traceback
 import os
 import re
 import shutil
@@ -38,8 +39,12 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, check_ffmpeg, meta_from_json, meta_to_json, read_metadata
 from .model import BROWSER_NATIVE_IMAGE_EXTS, VIDEO_EXTS, StaticOutputs
 from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .render import CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SiteUrls, build_day_context, build_index_context
-from .scan import (SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
+from .library import (TripListError, build_library_context, check_library_args, read_trip_list, trip_args,
+                      trip_summary)
+from .places import ATTRIBUTION as PLACES_ATTRIBUTION
+from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls, build_day_context,
+                     build_index_context)
+from .scan import (LIBRARY_MARKER, SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, drop_hidden_groups, group_by_day, no_dedupe_groups, pair_live_photos)
 from .util import atomic_write_bytes, atomic_write_text
 
@@ -220,6 +225,14 @@ def remove_stale_outputs(output_dir: Path, previous: dict, keep: set):
             print(f"  ! could not remove {target}: {e}", file=sys.stderr)
     if removed:
         print(f"Removed {removed} output file(s) the site no longer uses.")
+
+
+def _same_file(a: Path, b: Path) -> bool:
+    """The same file or folder on disk, however the two paths are spelled."""
+    try:
+        return os.path.samefile(a, b)
+    except OSError:
+        return False
 
 
 def _fold(rel: str) -> str:
@@ -410,9 +423,10 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                force: bool, tz_offset: Optional[float] = None,
                workers: Optional[int] = None, dedupe: bool = True,
                manifest: Optional[dict] = None, skip_rels: Optional[set] = None,
-               large_thumb_size: int = 0, live_photos: bool = True) -> tuple:
+               large_thumb_size: int = 0, live_photos: bool = True, exclude_dirs=()) -> tuple:
     """Returns (items, records): the processed media, and the build-record
-    entry for every processed file (see save_manifest)."""
+    entry for every processed file (see save_manifest). `exclude_dirs`: more
+    folders to leave out besides output_dir (a library's own folder)."""
     manifest = manifest or {}
     previous = manifest.get("files", {})
     for sub in ("thumbs", "media") + (("thumbs_large",) if large_thumb_size else ()):
@@ -435,7 +449,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     # the output folder is excluded explicitly too: on the very first run
     # it doesn't hold a build record yet
-    candidates = collect_candidates(input_dir, exclude_dirs=(output_dir,))
+    candidates = collect_candidates(input_dir, exclude_dirs=(output_dir, *exclude_dirs))
     # Duplicates first, THEN hidden photos: a set of identical files is left
     # out as a whole if any of them is hidden (see drop_hidden_groups).
     groups = dedupe_groups(candidates) if dedupe else no_dedupe_groups(candidates)
@@ -574,6 +588,12 @@ class StaticUrls(SiteUrls):
     edit_hint = " and re-run the generator."
     has_vendor = False    # local copies of Leaflet and the fonts are bundled in assets/vendor
     large_thumbs = False  # --large-thumb-size was used, so thumbs_large/ exists
+    in_library = False    # built by --library: the library page is one folder up
+
+    def library_href(self, from_index):
+        if not self.in_library:
+            return None
+        return "../index.html" if from_index else "../../index.html"
 
     def vendor_url(self, from_index):
         if not self.has_vendor:
@@ -609,11 +629,26 @@ class StaticUrls(SiteUrls):
         return f"../media/{quote(item.live_clip.outputs.display_file)}"
 
 
-def render_site(days: list, content: dict, output_dir: Path, large_thumbs: bool = False) -> list:
-    """Write all pages. Returns the day pages written (relative paths)."""
+def site_urls(large_thumbs: bool = False, in_library: bool = False) -> StaticUrls:
     urls = StaticUrls()
     urls.has_vendor = vendor_ready()
     urls.large_thumbs = large_thumbs
+    urls.in_library = in_library
+    return urls
+
+
+def write_assets(folder: Path, has_vendor: bool):
+    """The stylesheet and script, and the local map library and fonts if any."""
+    assets_dir = folder / "assets"
+    atomic_write_text(assets_dir / "style.css", CSS)
+    atomic_write_text(assets_dir / "script.js", JS)
+    if has_vendor:
+        # the map library and fonts travel with the site, so it needs no internet for them
+        shutil.copytree(VENDOR_DIR, assets_dir / "vendor", dirs_exist_ok=True)
+
+
+def render_site(days: list, content: dict, output_dir: Path, urls: StaticUrls) -> list:
+    """Write all pages. Returns the day pages written (relative paths)."""
     atomic_write_text(output_dir / "index.html",
                       INDEX_TEMPLATE.render(**build_index_context(days, content, urls)))
     pages = []
@@ -621,13 +656,7 @@ def render_site(days: list, content: dict, output_dir: Path, large_thumbs: bool 
         html = DAY_TEMPLATE.render(**build_day_context(days, i, content, urls))
         atomic_write_text(output_dir / "days" / f"{d.date_key}.html", html)
         pages.append(f"days/{d.date_key}.html")
-
-    assets_dir = output_dir / "assets"
-    atomic_write_text(assets_dir / "style.css", CSS)
-    atomic_write_text(assets_dir / "script.js", JS)
-    if urls.has_vendor:
-        # the map library and fonts travel with the site, so it needs no internet for them
-        shutil.copytree(VENDOR_DIR, assets_dir / "vendor", dirs_exist_ok=True)
+    write_assets(output_dir, urls.has_vendor)
     return pages
 
 
@@ -635,9 +664,14 @@ def render_site(days: list, content: dict, output_dir: Path, large_thumbs: bool 
 # CLI
 # --------------------------------------------------------------------------
 
-def main(argv=None):
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a static trip website from a photo/video folder.")
-    parser.add_argument("-i", "--input", type=Path, help="Folder containing your photos/videos (required)")
+    parser.add_argument("-i", "--input", type=Path, help="Folder containing your photos/videos (required, "
+                                                          "unless --library is given)")
+    parser.add_argument("--library", type=Path, metavar="LIST",
+                        help="Build several trips at once, each into its own folder under -o, plus a page "
+                             "linking them all. LIST is a text file with one photos folder per line. "
+                             "See README.md.")
     parser.add_argument("-o", "--output", default=Path("site"), type=Path, help="Output folder for the generated site")
     add_content_arg(parser)
     parser.add_argument("--thumb-size", type=positive_thumb_size, default=400,
@@ -669,22 +703,46 @@ def main(argv=None):
     add_date_check_args(parser)
     add_location_args(parser)
     add_offline_args(parser)
+    return parser
+
+
+def main(argv=None):
+    # progress appears as it happens, also when the output goes to a log file
+    if hasattr(sys.stdout, "reconfigure"):
+        sys.stdout.reconfigure(line_buffering=True)
+    parser = build_parser()
     args = parser.parse_args(argv)
     if args.fetch_offline_assets:
         sys.exit(fetch_offline_assets())
-    if args.input is None:
+    if args.library and args.input is not None:
+        parser.error("give either -i/--input (one trip) or --library (several), not both")
+    if args.input is None and not args.library:
         parser.error("-i/--input is required")
     date_range = resolve_date_range(args, parser)
     if args.large_thumb_size and args.large_thumb_size <= args.thumb_size:
         parser.error("--large-thumb-size must be larger than --thumb-size (or 0 to turn it off)")
     if args.workers is not None and args.workers < 1:
         parser.error("--workers must be at least 1")
+    if args.library:
+        problem = check_library_args(args)
+        if problem:
+            parser.error(problem)
+        sys.exit(build_library(args))
+    build_trip(args, date_range)
+    print_finish(args.output)
 
+
+def build_trip(args, date_range, library_root: Optional[Path] = None,
+               content_fallback: Optional[Path] = None) -> tuple:
+    """Build one trip's site into args.output. Returns (days, content, urls).
+    On a problem it says what's wrong and exits (SystemExit), which a library
+    build catches to carry on with the next trip."""
     if not args.input.is_dir():
         print(f"Input folder not found: {args.input}", file=sys.stderr)
         sys.exit(1)
     in_resolved, out_resolved = args.input.resolve(), args.output.resolve()
-    if out_resolved == in_resolved or out_resolved in in_resolved.parents:
+    if (out_resolved == in_resolved or out_resolved in in_resolved.parents
+            or _same_file(args.output, args.input)):         # (also when only the letter case differs)
         print("The output folder can't be the photos folder itself or a folder that "
               "contains it. Pick a separate folder with -o.", file=sys.stderr)
         sys.exit(1)
@@ -695,7 +753,7 @@ def main(argv=None):
     if args.tz_offset is not None:
         print(f"Using a fixed UTC{args.tz_offset:+g}h offset for video timestamps.")
 
-    content_path = resolve_content_path(args.content, args.input)
+    content_path = resolve_content_path(args.content, args.input, fallback=content_fallback)
     # check the content file *before* the (possibly long) processing step, so
     # a typo is reported immediately and never leads to the file being rewritten
     skip_rels = set()
@@ -714,7 +772,8 @@ def main(argv=None):
                                 tz_offset=args.tz_offset, workers=args.workers,
                                 dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels,
                                 large_thumb_size=args.large_thumb_size,
-                                live_photos=not args.no_live_photos)
+                                live_photos=not args.no_live_photos,
+                                exclude_dirs=(library_root,) if library_root else ())
     if not items:
         print("No supported photos or videos found.", file=sys.stderr)
         sys.exit(1)
@@ -725,7 +784,7 @@ def main(argv=None):
 
     if not args.no_date_check:
         apply_date_check(items, date_range)
-    located = locate_items(items, args, exclude_dirs=(args.output,))
+    located = locate_items(items, args, exclude_dirs=(args.output,) + ((library_root,) if library_root else ()))
     fallback_count = sum(1 for it in items if it.dt_is_fallback)
     gps_count = sum(1 for it in items if it.has_gps)
     print(f"\nFound {len(items)} media files "
@@ -737,14 +796,16 @@ def main(argv=None):
     print(f"Grouped into {len(days)} day(s).")
 
     try:
-        content = load_or_init_content(content_path, [d.date_key for d in days])
+        content = load_or_init_content(content_path, [d.date_key for d in days],
+                                       title=args.input.name if library_root else None)
     except ContentFileError as e:  # e.g. edited while the scan was running
         print(f"! {e}\n  Nothing was changed. Fix the file and run again.", file=sys.stderr)
         sys.exit(1)
 
     known = {k for it in items for k in it.content_keys}
     report_unknown_photo_keys(content, known | skip_rels)
-    pages = render_site(days, content, args.output, large_thumbs=bool(args.large_thumb_size))
+    urls = site_urls(large_thumbs=bool(args.large_thumb_size), in_library=library_root is not None)
+    pages = render_site(days, content, args.output, urls)
 
     # only after the site was written successfully: drop outputs nothing
     # uses any more, then record this build for the next run
@@ -753,11 +814,98 @@ def main(argv=None):
     if not manifest:
         report_unrecorded_outputs(args.output, keep, started)
     save_manifest(args.output, args.thumb_size, records, pages, args.large_thumb_size)
-    print(f"\nSite generated at: {args.output.resolve()}")
-    print(f"Open {args.output.resolve() / 'index.html'} in a browser to view it.")
+    return days, content, urls
+
+
+def print_finish(output: Path):
+    print(f"\nSite generated at: {output.resolve()}")
+    print(f"Open {output.resolve() / 'index.html'} in a browser to view it.")
     if vendor_ready():
         print("The map library and fonts are bundled in the site (assets/vendor), so it works without internet; "
               "only the map tiles need a connection.")
     else:
         print("Tip: the site loads its map library and fonts from the internet. To bundle them so it works "
               "offline, run once:  python generate_site.py --fetch-offline-assets  and build again.")
+
+
+# --------------------------------------------------------------------------
+# A library of trips (--library)
+# --------------------------------------------------------------------------
+
+def _load_library_record(root: Path) -> dict:
+    try:
+        data = json.loads((root / LIBRARY_MARKER).read_text(encoding="utf-8"))
+        trips = data.get("trips") if isinstance(data, dict) else None
+        return trips if isinstance(trips, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def build_library(args) -> int:
+    """Build every trip in the list file into its own folder under -o, then
+    the page linking them. Returns the exit code: 1 if any trip failed."""
+    try:
+        entries = read_trip_list(args.library)
+    except TripListError as e:
+        print(f"! {e}", file=sys.stderr)
+        return 1
+    root = args.output
+    root_resolved = root.resolve()
+    for e in entries:
+        if e.path.exists() and (e.path.resolve() == root_resolved or _same_file(e.path, root)):
+            print(f"! The output folder can't be a trip's photos folder ({e.path}). Pick another -o.",
+                  file=sys.stderr)
+            return 1
+    list_dir = Path(args.library).expanduser().resolve().parent
+    previous = _load_library_record(root)
+    summaries, failed = {}, []
+    for n, entry in enumerate(entries, 1):
+        print(f"\n=== Trip {n} of {len(entries)}: {entry.path}  ->  {root / entry.name} ===")
+        try:
+            trip, date_range = trip_args(args, entry, args.library)
+            trip.output = root / entry.name
+            days, content, urls = build_trip(trip, date_range, library_root=root,
+                                             content_fallback=list_dir / f"trip_content-{entry.name}.json")
+        except TripListError as err:
+            print(f"! {args.library}, line {entry.line}: {err}", file=sys.stderr)
+            failed.append(entry)
+        except SystemExit:        # build_trip already said why
+            failed.append(entry)
+        except Exception:         # anything else (a drive that drops out mid-build): the others still get built
+            traceback.print_exc()
+            print(f"! {entry.path} could not be built (see above).", file=sys.stderr)
+            failed.append(entry)
+        else:
+            summaries[entry.name] = trip_summary(entry.name, days, content, urls,
+                                                 href=f"{entry.name}/index.html", base=f"{entry.name}/",
+                                                 folder_title=entry.path.name)
+            continue
+        # not built this time (a drive that isn't plugged in, say): keep listing
+        # what was built before, if it's still there
+        old = previous.get(entry.name)
+        if isinstance(old, dict) and (root / entry.name / "index.html").is_file():
+            summaries[entry.name] = old
+            print(f"  The library keeps showing the version of this trip built earlier.")
+
+    gone = sorted(set(previous) - {e.name for e in entries})
+    urls = site_urls()
+    root.mkdir(parents=True, exist_ok=True)
+    write_assets(root, urls.has_vendor)
+    context = build_library_context(list(summaries.values()), urls, footer=StaticUrls.footer,
+                                    places_credit=PLACES_ATTRIBUTION)
+    atomic_write_text(root / "index.html", LIBRARY_TEMPLATE.render(**context))
+    atomic_write_text(root / LIBRARY_MARKER, json.dumps(
+        {"version": 1, "note": "Record of a generate_site.py --library build.", "trips": summaries},
+        indent=1, ensure_ascii=False) + "\n")
+
+    print(f"\nLibrary of {len(summaries)} trip(s) generated at: {root_resolved}")
+    print(f"Open {root_resolved / 'index.html'} in a browser to view it.")
+    for name in gone:
+        if (root / name).is_dir():
+            print(f"Note: {root / name} is no longer in {args.library}, so it isn't listed any more. "
+                  f"Delete that folder if you don't need it.")
+    if failed:
+        print(f"! {len(failed)} trip(s) could not be built: "
+              f"{', '.join(str(e.path) for e in failed)}. See the messages above.", file=sys.stderr)
+        return 1
+    return 0

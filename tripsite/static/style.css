@@ -26,6 +26,9 @@ img,video{max-width:100%; display:block;}
 }
 .site-header .brand{font-family:var(--serif); font-weight:600; font-size:1.15rem; letter-spacing:.02em;}
 .site-header .brand a{color:var(--cream);}
+.site-header .library-link{color:var(--gold-dim);}
+.site-header .library-link:hover{color:var(--gold);}
+.empty-library{font-family:var(--mono); opacity:.7;}
 .site-header .crumb{font-family:var(--mono); font-size:.78rem; color:var(--gold-dim); text-transform:uppercase; letter-spacing:.08em;}
 
 .hero{padding:4.5rem 1.5rem 3rem; text-align:center;}

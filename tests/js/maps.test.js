@@ -120,3 +120,32 @@ test('the Details panel names the place', async () => {
   const place = rows.find((r) => r.startsWith('Place'));
   assert.ok(place && place.length > 'Place'.length + 2, rows.join(' | '));
 });
+
+test('the library map draws each trip and opens it on a click', { skip }, async () => {
+  const { w, errors } = await load(fixture.server, '/?preview=1');
+  w.eval('window.__went = []; navigateTo = (h) => __went.push(h);');
+  const div = w.document.createElement('div');
+  div.id = 'library-test-map';
+  w.document.body.appendChild(div);
+  w.eval(`initLibraryMap('library-test-map', [
+    {title: 'Belgium', href: '/belgium/', color: '#ff0000', dates: '1 May 2026', points: [[50, 4], [51, 4]]},
+    {title: 'One stop', href: '/one/', color: '#00ff00', dates: '2 May 2026', points: [[52, 5]]},
+    {title: 'No GPS', href: '/none/', color: '#0000ff', dates: '3 May 2026', points: []}])`);
+  assert.equal(div.querySelectorAll('.leaflet-overlay-pane path[stroke="#ff0000"]').length, 2, 'line + start');
+  assert.equal(div.querySelectorAll('.leaflet-overlay-pane path[stroke="#00ff00"]').length, 1, 'just a point');
+  assert.equal(div.querySelectorAll('.leaflet-overlay-pane path[stroke="#0000ff"]').length, 0);
+  div.querySelector('.leaflet-overlay-pane path[stroke="#ff0000"]').dispatchEvent(new w.MouseEvent('click', { bubbles: true }));
+  assert.deepEqual(JSON.parse(w.eval('JSON.stringify(__went)')), ['/belgium/']);
+  assert.deepEqual(realErrors(errors), []);
+});
+
+test('a library whose trips are all in one spot is not zoomed in to a single street', { skip }, async () => {
+  const { w } = await load(fixture.server, '/?preview=1');
+  const div = w.document.createElement('div');
+  div.id = 'library-one-spot';
+  w.document.body.appendChild(div);
+  w.eval(`window.__lm = null; const orig = L.map; L.map = (...a) => (window.__lm = orig(...a));
+          initLibraryMap('library-one-spot', [{title: 'Here', href: '/h/', color: '#123456', dates: '', points: [[50, 4]]}]);
+          L.map = orig;`);
+  assert.ok(w.eval('window.__lm.getZoom()') <= 9, 'zoom ' + w.eval('window.__lm.getZoom()'));
+});

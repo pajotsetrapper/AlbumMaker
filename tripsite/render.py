@@ -32,6 +32,7 @@ def _load_template(name: str):
 _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
 INDEX_TEMPLATE = _JINJA.get_template("index.html")
 DAY_TEMPLATE = _JINJA.get_template("day.html")
+LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
 
 
 class SiteUrls:
@@ -42,6 +43,11 @@ class SiteUrls:
     footer = ""     # the line at the bottom of every page
     edit_hint = ""  # completes "add one for <date> in trip_content.json..."
     tile_url = DEFAULT_TILE_URL   # what the maps ask for; {z}/{x}/{y} are filled in by Leaflet
+    api_base = ""                 # put before /api/... when the pages save an edit
+
+    def library_href(self, from_index: bool) -> Optional[str]:
+        """The page listing every trip, when this trip is part of a library."""
+        return None
 
     def vendor_url(self, from_index: bool) -> Optional[str]:
         """Folder (ending in /) holding local copies of Leaflet and the fonts,
@@ -150,6 +156,8 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         })
     return dict(
         page_title=trip_title(content),
+        library_href=urls.library_href(from_index=True),
+        library_href_json=script_json(urls.library_href(from_index=True)),
         home_href=urls.home(from_index=True),
         assets_prefix=urls.assets_prefix(from_index=True),
         css_href=urls.asset("style.css", from_index=True),
@@ -224,6 +232,8 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
 
     return dict(
         page_title=f"{title} \u2014 {trip_title(content)}",
+        library_href=urls.library_href(from_index=False),
+        api_base_json=script_json(urls.api_base),
         home_href=urls.home(from_index=False),
         home_href_json=script_json(urls.home(from_index=False)),
         assets_prefix=urls.assets_prefix(from_index=False),
