@@ -133,6 +133,34 @@ class RebuildCleanupTests(TempDirTest):
         err = self.run_build()                                              # with a record again: quiet
         self.assertNotIn("not part of this build", err)
 
+    def test_a_file_that_cannot_be_read_this_time_keeps_its_outputs(self):
+        # e.g. a network or USB drive that drops out for a moment during the build
+        self.run_build()
+        before = self.media()
+        real = build.drop_hidden_groups
+
+        def then_unreadable(*a, **kw):
+            groups = real(*a, **kw)
+            os.rename(self.photos / "IMG_2.jpg", self.tmp / "away.jpg")     # gone right after the scan
+            return groups
+        with mock.patch.object(build, "drop_hidden_groups", then_unreadable):
+            self.run_build()
+        self.assertEqual(self.media(), before, "its copy was not deleted")
+        self.assertTrue(any(p.name.startswith("IMG_2") for p in (self.out / "thumbs").iterdir()))
+        record = json.loads((self.out / scan.SITE_MARKER).read_text())
+        self.assertIn("IMG_2.jpg", record["files"], "still recorded, so a later run can clean up or reuse")
+        os.rename(self.tmp / "away.jpg", self.photos / "IMG_2.jpg")          # back again: nothing to redo
+        self.run_build()
+        self.assertEqual(self.media(), before)
+
+    @unittest.skipUnless(sys.platform in ("darwin", "win32"), "needs a disk that ignores letter case")
+    def test_a_differently_spelled_output_is_not_reported_as_a_leftover(self):
+        self.run_build()
+        (self.out / scan.SITE_MARKER).unlink()
+        os.rename(self.photos / "IMG_1.JPG", self.photos / "IMG_1.jpg")      # the output keeps its old spelling
+        err = self.run_build()
+        self.assertNotIn("not part of this build", err)
+
     def test_a_crashed_worker_stops_the_build_before_anything_is_deleted(self):
         from concurrent.futures import Future
         from concurrent.futures.process import BrokenProcessPool
@@ -154,12 +182,22 @@ class RebuildCleanupTests(TempDirTest):
                 f = Future()
                 f.set_exception(BrokenProcessPool("a worker died"))
                 return f
-        with mock.patch.object(build, "ProcessPoolExecutor", CrashedPool):
-            with self.assertRaises(SystemExit) as stopped:
-                self.run_build("--force")
-        self.assertIn("worker process stopped", str(stopped.exception.code))
-        self.assertEqual(self.media(), before)
-        self.assertEqual((self.out / scan.SITE_MARKER).read_bytes(), record)
+        class CrashedWhileSubmitting(CrashedPool):
+            calls = 0
+
+            def submit(self, *a, **kw):
+                type(self).calls += 1
+                if type(self).calls > 1:                # the first job killed its worker
+                    raise BrokenProcessPool("a worker died")
+                return Future()
+        for pool in (CrashedPool, CrashedWhileSubmitting):
+            with self.subTest(pool=pool.__name__):
+                with mock.patch.object(build, "ProcessPoolExecutor", pool):
+                    with self.assertRaises(SystemExit) as stopped:
+                        self.run_build("--force")
+                self.assertIn("worker process stopped", str(stopped.exception.code))
+                self.assertEqual(self.media(), before)
+                self.assertEqual((self.out / scan.SITE_MARKER).read_bytes(), record)
 
 
 class OutputNameTests(unittest.TestCase):
@@ -218,6 +256,37 @@ class HiddenLivePhotoRuleTests(TempDirTest):
         with mock.patch("sys.stdout"):
             kept = scan.drop_hidden_groups(self.groups(), self.photos, {"IMG_9.jpg"}, True, unreadable)
         self.assertEqual(kept, [])
+
+    @staticmethod
+    def item(path, kind, duplicates=()):
+        from datetime import datetime
+        from tripsite.model import MediaItem
+        return MediaItem(path=Path(path), media_type=kind, dt=datetime(2026, 5, 1), dt_is_fallback=False,
+                         lat=None, lon=None, is_live_clip=(kind == "video"), duplicates=[Path(d) for d in duplicates])
+
+    def pair(self, items):
+        with mock.patch("sys.stdout"):
+            return scan.pair_live_photos(items)
+
+    def test_pairing_finds_a_clip_whose_kept_copy_is_in_another_folder(self):
+        # the live server pairs this way too, so it hides such a clip along with
+        # its hidden photo, just as the static build leaves it out
+        photo = self.item("/p/a/IMG_5.jpg", "image")
+        clip = self.item("/p/b/IMG_5.MOV", "video", duplicates=["/p/a/IMG_5.MOV"])
+        self.assertEqual(self.pair([photo, clip]), [photo])
+        self.assertIs(photo.live_clip, clip)
+
+    def test_pairing_finds_a_photo_whose_kept_copy_is_in_another_folder(self):
+        photo = self.item("/p/a/IMG_7.jpg", "image", duplicates=["/p/b/IMG_7.jpg"])
+        clip = self.item("/p/b/IMG_7.MOV", "video")
+        self.assertEqual(self.pair([photo, clip]), [photo])
+        self.assertIs(photo.live_clip, clip)
+
+    def test_a_photo_gets_one_clip_and_a_second_stays_a_video(self):
+        photo = self.item("/p/a/IMG_8.jpg", "image", duplicates=["/p/b/IMG_8.jpg"])
+        first, second = self.item("/p/a/IMG_8.MOV", "video"), self.item("/p/b/IMG_8.MOV", "video")
+        self.assertEqual(self.pair([photo, first, second]), [photo, second])
+        self.assertIs(photo.live_clip, first)
 
     def test_no_live_photos_keeps_the_clip(self):
         make_jpeg(self.photos / "IMG_9.jpg", 1)
@@ -465,8 +534,10 @@ class LiveServerTests(TempDirTest):
         self.start()
         r, html = self.request("GET", "/")
         self.assertIn(f"/assets/script.js?v={server.ASSET_VERSION}".encode(), html)
+        r, _ = self.request("GET", f"/assets/script.js?v={server.ASSET_VERSION}", headers={"Via": "1.1 proxy"})
+        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE)            # a visitor
         r, _ = self.request("GET", f"/assets/script.js?v={server.ASSET_VERSION}")
-        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE)
+        self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE_PRIVATE)    # the editor
         r, _ = self.request("GET", "/assets/script.js")
         self.assertEqual(r.getheader("Cache-Control"), server.CACHE_REVALIDATE)
 
@@ -530,18 +601,23 @@ class LiveServerTests(TempDirTest):
         r, data = self.request("GET", f"/media/{one.key}", headers={"Range": "bytes=2-5"})
         self.assertEqual((r.status, len(data)), (206, 4))
 
-    def test_long_lived_responses_are_private(self):
-        # a proxy or tunnel in front of the server must not keep an editor-only photo for others
+    def test_what_an_editor_gets_is_cached_privately_and_the_rest_publicly(self):
+        # a proxy or tunnel in front of the server must not keep an editor-only
+        # photo for others, but may keep what any visitor can see
         items = self.start()
         one = next(it for it in items if it.rel == "a/one.jpg")
         r, html = self.request("GET", "/day/2026-05-01")
         import re
         url = re.search(rf'/thumb/{one.key}\?v=[^"]+'.encode(), html).group(0).decode()
-        r, _ = self.request("GET", url)
-        cache = r.getheader("Cache-Control")
-        self.assertIn("immutable", cache)
-        self.assertIn("private", cache)
-        self.assertNotIn("public", cache)
+        visitor = {"Via": "1.1 proxy"}
+        r, _ = self.request("GET", url, headers=visitor)
+        self.assertEqual((r.status, r.getheader("Cache-Control")), (200, server.CACHE_IMMUTABLE))
+        self.app.content.update(lambda c: c["photos"].update({"a/one.jpg": {"hidden": True}}))
+        r, _ = self.request("GET", url)                                     # the editor sees it
+        self.assertEqual((r.status, r.getheader("Cache-Control")), (200, server.CACHE_IMMUTABLE_PRIVATE))
+        self.assertNotIn("public", r.getheader("Cache-Control"))
+        r, _ = self.request("GET", url, headers=visitor)
+        self.assertEqual(r.status, 404)
 
     def test_idle_connection_is_closed(self):
         self.start()

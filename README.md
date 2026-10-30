@@ -661,7 +661,9 @@ photo, so it plays from the slideshow with `L` or the Live button and
 then returns to the photo. A video is treated as a Live Photo clip only
 when all of these hold:
 
-- A photo with the same name sits in the same folder.
+- A photo with the same name sits in the same folder. Identical copies
+  count too: if duplicate detection kept a copy of the photo or the clip
+  from another folder, they are still paired.
 - The video carries Apple's Live Photo marker, or is at most 4 seconds
   long.
 

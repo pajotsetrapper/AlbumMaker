@@ -178,6 +178,18 @@ test('a video that ends while the Details panel is open waits for it, then moves
   await movesOn(w, 1000);
 });
 
+test('Play on a video that has already ended (or failed) moves on after the usual time', async () => {
+  const { w } = await playing();
+  w.eval("SLIDES[0].type = 'video'");
+  thumbs(w)[0].click();
+  const v = w.document.querySelector('#slideshow-media video');
+  Object.defineProperty(v, 'ended', { value: true });       // it played to the end before Play was pressed
+  v.dispatchEvent(new w.Event('ended'));
+  byId(w, 'slideshow-play').click();
+  assert.match(byId(w, 'slideshow-progress-bar').style.transition, /width 150ms linear/);
+  await movesOn(w, 600);
+});
+
 test('typing a space in the caption box does not start playback (editor view)', async () => {
   const { w } = await load(fixture.server, '/day/2026-05-02');
   thumbs(w)[0].click();

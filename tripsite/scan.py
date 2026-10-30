@@ -246,16 +246,23 @@ def pair_live_photos(items: list) -> list:
     from the photo instead of cluttering the grid as a separate video.
     Returns the remaining items, sorted by path."""
     items = sorted(items, key=lambda it: it.path)
+
+    def places(it):
+        # every spot the file exists, its identical copies included: duplicate
+        # detection may have kept a copy from another folder than its partner's
+        return [(p.parent, p.stem.lower()) for p in [it.path, *it.duplicates]]
+
     photos = {}
     for it in items:
         if it.media_type == "image":
-            photos.setdefault((it.path.parent, it.path.stem.lower()), it)
+            for place in places(it):
+                photos.setdefault(place, it)
     kept = []
     paired = 0
     for it in items:
         if it.media_type == "video" and it.is_live_clip:
-            photo = photos.get((it.path.parent, it.path.stem.lower()))
-            if photo is not None and photo.live_clip is None:
+            photo = next((photos[p] for p in places(it) if p in photos and photos[p].live_clip is None), None)
+            if photo is not None:
                 photo.live_clip = it
                 paired += 1
                 continue
