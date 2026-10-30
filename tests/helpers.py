@@ -181,7 +181,8 @@ class TripServer:
     """
 
     def __init__(self, app: Path, photos: Path, work: Path, *extra, content="content.json"):
-        self.app, self.photos, self.work = Path(app), Path(photos), Path(work)
+        self.app, self.work = Path(app), Path(work)
+        self.photos = None if photos is None else Path(photos)
         self.port = free_port()
         self.content = self.work / content
         self.extra = [str(e) for e in extra]
@@ -191,9 +192,10 @@ class TripServer:
     def start(self, timeout: float = 30):
         self.work.mkdir(parents=True, exist_ok=True)
         with open(self.log_path, "w", encoding="utf-8") as log:      # the child keeps its own copy open
+            # photos=None: no -i/-c (e.g. --library in `extra`)
+            trip = [] if self.photos is None else ["-i", str(self.photos), "-c", str(self.content)]
             self.proc = subprocess.Popen(
-                [sys.executable, str(self.app / "trip_server.py"), "-i", str(self.photos),
-                 "-c", str(self.content), "--port", str(self.port), *self.extra],
+                [sys.executable, str(self.app / "trip_server.py"), *trip, "--port", str(self.port), *self.extra],
                 cwd=str(self.work), stdout=log, stderr=subprocess.STDOUT, text=True, env=local_env())
         deadline = time.time() + timeout
         while time.time() < deadline:

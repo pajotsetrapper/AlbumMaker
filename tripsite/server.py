@@ -49,7 +49,10 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, SiteUrls,
+from .library import (TripListError, build_library_context, check_library_args, read_trip_list, trip_args,
+                      trip_summary)
+from .places import ATTRIBUTION as PLACES_ATTRIBUTION
+from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
                      build_day_context, build_index_context)
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
@@ -393,12 +396,12 @@ class ContentStore:
     while the last version that loaded fine keeps being served. With
     write=False (--read-only) the file is never written at all."""
 
-    def __init__(self, path: Path, day_keys: list, write: bool = True):
+    def __init__(self, path: Path, day_keys: list, write: bool = True, title: Optional[str] = None):
         self.path = path
         self.write = write
         self._lock = threading.Lock()
         self._warned_sig = object()
-        self._cache = load_or_init_content(path, day_keys, write=write)
+        self._cache = load_or_init_content(path, day_keys, write=write, title=title)
         self._sig = self._sig_now()
         self._hidden = hidden_rels(self._cache)
 
@@ -469,33 +472,53 @@ class ContentStore:
 # The application
 # --------------------------------------------------------------------------
 
-class App:
-    """Everything a request handler needs: the index, the content file, the
-    caches and the settings. One per server."""
+class Shared:
+    """What every trip on one server shares: the settings that aren't per trip,
+    the editor link, the map tiles, and one memory budget and render limiter
+    (a library of ten trips must not use ten times --memory-cache-mb)."""
 
-    def __init__(self, args, items: list, days: list, content: ContentStore,
-                 tiles: Optional[TileCache] = None, tile_client_url: str = DEFAULT_TILE_URL,
+    def __init__(self, args, tiles: Optional[TileCache] = None, tile_client_url: str = DEFAULT_TILE_URL,
                  vendor: bool = False, allowed_hostnames: Optional[set] = None,
                  editor_token: Optional[str] = None):
         self.args = args
-        self.items = items
-        self.days = days
-        self.content = content
         self.tiles = tiles
         self.tile_client_url = tile_client_url
         self.vendor = vendor
         self.allowed_hostnames = allowed_hostnames or {"localhost"}
         self.editor_token = editor_token or secrets.token_urlsafe(32)
-        self.by_key = {it.key: it for it in items}
-        self.by_rel = {it.rel: it for it in items}
-        self.known_rels = set(self.by_rel)
-        self.day_keys = {d.date_key for d in days}
-        self.day_rels = {d.date_key: {it.rel for it in d.items} for d in days}
         total_mb = max(16, getattr(args, "memory_cache_mb", 512) or 512)
         self.thumb_cache = ByteLRU(total_mb * 1024 * 1024 * 15 // 100)
         self.hi_thumb_cache = ByteLRU(total_mb * 1024 * 1024 * 25 // 100)
         self.fallback_cache = ByteLRU(total_mb * 1024 * 1024 * 60 // 100)
         self.renderer = Renderer(getattr(args, "render_threads", None) or max(2, (os.cpu_count() or 2)))
+
+
+class App:
+    """Everything a request handler needs for one trip: its index, its content
+    file, and (through `shared`) the caches and settings. One per trip: a
+    library serves each under its own `prefix` ("/italy")."""
+
+    def __init__(self, args, items: list, days: list, content: ContentStore,
+                 tiles: Optional[TileCache] = None, tile_client_url: str = DEFAULT_TILE_URL,
+                 vendor: bool = False, allowed_hostnames: Optional[set] = None,
+                 editor_token: Optional[str] = None, shared: Optional[Shared] = None, prefix: str = ""):
+        self.args = args
+        self.items = items
+        self.days = days
+        self.content = content
+        self.prefix = prefix
+        self.shared = shared or Shared(args, tiles, tile_client_url, vendor, allowed_hostnames, editor_token)
+        self.by_key = {it.key: it for it in items}
+        self.by_rel = {it.rel: it for it in items}
+        self.known_rels = set(self.by_rel)
+        self.day_keys = {d.date_key for d in days}
+        self.day_rels = {d.date_key: {it.rel for it in d.items} for d in days}
+
+    def __getattr__(self, name):
+        # tiles, vendor, editor_token, the caches, ...: kept once, in Shared
+        if name == "shared":
+            raise AttributeError(name)
+        return getattr(self.shared, name)
 
     @property
     def editor_cookie(self) -> str:
@@ -532,7 +555,7 @@ class App:
             except Exception as e:
                 print(f"  ! thumbnail failed for {item.path.name}: {e}", file=sys.stderr)
                 return None
-        return self.renderer.get(cache, ("thumb", item.key, version, size), render)
+        return self.renderer.get(cache, ("thumb", self.prefix, item.key, version, size), render)
 
     def display_jpeg(self, item: MediaItem, version: str) -> Optional[bytes]:
         def render():
@@ -541,7 +564,37 @@ class App:
             except Exception as e:
                 print(f"  ! on-the-fly conversion failed for {item.path.name}: {e}", file=sys.stderr)
                 return None
-        return self.renderer.get(self.fallback_cache, ("fallback", item.key, version), render)
+        return self.renderer.get(self.fallback_cache, ("fallback", self.prefix, item.key, version), render)
+
+
+class Library:
+    """Several trips on one server (--library): the page at / lists them,
+    each trip lives under /<name>/."""
+
+    def __init__(self, trips: dict, titles: dict):
+        self.trips = trips          # name -> App, in list-file order
+        self.titles = titles        # name -> its folder's name (for untitled trips)
+        self._summaries = {}        # name -> (the content it was made from, summary)
+
+    def summary(self, name: str) -> Optional[dict]:
+        """A trip's card, made again only when its trip_content.json changed
+        (ContentStore hands out a new dict for every change)."""
+        app = self.trips[name]
+        content = app.content.get()
+        cached = self._summaries.get(name)
+        if cached is not None and cached[0] is content:
+            return cached[1]
+        days = visible_days(app.days, content, editable=False)   # the library shows what visitors see
+        summary = (trip_summary(name, days, content, app.urls(), href=f"{app.prefix}/",
+                                folder_title=self.titles.get(name, "")) if days else None)
+        self._summaries[name] = (content, summary)
+        return summary
+
+    def render(self) -> str:
+        summaries = [s for s in (self.summary(name) for name in self.trips) if s is not None]
+        urls = next(iter(self.trips.values())).urls()
+        return LIBRARY_TEMPLATE.render(**build_library_context(
+            summaries, urls, footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION))
 
 
 class LiveUrls(SiteUrls):
@@ -555,6 +608,8 @@ class LiveUrls(SiteUrls):
         self.app = app
         self._versions = {}
         self.tile_url = app.tile_client_url
+        self.prefix = app.prefix           # "/italy" for a trip in a library
+        self.api_base = app.prefix
 
     def _v(self, item: MediaItem) -> str:
         if item.key not in self._versions:
@@ -562,13 +617,16 @@ class LiveUrls(SiteUrls):
         return self._versions[item.key]
 
     def _url(self, kind: str, item: MediaItem) -> str:
-        return f"/{kind}/{item.key}?v={self._v(item)}"
+        return f"{self.prefix}/{kind}/{item.key}?v={self._v(item)}"
+
+    def library_href(self, from_index):
+        return "/" if self.prefix else None
 
     def vendor_url(self, from_index):
         return "/vendor/" if self.app.vendor else None
 
     def home(self, from_index):
-        return "/"
+        return f"{self.prefix}/"
 
     def assets_prefix(self, from_index):
         return "/"
@@ -577,7 +635,7 @@ class LiveUrls(SiteUrls):
         return f"/assets/{name}?v={ASSET_VERSION}"
 
     def day(self, date_key, from_index):
-        return f"/day/{date_key}"
+        return f"{self.prefix}/day/{date_key}"
 
     def thumb(self, item, from_index):
         return self._url("thumb", item)
@@ -593,7 +651,7 @@ class LiveUrls(SiteUrls):
         return self._url("download", item)
 
     def live(self, item):
-        return f"/live/{item.key}?v={file_version(item.live_clip.path)}"
+        return f"{self.prefix}/live/{item.key}?v={file_version(item.live_clip.path)}"
 
 
 # --------------------------------------------------------------------------
@@ -607,8 +665,9 @@ class TripHTTPServer(ThreadingHTTPServer):
     request_queue_size = 128
     daemon_threads = True
 
-    def __init__(self, address, handler, app: App):
-        self.app = app
+    def __init__(self, address, handler, app: App, library: Optional[Library] = None):
+        self.app = app              # the trip (in a library: any trip, for the shared settings)
+        self.library = library
         super().__init__(address, handler)
 
 
@@ -622,7 +681,24 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     @property
     def app(self) -> App:
-        return self.server.app
+        """The trip this request is for (see _select_trip); before that's known,
+        or for what all trips share, the server's."""
+        return getattr(self, "_app", None) or self.server.app
+
+    def _select_trip(self, raw_path: str) -> tuple:
+        """(App, path within that trip) for a request path. In a library a
+        trip's pages are under /<name>/; the library page itself, and unknown
+        names, give (None, "/") and (None, None)."""
+        library = self.server.library
+        if library is None:
+            return self.server.app, raw_path
+        if raw_path in ("", "/"):
+            return None, "/"
+        first, _, rest = raw_path[1:].partition("/")
+        if first in ("assets", "vendor", "tiles"):          # shared by every trip
+            return self.server.app, raw_path
+        app = library.trips.get(first)
+        return (app, "/" + rest) if app is not None else (None, None)
 
     # -- logging: errors and slow requests only (--verbose for everything) --
 
@@ -662,6 +738,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._req_width = None
         self._preview = False
         self._set_cookie = None
+        self._app = None
 
     def do_GET(self):
         self._begin()
@@ -922,8 +999,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                                    "through the editor link it prints (and is switched off by --read-only).")
         if not self._origin_ok():
             return self._fail(403, "Cross-origin request refused")
-        path = urlparse(self.path).path
-        if path not in ("/api/photo", "/api/cover", "/api/day"):
+        self._app, path = self._select_trip(unquote(urlparse(self.path).path))
+        if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day"):
             return self._fail(404, "Not found")
         if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
             return self._fail(415, "Expected application/json")
@@ -1033,6 +1110,19 @@ class RequestHandler(BaseHTTPRequestHandler):
             self._req_version = (query.get("v") or [None])[0]
             self._req_width = (query.get("w") or [None])[0]       # ?w=<large thumbnail size>
             self._preview = "1" in query.get("preview", [])   # editor looking at the visitor view
+
+            self._app, raw_path = self._select_trip(raw_path)
+            if self._app is None:
+                if raw_path == "/":                              # the library's own page
+                    if self._redeem_editor_link(parsed, query):
+                        return
+                    if (not self.app.args.read_only and self._direct_local()
+                            and not self._has_editor_cookie()):
+                        self._set_cookie = self._cookie_header()
+                    self._send_text(self.server.library.render(), "text/html")
+                else:
+                    self.send_error(404, "No such trip")
+                return
 
             if raw_path in ("/", "") or raw_path.startswith("/day/"):
                 if self._redeem_editor_link(parsed, query):
@@ -1193,8 +1283,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Serve your trip photos/videos as a live website, generated on the fly."
     )
-    parser.add_argument("-i", "--input", type=Path, default=Path("."),
+    parser.add_argument("-i", "--input", type=Path, default=None,
                         help="Folder with your photos/videos (default: current folder)")
+    parser.add_argument("--library", type=Path, metavar="LIST",
+                        help="Serve several trips: a page at / linking them all, each trip under its own "
+                             "/name/. LIST is a text file with one photos folder per line. See README.md.")
     add_content_arg(parser)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--lan", action="store_true",
@@ -1243,7 +1336,8 @@ def build_parser() -> argparse.ArgumentParser:
                              "(default 512).")
     parser.add_argument("--index-cache", type=Path, metavar="FILE",
                         help="Keep the photos' metadata in this file, so the next start only reads "
-                             "new or changed files. Off by default.")
+                             "new or changed files. Off by default. With --library, a folder holding "
+                             "one such file per trip.")
     parser.add_argument("--verbose", action="store_true",
                         help="Log every request (normally only errors and slow requests are shown).")
     return parser
@@ -1282,36 +1376,124 @@ def main(argv=None):
         tiles = TileCache(args.tile_cache, tile_upstream)
         tile_client_url = "/tiles/{z}/{x}/{y}.png"   # the pages ask this server, which keeps the tiles
 
-    if not args.input.is_dir():
-        print(f"Input folder not found: {args.input}", file=sys.stderr)
-        sys.exit(1)
+    if args.library and args.input is not None:
+        parser.error("give either -i/--input (one trip) or --library (several), not both")
+    if args.input is None and not args.library:
+        args.input = Path(".")
+    if args.library:
+        problem = check_library_args(args)
+        if args.index_cache and args.index_cache.exists() and not args.index_cache.is_dir():
+            problem = (f"with --library, --index-cache is a folder (one file per trip in it), "
+                       f"but {args.index_cache} is a file")
+        if problem:
+            parser.error(problem)
     if not HEIF_SUPPORT:
         print("Note: pillow-heif not installed — .heic/.heif files will be skipped.\n"
               "      Install with: pip install pillow-heif", file=sys.stderr)
 
-    content_path = resolve_content_path(args.content, args.input)
+    hostname = socket.gethostname().lower().rstrip(".")
+    allowed = {"localhost", hostname, hostname.split(".")[0] + ".local"}
+    allowed |= {h.lower().rstrip(".") for h in args.allow_host}
+    shared = Shared(args, tiles=tiles, tile_client_url=tile_client_url, vendor=vendor_ready(),
+                    allowed_hostnames=allowed)
+
+    library = None
+    if args.library:
+        library = load_library(args, shared)
+        app = next(iter(library.trips.values()))
+        content_files = [str(a.content.path) for a in library.trips.values()]
+    else:
+        try:
+            check_ffmpeg()
+            app = load_trip(args, date_range, shared, index_cache=args.index_cache)
+        except TripLoadError as e:
+            print(e, file=sys.stderr)
+            sys.exit(1)
+        content_files = [str(app.content.path)]
+
+    host = "0.0.0.0" if args.lan else "127.0.0.1"
+    try:
+        server = TripHTTPServer((host, args.port), RequestHandler, app, library=library)
+    except OSError as e:
+        if e.errno in (errno.EADDRINUSE, 10048):  # 10048: the Windows code
+            print(f"Port {args.port} is already in use. Is the server already running? "
+                  f"Otherwise pick another port, e.g. --port {args.port + 1}", file=sys.stderr)
+        else:
+            print(f"Could not start the server on {host}:{args.port}: {e}", file=sys.stderr)
+        sys.exit(1)
+
+    writes = [] if args.read_only else (content_files if not library else
+                                        [f"each trip's trip_content.json ({', '.join(content_files)})"])
+    writes += [f"the map tile cache in {args.tile_cache}"] if tiles else []
+    writes += [f"the index cache {args.index_cache}"] if args.index_cache else []
+    print("\nThis server generates every page and image on the fly, in memory. It writes to disk "
+          + (("only " + " and ".join(writes)) if writes else "nothing") + ".")
+    if args.large_thumb_size:
+        print(f"Larger thumbnails ({args.large_thumb_size}px) are loaded only where the screen can use "
+              f"them (L/XL sizes, high-resolution screens); --large-thumb-size 0 turns that off.")
+    if shared.vendor:
+        print(f"Maps and fonts: using the local copies in {VENDOR_DIR} (no internet needed for them).")
+    else:
+        print("Maps and fonts load from the internet. To make them work offline, run once while "
+              "online:  python trip_server.py --fetch-offline-assets")
+    if tiles is not None:
+        cached = sum(1 for _ in args.tile_cache.rglob("*.png"))
+        print(f"Map tiles are cached in {args.tile_cache} ({cached} so far); browse the maps while online "
+              f"and those areas keep working offline.")
+    lan_ip = _lan_ip() if args.lan else None
+    if not args.read_only:
+        where = ("in a browser that has opened the editor link below" if args.editor_link_only
+                 else "on this computer, and in a browser that has opened the editor link below")
+        saved = "each trip's own trip_content.json" if library else content_files[0]
+        print(f"Editing works {where}: captions, favorites, hiding, cover photos and day text are "
+              f"saved into {saved}. Use --read-only to turn it off.")
+        link_host = lan_ip if lan_ip else "127.0.0.1"
+        print(f"Editor link (keep it private; it changes every start): "
+              f"http://{link_host}:{args.port}/?key={shared.editor_token}")
+    print(f"\nServing at http://127.0.0.1:{args.port}/")
+    if library:
+        for name, trip in library.trips.items():
+            print(f"  {library.titles[name]}:  http://127.0.0.1:{args.port}/{name}/")
+    if args.lan:
+        if lan_ip:
+            print(f"Also reachable on your network at: http://{lan_ip}:{args.port}/")
+        print("(anyone on your network can open this while the server is running — there's no login)")
+    print("Press Ctrl+C to stop.\n")
+
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        print("\nStopping.")
+    finally:
+        server.shutdown()
+        server.server_close()
+
+
+class TripLoadError(Exception):
+    """A trip that can't be served; the message says why (and was printed as is before)."""
+
+
+def load_trip(args, date_range, shared: "Shared", prefix: str = "", index_cache: Optional[Path] = None,
+              content_fallback: Optional[Path] = None, title: Optional[str] = None) -> App:
+    """Index one trip and set it up for serving under `prefix` ("" for a
+    single trip, "/italy" in a library)."""
+    if not args.input.is_dir():
+        raise TripLoadError(f"Input folder not found: {args.input}")
+    content_path = resolve_content_path(args.content, args.input, fallback=content_fallback)
     # check the content file *before* the (possibly long) indexing step, so
     # a typo is reported immediately and never leads to the file being rewritten
     if content_path.exists():
         try:
             parse_content_file(content_path)
         except ContentFileError as e:
-            print(f"! {e}\n  Nothing was changed. Fix the file and start the server again.",
-                  file=sys.stderr)
-            sys.exit(1)
+            raise TripLoadError(f"! {e}\n  Nothing was changed. Fix the file and start the server again.")
 
-    hostname = socket.gethostname().lower().rstrip(".")
-    allowed = {"localhost", hostname, hostname.split(".")[0] + ".local"}
-    allowed |= {h.lower().rstrip(".") for h in args.allow_host}
-
-    check_ffmpeg()
     print(f"Indexing {args.input} ...")
-    cache = MetadataCache(args.index_cache, args.tz_offset)
+    cache = MetadataCache(index_cache, args.tz_offset)
     items = build_index(args.input, args.tz_offset, dedupe=not args.no_dedupe,
                         live_photos=not args.no_live_photos, cache=cache)
     if not items:
-        print("No supported photos or videos found.", file=sys.stderr)
-        sys.exit(1)
+        raise TripLoadError("No supported photos or videos found.")
 
     if not args.no_date_check:
         apply_date_check(items, date_range)
@@ -1327,64 +1509,46 @@ def main(argv=None):
     print(f"Grouped into {len(days)} day(s).")
 
     try:
-        content = ContentStore(content_path, [d.date_key for d in days], write=not args.read_only)
+        content = ContentStore(content_path, [d.date_key for d in days], write=not args.read_only, title=title)
     except ContentFileError as e:
-        print(f"! {e}\n  Nothing was changed. Fix the file and start the server again.",
-              file=sys.stderr)
-        sys.exit(1)
+        raise TripLoadError(f"! {e}\n  Nothing was changed. Fix the file and start the server again.")
     report_unknown_photo_keys(content.get(), {k for it in items for k in it.content_keys})
+    return App(args, items, days, content, shared=shared, prefix=prefix)
 
-    app = App(args, items, days, content, tiles=tiles, tile_client_url=tile_client_url,
-              vendor=vendor_ready(), allowed_hostnames=allowed)
 
-    host = "0.0.0.0" if args.lan else "127.0.0.1"
+def load_library(args, shared: "Shared") -> "Library":
+    """Every trip in the --library list that can be loaded; exits if none can."""
     try:
-        server = TripHTTPServer((host, args.port), RequestHandler, app)
-    except OSError as e:
-        if e.errno in (errno.EADDRINUSE, 10048):  # 10048: the Windows code
-            print(f"Port {args.port} is already in use. Is the server already running? "
-                  f"Otherwise pick another port, e.g. --port {args.port + 1}", file=sys.stderr)
-        else:
-            print(f"Could not start the server on {host}:{args.port}: {e}", file=sys.stderr)
+        entries = read_trip_list(args.library)
+    except TripListError as e:
+        print(f"! {e}", file=sys.stderr)
         sys.exit(1)
-
-    writes = ([] if args.read_only else [str(content_path)])
-    writes += [f"the map tile cache in {args.tile_cache}"] if tiles else []
-    writes += [f"the index cache {args.index_cache}"] if args.index_cache else []
-    print("\nThis server generates every page and image on the fly, in memory. It writes to disk "
-          + (("only " + " and ".join(writes)) if writes else "nothing") + ".")
-    if args.large_thumb_size:
-        print(f"Larger thumbnails ({args.large_thumb_size}px) are loaded only where the screen can use "
-              f"them (L/XL sizes, high-resolution screens); --large-thumb-size 0 turns that off.")
-    if app.vendor:
-        print(f"Maps and fonts: using the local copies in {VENDOR_DIR} (no internet needed for them).")
-    else:
-        print("Maps and fonts load from the internet. To make them work offline, run once while "
-              "online:  python trip_server.py --fetch-offline-assets")
-    if tiles is not None:
-        cached = sum(1 for _ in args.tile_cache.rglob("*.png"))
-        print(f"Map tiles are cached in {args.tile_cache} ({cached} so far); browse the maps while online "
-              f"and those areas keep working offline.")
-    lan_ip = _lan_ip() if args.lan else None
-    if not args.read_only:
-        where = ("in a browser that has opened the editor link below" if args.editor_link_only
-                 else "on this computer, and in a browser that has opened the editor link below")
-        print(f"Editing works {where}: captions, favorites, hiding, cover photos and day text are "
-              f"saved into {content_path}. Use --read-only to turn it off.")
-        link_host = lan_ip if lan_ip else "127.0.0.1"
-        print(f"Editor link (keep it private; it changes every start): "
-              f"http://{link_host}:{args.port}/?key={app.editor_token}")
-    print(f"\nServing at http://127.0.0.1:{args.port}/")
-    if args.lan:
-        if lan_ip:
-            print(f"Also reachable on your network at: http://{lan_ip}:{args.port}/")
-        print("(anyone on your network can open this while the server is running — there's no login)")
-    print("Press Ctrl+C to stop.\n")
-
-    try:
-        server.serve_forever()
-    except KeyboardInterrupt:
-        print("\nStopping.")
-    finally:
-        server.shutdown()
-        server.server_close()
+    if args.index_cache:
+        try:
+            args.index_cache.mkdir(parents=True, exist_ok=True)   # a folder: one cache file per trip
+        except OSError as e:
+            print(f"! can't use --index-cache {args.index_cache}: {e}", file=sys.stderr)
+            sys.exit(1)
+    list_dir = Path(args.library).expanduser().resolve().parent
+    check_ffmpeg()
+    trips, titles = {}, {}
+    for n, entry in enumerate(entries, 1):
+        print(f"\n=== Trip {n} of {len(entries)}: {entry.path}  ->  /{entry.name}/ ===")
+        try:
+            trip, date_range = trip_args(args, entry, args.library)
+            trips[entry.name] = load_trip(
+                trip, date_range, shared, prefix=f"/{entry.name}",
+                index_cache=args.index_cache / f"{entry.name}.json" if args.index_cache else None,
+                content_fallback=list_dir / f"trip_content-{entry.name}.json", title=entry.path.name)
+            titles[entry.name] = entry.path.name
+        except TripListError as e:
+            print(f"! {args.library}, line {entry.line}: {e}\n  This trip is left out.", file=sys.stderr)
+        except TripLoadError as e:
+            print(f"{e}\n  This trip is left out.", file=sys.stderr)
+        except Exception:      # anything else: the other trips are still served
+            traceback.print_exc()
+            print(f"! {entry.path} could not be loaded (see above). This trip is left out.", file=sys.stderr)
+    if not trips:
+        print("! None of the trips could be loaded.", file=sys.stderr)
+        sys.exit(1)
+    return Library(trips, titles)

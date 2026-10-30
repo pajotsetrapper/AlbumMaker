@@ -216,6 +216,62 @@ gone when the server stops. At most one image per CPU core is built at a
 time, however many requests arrive, and when several requests ask for the
 same image at once it's only built once.
 
+## 2c. Several trips: a library
+
+If your trips are in folders all over the place, list them in a text
+file, one photos folder per line:
+
+```
+# trips.txt
+/Volumes/Photos/2024 Japan
+~/Pictures/Italy 2025          | italy
+/Volumes/NAS/Family/Iceland     | iceland | --tz-offset 0 --no-dedupe
+```
+
+Each line is a photos folder, then optionally, after `|`, the name the
+trip gets in web addresses and as its folder (otherwise it's made from
+the folder's name: `2024 Japan` becomes `2024-japan`), then optionally,
+after another `|`, options for that trip only. Those can be `-c`,
+`--tz-offset`, `--date-range`, `--no-date-check`, `--no-dedupe`,
+`--no-live-photos`, `--gpx`, `--no-gpx` and `--no-places`; everything
+else comes from the command line. `-c` and `--date-range` only make sense
+for one trip, so with `--library` they're refused on the command line
+and belong on a trip's line. Relative paths are relative to the list
+file. Lines starting with `#` are comments.
+
+```bash
+# every trip into its own folder under ~/TripSites, plus a page linking them
+python generate_site.py --library trips.txt -o ~/TripSites
+
+# or serve them all: the list at http://127.0.0.1:8000/, each trip under /<name>/
+python trip_server.py --library trips.txt
+```
+
+The library page shows a card per trip (cover, dates, main towns, days,
+photos and kilometres), newest first, and a map with every trip on it.
+Each trip's pages get an "All trips" link, and `Esc` on a trip's homepage
+goes back to the list.
+
+- **Each trip keeps its own `trip_content.json`** in its photos folder,
+  exactly as when it's built or served on its own. A new one starts with
+  the folder's name as the trip's title. If the photos folder can't be
+  written to, the file goes next to the list file instead
+  (`trip_content-<name>.json`), never into the current folder, which every
+  trip shares.
+- **A trip that can't be built or loaded** (a drive that isn't plugged
+  in, a mistake in its `trip_content.json`) doesn't stop the others; the
+  messages say what went wrong. The static library keeps listing the
+  version built earlier, if there is one. The command exits with an error
+  so scripts notice.
+- **Rebuilding is per trip and incremental**, as for a single trip.
+  Taking a trip off the list removes it from the page; its folder is left
+  alone (the build says so), so delete it yourself if you don't need it.
+- **The live server** shares one memory budget (`--memory-cache-mb`), one
+  editor link and one tile cache between all trips. With
+  `--index-cache`, give a folder: each trip gets its own file in it.
+- The library page shows what visitors may see: hidden photos don't count
+  and are never a trip's cover.
+
 ## 3. Titles, descriptions and photo notes: `trip_content.json`
 
 The first run of either script creates `trip_content.json` in your
@@ -947,7 +1003,7 @@ out. It never touches your own photos, your `trip_content.json` or your
 python -m unittest discover -s tests -t .
 ```
 
-`pytest tests` works too, if you prefer it. That's about 400 tests and
+`pytest tests` works too, if you prefer it. That's about 430 tests and
 takes roughly 45 seconds without the browser tests below. To run one file or one test, name it:
 
 ```bash

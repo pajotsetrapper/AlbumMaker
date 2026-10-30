@@ -32,7 +32,7 @@ function showToast(msg, isError){
 // (after showing why) if it didn't work.
 async function apiPost(path, body){
   try {
-    const r = await fetch(path, {
+    const r = await fetch((window.API_BASE || '') + path, {
       method: 'POST',
       headers: {'Content-Type': 'application/json'},
       body: JSON.stringify(body)
@@ -152,6 +152,39 @@ function initSharpThumbs(){
 // ---------- day pages: previous/next day (keys, swipe) and Esc back to the overview ----------
 // Every move from one page to another goes through here.
 function navigateTo(href){ window.location.href = href; }
+
+// A trip's homepage inside a library: Esc goes back to the list of trips.
+function initHomeNav(libraryHref){
+  document.addEventListener('keydown', (e) => {
+    if(e.key !== 'Escape' || e.repeat || e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey) return;
+    if(isTyping(e.target)){ e.target.blur(); return; }
+    const popupClose = document.querySelector('.leaflet-popup-close-button');
+    if(popupClose){ popupClose.click(); return; }
+    navigateTo(libraryHref);
+  });
+}
+
+// The library page: every trip as a line on one map; clicking one opens it.
+function initLibraryMap(elId, trips){
+  const map = L.map(elId, {scrollWheelZoom:false});
+  addBaseMap(map, {attribution: '&copy; OpenStreetMap contributors'});
+  const all = [];
+  trips.forEach(trip => {
+    if(!trip.points.length) return;
+    trip.points.forEach(p => all.push(p));
+    const go = () => navigateTo(trip.href);
+    const label = trip.title + ' \u2014 ' + trip.dates;
+    if(trip.points.length > 1){
+      L.polyline(trip.points, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
+        .bindTooltip(label, {sticky: true}).on('click', go);
+    }
+    L.circleMarker(trip.points[0], {radius: 6, color: trip.color, fillColor: trip.color, fillOpacity: 1, weight: 1})
+      .addTo(map).bindTooltip(label).on('click', go);
+  });
+  // (a cap: one trip with a single place would otherwise zoom in to one street)
+  if(all.length) map.fitBounds(all, {padding: [30, 30], maxZoom: 9});
+  else map.setView([20, 0], 2);
+}
 
 function initDayNav(prevHref, nextHref, homeHref){
   function slideshowOpen(){
