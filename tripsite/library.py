@@ -279,6 +279,9 @@ def _is_absolute_path(path_str: str) -> bool:
     import re
     if re.match(r"^/[a-zA-Z]/", path_str):
         return True
+    # Handle Windows-style paths starting with [a-zA-Z]:\ (like C:\, D:\, etc.) which should be absolute
+    if re.match(r"^[a-zA-Z]:\\", path_str):
+        return True
     # For other cases, use the standard Path.is_absolute()
     from pathlib import Path
     return Path(path_str).is_absolute()
