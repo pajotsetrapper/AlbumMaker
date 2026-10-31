@@ -404,7 +404,9 @@ after another `|`, options for that trip only. Those can be `-c`,
 else comes from the command line. `-c` and `--date-range` only make sense
 for one trip, so with `--library` they're refused on the command line
 and belong on a trip's line. Relative paths are relative to the list
-file. Lines starting with `#` are comments.
+file: write the full path (starting with `/`, or a drive letter such as
+`C:\` on Windows) to point anywhere else. Quotes around a path are fine
+but not needed. Lines starting with `#` are comments.
 
 ```bash
 # every trip into its own folder under ~/TripSites, plus a page linking them

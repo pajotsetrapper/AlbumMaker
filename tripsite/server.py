@@ -49,8 +49,8 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .library import (TripListError, build_library_context, check_library_args, read_trip_list, trip_args,
-                      trip_summary)
+from .library import (TripListError, build_library_context, check_library_args, missing_folder, read_trip_list,
+                      trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
                      build_day_context, build_index_context)
@@ -1535,6 +1535,9 @@ def load_library(args, shared: "Shared") -> "Library":
     for n, entry in enumerate(entries, 1):
         print(f"\n=== Trip {n} of {len(entries)}: {entry.path}  ->  /{entry.name}/ ===")
         try:
+            problem = missing_folder(entry, args.library)
+            if problem:
+                raise TripLoadError(problem)
             trip, date_range = trip_args(args, entry, args.library)
             trips[entry.name] = load_trip(
                 trip, date_range, shared, prefix=f"/{entry.name}",
