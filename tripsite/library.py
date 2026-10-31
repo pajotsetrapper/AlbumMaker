@@ -271,3 +271,14 @@ def build_library_context(trips: list, urls, footer: str, places_credit: str) ->
         photo_count=sum(t["photo_count"] for t in trips),
         distance_km=sum(t["distance_km"] for t in trips),
     )
+
+
+def _is_absolute_path(path_str: str) -> bool:
+    """Check if a path string is absolute, handling edge cases with drive prefixes."""
+    # Handle paths starting with /[a-zA-Z]/ (like /c/, /d/, etc.) which should be absolute
+    import re
+    if re.match(r"^/[a-zA-Z]/", path_str):
+        return True
+    # For other cases, use the standard Path.is_absolute()
+    from pathlib import Path
+    return Path(path_str).is_absolute()
