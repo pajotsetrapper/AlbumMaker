@@ -68,6 +68,12 @@ class TripListTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(entries[1].name, "italy")
         self.assertEqual(entries[2].options, ["--gpx", "my track.gpx"])
 
+    def test_windows_drive_prefix_paths_are_normalized(self):
+        self.assertEqual(library._normalize_path_str("/c/Users/piete/Pictures"), "C:/Users/piete/Pictures")
+        self.assertEqual(library._normalize_path_str("/C/Users/piete/Pictures"), "C:/Users/piete/Pictures")
+        self.assertEqual(library._normalize_path_str("/Users/piete/Pictures"), "/Users/piete/Pictures")
+        self.assertEqual(library._normalize_path_str("~/Pictures/Italy"), "~/Pictures/Italy")
+
     def test_a_missing_folder_says_how_its_line_was_read(self):
         entries = self.read("/Volumes/Gone/Japan\nVolumes/Photos/Iceland\n")
         list_file = self.tmp / "lists" / "trips.txt"
