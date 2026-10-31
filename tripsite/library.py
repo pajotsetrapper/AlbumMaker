@@ -61,7 +61,7 @@ def missing_folder(entry: TripEntry, list_file: Path) -> Optional[str]:
     if entry.path.is_dir():
         return None
     where = f"line {entry.line} of {Path(list_file).expanduser()}"
-    if entry.written and not Path(entry.written).expanduser().is_absolute():
+    if entry.written and not _is_absolute_path(entry.written):
         return (f"Input folder not found: {entry.path}\n  ({where} says '{entry.written}'. That isn't a "
                 f"full path, so it was taken as relative to the list file's folder. Write the full path, "
                 f"starting with / (or a drive letter such as C:\\ on Windows), to use another place.)")
