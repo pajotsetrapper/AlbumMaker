@@ -39,8 +39,8 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, check_ffmpeg, meta_from_json, meta_to_json, read_metadata
 from .model import BROWSER_NATIVE_IMAGE_EXTS, VIDEO_EXTS, StaticOutputs
 from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .library import (TripListError, build_library_context, check_library_args, read_trip_list, trip_args,
-                      trip_summary)
+from .library import (TripListError, build_library_context, check_library_args, missing_folder, read_trip_list,
+                      trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls, build_day_context,
                      build_index_context)
@@ -862,6 +862,10 @@ def build_library(args) -> int:
     for n, entry in enumerate(entries, 1):
         print(f"\n=== Trip {n} of {len(entries)}: {entry.path}  ->  {root / entry.name} ===")
         try:
+            problem = missing_folder(entry, args.library)
+            if problem:
+                print(problem, file=sys.stderr)
+                raise SystemExit(1)
             trip, date_range = trip_args(args, entry, args.library)
             trip.output = root / entry.name
             days, content, urls = build_trip(trip, date_range, library_root=root,

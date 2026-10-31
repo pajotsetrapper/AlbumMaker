@@ -44,6 +44,28 @@ class TripEntry:
     name: str               # in URLs and as the output folder: "italy"
     options: list = field(default_factory=list)
     line: int = 0
+    written: str = ""       # the folder as the list file has it
+
+
+def _unquote(text: str) -> str:
+    """'"/Volumes/Photos/Japan 2024"' -> '/Volumes/Photos/Japan 2024': quotes
+    are what one types around a path with spaces in a terminal, so they're
+    allowed (and not needed) in the list too."""
+    if len(text) >= 2 and text[0] == text[-1] and text[0] in "\"'":
+        return text[1:-1].strip()
+    return text
+
+
+def missing_folder(entry: TripEntry, list_file: Path) -> Optional[str]:
+    """Why a trip's folder can't be used, saying how its line was read, or None."""
+    if entry.path.is_dir():
+        return None
+    where = f"line {entry.line} of {Path(list_file).expanduser()}"
+    if entry.written and not Path(entry.written).expanduser().is_absolute():
+        return (f"Input folder not found: {entry.path}\n  ({where} says '{entry.written}'. That isn't a "
+                f"full path, so it was taken as relative to the list file's folder. Write the full path, "
+                f"starting with / (or a drive letter such as C:\\ on Windows), to use another place.)")
+    return f"Input folder not found: {entry.path}  ({where})"
 
 
 def slugify(text: str) -> str:
@@ -102,13 +124,14 @@ def read_trip_list(path: Path) -> list:
         if not line or line.startswith("#"):
             continue
         parts = [p.strip() for p in line.split("|")]
+        parts[0] = _unquote(parts[0])
         folder = Path(parts[0]).expanduser()
         if not folder.is_absolute():
             folder = base / folder
         name, options = "", []
         rest = parts[1:]
         if rest and not rest[0].startswith("-"):
-            name = rest.pop(0)              # (may be empty: "folder | | options")
+            name = _unquote(rest.pop(0))    # (may be empty: "folder | | options")
         if len(rest) > 1:
             raise TripListError(f"{path}, line {n}: too many '|' (folder | name | options)")
         if rest:
@@ -127,9 +150,9 @@ def read_trip_list(path: Path) -> list:
         folders.add(key)
         if name:
             names.add(name)
-        pending.append((folder, name, options, n))
+        pending.append((folder, name, options, n, parts[0]))
     # names for lines that didn't give one, after the given ones are known
-    for folder, name, options, n in pending:
+    for folder, name, options, n, written in pending:
         if not name:
             stem = slugify(folder.name)
             if stem in RESERVED_NAMES:
@@ -138,7 +161,7 @@ def read_trip_list(path: Path) -> list:
             while name in names:
                 name, k = f"{stem}-{k}", k + 1
             names.add(name)
-        entries.append(TripEntry(folder, name, options, n))
+        entries.append(TripEntry(folder, name, options, n, written))
     if not entries:
         raise TripListError(f"{path} lists no trips")
     return entries

@@ -59,6 +59,27 @@ class TripListTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(entries[3].options, ["--tz-offset", "2", "--no-places"])
         self.assertEqual([e.line for e in entries], [3, 4, 5, 6, 7])
 
+    def test_paths_in_quotes_as_typed_in_a_terminal_are_used_as_written(self):
+        entries = self.read('"/Volumes/Photos/Japan 2024"\n'
+                            "'/Volumes/Photos/Italy' | 'italy'\n"
+                            '"/Volumes/Photos/Wales" | | --gpx "my track.gpx"\n')
+        self.assertEqual([str(e.path) for e in entries],
+                         ["/Volumes/Photos/Japan 2024", "/Volumes/Photos/Italy", "/Volumes/Photos/Wales"])
+        self.assertEqual(entries[1].name, "italy")
+        self.assertEqual(entries[2].options, ["--gpx", "my track.gpx"])
+
+    def test_a_missing_folder_says_how_its_line_was_read(self):
+        entries = self.read("/Volumes/Gone/Japan\nVolumes/Photos/Iceland\n")
+        list_file = self.tmp / "lists" / "trips.txt"
+        absolute = library.missing_folder(entries[0], list_file)
+        self.assertIn("Input folder not found: /Volumes/Gone/Japan", absolute)
+        self.assertIn("line 1", absolute)
+        relative = library.missing_folder(entries[1], list_file)
+        self.assertIn("'Volumes/Photos/Iceland'", relative)
+        self.assertIn("relative to the list file's folder", relative)
+        (self.tmp / "lists" / "Volumes" / "Photos" / "Iceland").mkdir(parents=True)
+        self.assertIsNone(library.missing_folder(entries[1], list_file))
+
     def test_names_are_made_unique_and_given_names_win(self):
         entries = self.read("/a/Trip\n/b/Trip\n/c/Other | trip\n/d/Assets\n")
         self.assertEqual([e.name for e in entries], ["trip-2", "trip-3", "trip", "assets-trip"])
@@ -282,7 +303,7 @@ class StaticLibraryTests(TempDirMixin, unittest.TestCase):
         with mock.patch.object(build, "build_trip", flaky), mock.patch("sys.stdout"), \
                 mock.patch("sys.stderr"):
             self.assertEqual(build.build_library(args), 1)
-        self.assertEqual(calls, ["Belgium Weekend", "Japan", "Iceland"])
+        self.assertEqual(calls, ["Belgium Weekend", "Japan"], "(Iceland's folder is missing: not even tried)")
         self.assertEqual(cards((site / "index.html").read_text(encoding="utf-8")), [("japan/index.html", "Japan")])
 
 
