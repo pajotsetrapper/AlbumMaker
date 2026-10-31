@@ -56,6 +56,19 @@ def _unquote(text: str) -> str:
     return text
 
 
+def _normalize_path_str(path_str: str) -> str:
+    """Normalize Git Bash/WSL drive shorthands like /c/Users into Windows drive paths.
+
+    Slash-prefixed paths are absolute in this app's list-file syntax, so we only translate
+    the specific /c/... and /d/... Git Bash pattern into a real Windows drive path.
+    """
+    path_str = str(path_str).strip()
+    if path_str.startswith("/") and len(path_str) >= 3 and path_str[1].isalpha() and path_str[2] in "/\\":
+        drive = path_str[1].upper()
+        return f"{drive}:{path_str[2:] or '/'}"
+    return path_str
+
+
 def missing_folder(entry: TripEntry, list_file: Path) -> Optional[str]:
     """Why a trip's folder can't be used, saying how its line was read, or None."""
     if entry.path.is_dir():
@@ -125,8 +138,8 @@ def read_trip_list(path: Path) -> list:
             continue
         parts = [p.strip() for p in line.split("|")]
         parts[0] = _unquote(parts[0])
-        folder = Path(parts[0]).expanduser()
-        if not folder.is_absolute():
+        folder = Path(_normalize_path_str(parts[0])).expanduser()
+        if not _is_absolute_path(parts[0]):
             folder = base / folder
         name, options = "", []
         rest = parts[1:]
@@ -176,9 +189,11 @@ def trip_args(args, entry: TripEntry, list_file: Path) -> tuple:
     out = argparse.Namespace(**vars(args))
     for key, value in vars(parsed).items():
         if key == "content" and value is not None:
-            value = value if Path(value).is_absolute() else base / Path(value).expanduser()
+            value = _normalize_path_str(value)
+            value = value if _is_absolute_path(value) else base / Path(value).expanduser()
         elif key == "gpx":
-            value = [g if Path(g).is_absolute() else base / Path(g).expanduser() for g in value]
+            value = [_normalize_path_str(g) for g in value]
+            value = [g if _is_absolute_path(g) else base / Path(g).expanduser() for g in value]
         setattr(out, key, value)
     out.input = entry.path
     return out, resolve_date_range(out, parser)        # (the parser's errors are TripListErrors)
@@ -274,14 +289,11 @@ def build_library_context(trips: list, urls, footer: str, places_credit: str) ->
 
 
 def _is_absolute_path(path_str: str) -> bool:
-    """Check if a path string is absolute, handling edge cases with drive prefixes."""
-    # Handle paths starting with /[a-zA-Z]/ (like /c/, /d/, etc.) which should be absolute
-    import re
-    if re.match(r"^/[a-zA-Z]/", path_str):
+    """Check if a path string is absolute in the list-file syntax used by the app."""
+    raw = str(path_str).strip()
+    if raw.startswith("/"):
         return True
-    # Handle Windows-style paths starting with [a-zA-Z]:\ (like C:\, D:\, etc.) which should be absolute
-    if re.match(r"^[a-zA-Z]:\\", path_str):
+    if re.match(r"^[a-zA-Z]:[\\/]", raw):
         return True
-    # For other cases, use the standard Path.is_absolute()
     from pathlib import Path
-    return Path(path_str).is_absolute()
+    return Path(raw).is_absolute()
