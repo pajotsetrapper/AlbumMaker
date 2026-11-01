@@ -7,6 +7,7 @@ from __future__ import annotations
 import json
 import os
 import tempfile
+import time
 from importlib import resources
 from pathlib import Path
 
@@ -35,7 +36,14 @@ def _write_atomically(path: Path, data: bytes, fsync: bool):
             os.chmod(tmp, mode)
         except OSError:
             pass
-        os.replace(tmp, path)
+        for i in range(20):
+            try:
+                os.replace(tmp, path)
+                break
+            except PermissionError:
+                if i == 19:
+                    raise
+                time.sleep(0.01 * (i + 1))
     finally:
         try:
             os.unlink(tmp)

@@ -34,8 +34,11 @@ class StaticBuildTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.photos / "x" / "IMG_1.jpg", "2026:05:01 12:00:00", color=(9, 9, 9))
         make_jpeg(cls.photos / "y" / "IMG_1.jpg", "2026:05:01 12:05:00", color=(8, 8, 8))   # same name
         try:                                                       # characters Windows forbids in file names
-            make_jpeg(cls.photos / "we:ird?.jpg", "2026:05:01 12:10:00", color=(7, 7, 7))
-            cls.odd_name_made = True
+            if os.name != "nt":
+                make_jpeg(cls.photos / "we:ird?.jpg", "2026:05:01 12:10:00", color=(7, 7, 7))
+                cls.odd_name_made = True
+            else:
+                cls.odd_name_made = False
         except OSError:
             cls.odd_name_made = False
         Image.new("RGB", (200, 100), (5, 5, 5)).save(cls.photos / "scan.png")
@@ -118,7 +121,7 @@ class StaticBuildTests(TempDirMixin, unittest.TestCase):
 
     def test_thumbnails_are_small_jpegs(self):
         thumbs = list((self.site / "thumbs").iterdir())
-        self.assertGreaterEqual(len(thumbs), 10)
+        self.assertGreaterEqual(len(thumbs), 9 + self.odd_name_made)
         for t in thumbs:
             with Image.open(t) as im:
                 self.assertEqual(im.format, "JPEG", t.name)
