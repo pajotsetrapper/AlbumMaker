@@ -36,8 +36,13 @@ def parse_content_file(path: Path) -> dict:
     try:
         loaded = json.loads(text)
     except json.JSONDecodeError as e:
+        line = e.lineno
+        if "trailing comma" in e.msg.lower():
+            closing = text.find("}" if "object" in e.msg.lower() else "]", e.pos + 1)
+            if closing >= 0:
+                line = text.count("\n", 0, closing) + 1
         raise ContentFileError(
-            f"{path} is not valid JSON: {e.msg} at line {e.lineno}, column {e.colno}. "
+            f"{path} is not valid JSON: {e.msg} at line {line}, column {e.colno}. "
             f"(A trailing comma after the last entry, or a missing comma between "
             f"entries, are the usual suspects.)"
         ) from e

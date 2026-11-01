@@ -363,7 +363,12 @@ class AtomicWriteTests(TempDirTest):
         real = self.tmp / "real.json"
         real.write_text("{}")
         link = self.photos / "trip_content.json"
-        link.symlink_to(real)
+        try:
+            link.symlink_to(real)
+        except OSError as e:
+            if sys.platform == "win32" and getattr(e, "winerror", None) == 1314:
+                self.skipTest("creating symlinks requires Windows Developer Mode or elevated privileges")
+            raise
         util.atomic_write_text(link, '{"a": 1}')
         self.assertTrue(link.is_symlink())
         self.assertEqual(real.read_text(), '{"a": 1}')

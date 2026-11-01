@@ -69,10 +69,18 @@ class TripListTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(entries[2].options, ["--gpx", "my track.gpx"])
 
     def test_windows_drive_prefix_paths_are_normalized(self):
-        self.assertEqual(library._normalize_path_str("/c/Users/piete/Pictures"), "C:/Users/piete/Pictures")
-        self.assertEqual(library._normalize_path_str("/C/Users/piete/Pictures"), "C:/Users/piete/Pictures")
+        with mock.patch.object(library.os.path, "exists", return_value=True):
+            self.assertEqual(library._normalize_path_str("/c/Users/piete/Pictures"), "C:/Users/piete/Pictures")
+            self.assertEqual(library._normalize_path_str("/C/Users/piete/Pictures"), "C:/Users/piete/Pictures")
         self.assertEqual(library._normalize_path_str("/Users/piete/Pictures"), "/Users/piete/Pictures")
         self.assertEqual(library._normalize_path_str("~/Pictures/Italy"), "~/Pictures/Italy")
+
+    @unittest.skipUnless(os.name == "nt", "Windows path semantics")
+    def test_slash_root_path_keeps_posix_spelling_and_relative_paths(self):
+        root = library._path_for("/photos")
+        child = library._path_for("/photos/sub/dir/a.jpg")
+        self.assertEqual(str(root), "/photos")
+        self.assertEqual(child.relative_to(root).as_posix(), "sub/dir/a.jpg")
 
     def test_a_missing_folder_says_how_its_line_was_read(self):
         entries = self.read("/Volumes/Gone/Japan\nVolumes/Photos/Iceland\n")
@@ -130,6 +138,8 @@ class TripListTests(TempDirMixin, unittest.TestCase):
         self.assertEqual((plain.gpx, plain.no_dedupe, plain.content), ([Path("/tracks")], True, None))
         own, _ = library.trip_args(args, library.TripEntry(Path("/p"), "p", ["--gpx", "/mine.gpx"]), list_file)
         self.assertEqual(own.gpx, [Path("/mine.gpx")])
+        if os.name == "nt":
+            self.assertEqual(str(own.gpx[0]), "/mine.gpx")
 
     def test_one_content_file_or_date_window_for_every_trip_is_refused(self):
         base = dict(content=None, date_range=None)

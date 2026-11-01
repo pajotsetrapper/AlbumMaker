@@ -15,11 +15,12 @@ Relative paths are relative to the list file. Both scripts read it
 from __future__ import annotations
 
 import argparse
+import os
 import re
 import shlex
 import unicodedata
 from dataclasses import dataclass, field
-from pathlib import Path
+from pathlib import Path, WindowsPath
 from typing import Optional
 
 from .cli import add_content_arg, add_date_check_args, add_location_args, resolve_date_range
@@ -32,6 +33,34 @@ from .util import script_json
 RESERVED_NAMES = {"assets", "vendor", "tiles", "api", "index.html"}   # used by the library itself
 NAME_RE = re.compile(r"^[a-z0-9][a-z0-9_-]{0,63}$")
 MAX_MAP_POINTS = 200
+
+
+if os.name == "nt":
+    class _SlashAwareWindowsPath(WindowsPath):
+        def __str__(self):
+            raw = getattr(self, "_raw_path", "")
+            if raw.startswith("/") and not (len(raw) >= 3 and raw[1].isalpha() and raw[2] in "/\\"):
+                return raw.replace("\\", "/")
+            return super().__str__()
+
+        def __eq__(self, other):
+            try:
+                return WindowsPath(str(self)) == WindowsPath(str(other))
+            except TypeError:
+                return NotImplemented
+
+        def __hash__(self):
+            return hash(WindowsPath(str(self)))
+
+        def relative_to(self, *other):
+            return WindowsPath(str(self)).relative_to(*(WindowsPath(str(o)) for o in other))
+
+
+def _path_for(value: str) -> Path:
+    value = _normalize_path_str(value)
+    if os.name == "nt" and value.startswith("/") and not (len(value) >= 3 and value[1].isalpha() and value[2] in "/\\"):
+        return _SlashAwareWindowsPath(value)
+    return Path(value)
 
 
 class TripListError(Exception):
@@ -63,8 +92,9 @@ def _normalize_path_str(path_str: str) -> str:
     the specific /c/... and /d/... Git Bash pattern into a real Windows drive path.
     """
     path_str = str(path_str).strip()
-    if path_str.startswith("/") and len(path_str) >= 3 and path_str[1].isalpha() and path_str[2] in "/\\":
-        drive = path_str[1].upper()
+    match = re.match(r"^/([A-Za-z])[/\\]", path_str)
+    if match and os.path.exists(f"{match.group(1).upper()}:\\"):
+        drive = match.group(1).upper()
         return f"{drive}:{path_str[2:] or '/'}"
     return path_str
 
@@ -106,6 +136,8 @@ def _trip_option_parser() -> argparse.ArgumentParser:
     add_location_args(p)
     for action in p._actions:
         action.default = argparse.SUPPRESS
+        if action.dest in ("content", "gpx"):
+            action.type = str
     return p
 
 
@@ -138,7 +170,7 @@ def read_trip_list(path: Path) -> list:
             continue
         parts = [p.strip() for p in line.split("|")]
         parts[0] = _unquote(parts[0])
-        folder = Path(_normalize_path_str(parts[0])).expanduser()
+        folder = _path_for(parts[0]).expanduser()
         if not _is_absolute_path(parts[0]):
             folder = base / folder
         name, options = "", []
@@ -190,10 +222,10 @@ def trip_args(args, entry: TripEntry, list_file: Path) -> tuple:
     for key, value in vars(parsed).items():
         if key == "content" and value is not None:
             value = _normalize_path_str(value)
-            value = value if _is_absolute_path(value) else base / Path(value).expanduser()
+            value = _path_for(value).expanduser() if _is_absolute_path(value) else base / _path_for(value).expanduser()
         elif key == "gpx":
             value = [_normalize_path_str(g) for g in value]
-            value = [g if _is_absolute_path(g) else base / Path(g).expanduser() for g in value]
+            value = [_path_for(g).expanduser() if _is_absolute_path(g) else base / _path_for(g).expanduser() for g in value]
         setattr(out, key, value)
     out.input = entry.path
     return out, resolve_date_range(out, parser)        # (the parser's errors are TripListErrors)

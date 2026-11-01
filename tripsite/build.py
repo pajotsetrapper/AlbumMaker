@@ -26,7 +26,7 @@ import time
 import unicodedata
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from concurrent.futures.process import BrokenProcessPool
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import Optional
 from urllib.parse import quote
 
@@ -64,8 +64,9 @@ JPEG_EXTS = (".jpg", ".jpeg")
 MANIFEST_VERSION = 1
 
 
-def _natural_stem(path: Path) -> str:
-    stem = ILLEGAL_FILENAME_CHARS.sub("_", path.stem).rstrip(" .") or "file"
+def _natural_stem(path: Path, rel_path: str = "") -> str:
+    original_stem = PurePosixPath(rel_path).stem if rel_path else path.stem
+    stem = ILLEGAL_FILENAME_CHARS.sub("_", original_stem).rstrip(" .") or "file"
     return stem[:180]  # defensive cap well under filesystem limits
 
 
@@ -111,7 +112,7 @@ def compute_output_bases(rel_paths: dict, previous: dict) -> dict:
     for path in photos_first:
         if path in bases:
             continue
-        stem = _natural_stem(path)
+        stem = _natural_stem(path, rel_paths[path])
         if _claims(path, stem) & taken:
             pending.append(path)
         else:
@@ -119,7 +120,7 @@ def compute_output_bases(rel_paths: dict, previous: dict) -> dict:
             taken |= _claims(path, stem)
 
     for path in pending:
-        stem = _natural_stem(path)
+        stem = _natural_stem(path, rel_paths[path])
         n = 2
         while _claims(path, f"{stem}_{n}") & taken:
             n += 1
@@ -286,9 +287,10 @@ def report_unrecorded_outputs(output_dir: Path, keep: set, since: float):
 
 def _written_since(path: Path, since: float) -> bool:
     # st_ctime, not st_mtime: copies of originals keep the source's mtime, but
-    # writing or renaming a file always updates its ctime (its creation time on Windows)
+    # writing or renaming a file always updates its ctime (its creation time on Windows).
     try:
-        return path.stat().st_ctime >= since
+        created = path.stat().st_ctime
+        return created >= since or (os.name == "nt" and 0 <= since - created < 0.001)
     except OSError:
         return False
 
