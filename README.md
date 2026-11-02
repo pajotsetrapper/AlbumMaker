@@ -551,6 +551,7 @@ moment you make them, and the page updates without reloading.
 - **Favorite** (or press `S`): marks the photo with a ★.
 - A **caption** box: type, then press Enter or click away to save.
 - **Set as cover**: makes this photo the day's cover on the homepage.
+- **Set trip cover**: sets this photo as the cover for the entire trip (distinct from day covers).
 - **Hide** / **Unhide**: see below.
 
 **On the day page**, **Edit title & description** opens a small form.
