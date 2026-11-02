@@ -91,6 +91,7 @@ class SiteUrls:
 def pick_cover(d: DayGroup, content: dict) -> MediaItem:
     """The day's cover: the one chosen in trip_content.json, else the first
     photo (not a video frame), else the first item."""
+    # Check for day-specific cover first
     entry = content.get("days", {}).get(d.date_key)
     want = entry.get("cover") if isinstance(entry, dict) else None
     if isinstance(want, str):
@@ -104,6 +105,19 @@ def pick_cover(d: DayGroup, content: dict) -> MediaItem:
             for key in it.content_keys:
                 if key.endswith(want):
                     return it
+    
+    # If no day-specific cover, check for trip-level cover
+    trip_cover = content.get("cover")
+    if isinstance(trip_cover, str):
+        # Try to find the trip cover photo among all items in this day
+        for it in d.items:
+            if trip_cover in it.content_keys:
+                return it
+            for key in it.content_keys:
+                if key.endswith(trip_cover):
+                    return it
+    
+    # Fall back to first image, or first item
     for it in d.items:
         if it.media_type == "image":
             return it

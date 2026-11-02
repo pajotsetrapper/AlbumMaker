@@ -271,10 +271,27 @@ def trip_summary(name: str, days: list, content: dict, urls, href: str, base: st
         title = folder_title
     real = [d for d in days if not d.is_unknown]
     cover = None
-    for d in real or days:
-        if d.items:
-            cover = pick_cover(d, content)
-            break
+    # Check for trip-level cover first
+    if content.get("cover"):
+        # If there's a trip cover set, we need to find it in the days
+        # This is a bit tricky since we don't know which day has it
+        # For now, we'll use the first day with items that contains the cover photo
+        for d in real or days:
+            if d.items:
+                # Check if this day's items contain the trip cover
+                trip_cover = content.get("cover")
+                for it in d.items:
+                    if trip_cover in it.content_keys:
+                        cover = it
+                        break
+                if cover:
+                    break
+    else:
+        # Fall back to day-level cover logic
+        for d in real or days:
+            if d.items:
+                cover = pick_cover(d, content)
+                break
     items = [it for d in days for it in d.items]
     return {
         "name": name,
