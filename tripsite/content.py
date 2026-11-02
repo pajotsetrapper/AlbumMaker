@@ -21,7 +21,7 @@ class ContentFileError(Exception):
 
 
 def default_content() -> dict:
-    return {"title": "My Trip", "subtitle": "", "days": {}, "photos": {}}
+    return {"title": "My Trip", "subtitle": "", "cover": None, "days": {}, "photos": {}}
 
 
 def parse_content_file(path: Path) -> dict:
@@ -181,6 +181,17 @@ def set_cover(content: dict, date_key: str, rel: Optional[str]):
         entry["cover"] = rel
     else:
         entry.pop("cover", None)
+
+
+def set_trip_cover(content: dict, rel: Optional[str]):
+    """Set the trip's cover photo. Returns the updated content."""
+    if rel is None:
+        # Remove the trip cover
+        content.pop("cover", None)
+    else:
+        # Set the trip cover
+        content["cover"] = rel
+    return content
 
 
 def set_day_text(content: dict, date_key: str, title=None, description=None):

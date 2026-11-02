@@ -43,7 +43,7 @@ from .cli import (add_content_arg, add_date_check_args, add_location_args, add_o
                   positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, default_content, hidden_rels, is_hidden,
                       load_or_init_content, parse_content_file, report_unknown_photo_keys,
-                      resolve_content_path, set_cover, set_day_text, set_photo_fields, write_content)
+                      resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, write_content)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
 from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
@@ -1000,7 +1000,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not self._origin_ok():
             return self._fail(403, "Cross-origin request refused")
         self._app, path = self._select_trip(unquote(urlparse(self.path).path))
-        if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day"):
+        if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day", "/api/trip-cover"):
             return self._fail(404, "Not found")
         if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
             return self._fail(415, "Expected application/json")
@@ -1021,6 +1021,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self._api_photo(body)
             elif path == "/api/cover":
                 result = self._api_cover(body)
+            elif path == "/api/trip-cover":
+                result = self._api_trip_cover(body)
             else:
                 result = self._api_day(body)
         except ContentFileError as e:
@@ -1069,6 +1071,14 @@ class RequestHandler(BaseHTTPRequestHandler):
             if rel not in self.app.day_rels.get(date, ()):
                 raise ValueError("That photo isn't from this day")
         self.app.content.update(lambda c: set_cover(c, date, rel))
+        return {}
+
+    def _api_trip_cover(self, body: dict) -> dict:
+        rel = body.get("rel")
+        if rel is not None:
+            if not isinstance(rel, str) or rel not in self.app.known_rels:
+                raise ValueError("Unknown photo")
+        self.app.content.update(lambda c: set_trip_cover(c, rel))
         return {}
 
     def _api_day(self, body: dict) -> dict:
