@@ -94,9 +94,16 @@ def pick_cover(d: DayGroup, content: dict) -> MediaItem:
     entry = content.get("days", {}).get(d.date_key)
     want = entry.get("cover") if isinstance(entry, dict) else None
     if isinstance(want, str):
+        # Try exact match first, then check if want is contained in any content key
         for it in d.items:
+            # Check for exact match (most reliable)
             if want in it.content_keys:
                 return it
+            # Also check if the wanted path matches any of the item's content keys
+            # This handles cases where paths might be stored differently
+            for key in it.content_keys:
+                if key.endswith(want):
+                    return it
     for it in d.items:
         if it.media_type == "image":
             return it
