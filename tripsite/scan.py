@@ -232,6 +232,10 @@ def build_media_item(path: Path, media_type: str, meta: dict, **extra) -> MediaI
         detail["gps_display"] = format_gps_display(gps[0], gps[1])
     if meta.get("altitude"):
         detail["altitude"] = meta["altitude"]
+    
+    # Add date information to detail for normal (non-fallback) cases
+    if not dt_is_fallback:
+        detail["date_note"] = format_long_date(dt)
 
     return MediaItem(
         path=path,
