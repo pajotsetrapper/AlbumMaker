@@ -922,10 +922,18 @@ async function setCover(){
   if(res) showToast('Cover photo set for this day');
 }
 
+async function setTripCover(){
+  const item = SLIDES[currentSlide];
+  if(!item || !item.rel) return;
+  const res = await apiPost('/api/trip-cover', {rel: item.rel});
+  if(res) showToast('Trip cover photo set');
+}
+
 function initEditBar(){
   document.getElementById('edit-fav').addEventListener('click', toggleFavorite);
   document.getElementById('edit-hide').addEventListener('click', toggleHidden);
   document.getElementById('edit-cover').addEventListener('click', setCover);
+  document.getElementById('edit-trip-cover').addEventListener('click', setTripCover);
   const cap = document.getElementById('edit-caption');
   // The viewer can move to another photo while the box has focus (a swipe, the end
   // of a video), so the caption is saved for the photo it was typed for.
