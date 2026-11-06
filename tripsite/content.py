@@ -21,7 +21,7 @@ class ContentFileError(Exception):
 
 
 def default_content() -> dict:
-    return {"title": "My Trip", "subtitle": "", "days": {}, "photos": {}}
+    return {"title": "My Trip", "subtitle": "", "days": {}, "photos": {}, "template": "default"}
 
 
 def parse_content_file(path: Path) -> dict:
@@ -84,6 +84,28 @@ def day_text(content: dict, date_key: str) -> tuple:
     if not isinstance(entry, dict):
         entry = {}
     return _text(entry.get("title")).strip(), _text(entry.get("description")).strip()
+
+
+# --------------------------------------------------------------------------
+# Per-photo and per-day edits, stored in trip_content.json:
+#
+#   "photos": { "<path relative to the photos folder>":
+#                 {"caption": "...", "favorite": true, "hidden": true} }
+#   "days":   { "<date>": {"title": "...", "description": "...",
+#                          "cover": "<same kind of relative path>"} }
+#
+# Only values that differ from the defaults are stored. Anything else in the
+# file (including keys this code doesn't know) is left exactly as it was.
+# --------------------------------------------------------------------------
+
+def get_template(content: dict) -> str:
+    """Get the template name for this trip."""
+    return content.get("template", "default")
+
+
+def set_template(content: dict, template_name: str) -> None:
+    """Set the template name for this trip."""
+    content["template"] = template_name
 
 
 # --------------------------------------------------------------------------

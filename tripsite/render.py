@@ -30,9 +30,58 @@ def _load_template(name: str):
 
 
 _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
-INDEX_TEMPLATE = _JINJA.get_template("index.html")
-DAY_TEMPLATE = _JINJA.get_template("day.html")
+
+
+def get_template_name(content: dict, template_type: str) -> str:
+    """Get the template name for a specific template type from trip content.
+    
+    Args:
+        content: The trip content dictionary
+        template_type: Either 'index' or 'day'
+        
+    Returns:
+        Template name (e.g., 'default', 'modern') or None if not specified
+    """
+    # Check if there's a template setting in the content
+    if 'trip_content' in content and 'templates' in content['trip_content']:
+        templates = content['trip_content']['templates']
+        if template_type == 'index' and 'index' in templates:
+            return templates['index']
+        elif template_type == 'day' and 'day' in templates:
+            return templates['day']
+    
+    # Check for legacy template setting
+    if 'template' in content:
+        return content['template']
+    
+    # Default to 'default' if no specific template is set
+    return 'default'
+
+
+def get_template(template_name: str):
+    """Get a Jinja template by name."""
+    try:
+        return _JINJA.get_template(f"{template_name}.html")
+    except Exception:
+        # Fall back to default template if requested template doesn't exist
+        return _JINJA.get_template("default.html")
+
+
+# Global template instances - these will be dynamically loaded based on trip content
+INDEX_TEMPLATE = _JINJA.get_template("default.html")
+DAY_TEMPLATE = _JINJA.get_template("default.html")
 LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
+
+
+def get_templates_for_content(content: dict):
+    """Get the appropriate templates for a given trip content."""
+    index_template_name = get_template_name(content, 'index')
+    day_template_name = get_template_name(content, 'day')
+    
+    return {
+        'index': get_template(index_template_name),
+        'day': get_template(day_template_name)
+    }
 
 
 class SiteUrls:
@@ -175,6 +224,10 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "is_unknown": d.is_unknown,
             "day_number": rank,
         })
+    
+    # Get the appropriate template for this trip
+    templates = get_templates_for_content(content)
+    
     return dict(
         page_title=trip_title(content),
         library_href=urls.library_href(from_index=True),
@@ -195,6 +248,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         days=summaries,
         days_json=script_json(summaries),
         places_credit=_places_credit(days),
+        template=templates['index'],  # Pass the template to use
     )
 
 
@@ -294,4 +348,5 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         next_href=next_href,
         next_href_json=script_json(next_href),
         next_label=next_day.date_key if next_day else "",
+        template=templates['day'],  # Pass the template to use
     )
