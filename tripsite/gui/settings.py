@@ -7,7 +7,6 @@ import os
 import shlex
 import sys
 import tempfile
-from datetime import datetime
 from pathlib import Path
 from typing import Optional
 from ..timezones import get_timezone
@@ -65,7 +64,7 @@ def default_settings() -> dict:
         "advanced": {
             "tile_cache": "",
             "tile_url": "",
-            "index_cache": "",
+            "index_cache": str(config_dir() / "metadata-cache"),
             "allow_hosts": [],
         },
     }
@@ -217,3 +216,23 @@ def write_library_file(trips: list, path: Path) -> Path:
     except OSError as exc:
         raise SettingsError(f"Could not write the trip library file {path}: {exc}") from exc
     return path
+
+
+def prepare_metadata_cache(path: str) -> Path:
+    """Create and validate the required on-disk cache folder for GUI server mode."""
+    value = str(path).strip()
+    if not value:
+        raise SettingsError("Choose a metadata cache folder before starting the live server.")
+    folder = Path(value).expanduser()
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise SettingsError(f"Could not create the metadata cache folder {folder}: {exc}") from exc
+    if not folder.is_dir():
+        raise SettingsError(f"The metadata cache path is not a folder: {folder}")
+    try:
+        with tempfile.TemporaryFile(dir=folder):
+            pass
+    except OSError as exc:
+        raise SettingsError(f"Could not write to the metadata cache folder {folder}: {exc}") from exc
+    return folder.resolve()
