@@ -10,7 +10,7 @@ A track is a list of positions with their UTC time. It does two things:
 Matching needs each photo's moment in UTC, but cameras record local clock
 time. The UTC offset comes from the file where it says (EXIF OffsetTime, a
 phone's GPS time stamp, an iPhone video's local time), else from the other
-files of that day, else --tz-offset, else the rest of the trip (TimeZones).
+files of that day, else --timezone/--tz-offset, else the rest of the trip (TimeZones).
 """
 
 from __future__ import annotations
@@ -28,6 +28,7 @@ from typing import Optional
 from .metadata import format_gps_display, valid_gps
 from .model import route_distance_km
 from .scan import list_media_files
+from .timezones import get_timezone
 
 MAX_GAP_S = 10 * 60       # between two track points, a photo's position is interpolated ...
 EDGE_S = 2 * 60           # ... and just before/after a stretch of track, its end point is used
@@ -216,12 +217,13 @@ class Track:
 
 class TimeZones:
     """The UTC offset (minutes) to assume for a file that doesn't record its
-    own: what the files of the same day say most often, else --tz-offset,
-    else what the whole trip says most often."""
+    own: what the files of the same day say most often, else --timezone or
+    --tz-offset, else what the whole trip says most often."""
 
     VOTERS = ("exif", "gps", "apple")   # files that state their offset
 
-    def __init__(self, items: list, tz_offset_hours: Optional[float] = None):
+    def __init__(self, items: list, tz_offset_hours: Optional[float] = None,
+                 timezone_name: Optional[str] = None):
         by_day, overall = {}, Counter()
         for it in items:
             if it.utc_offset is not None and it.utc_offset_src in self.VOTERS and not it.dt_is_fallback:
@@ -229,12 +231,16 @@ class TimeZones:
                 overall[it.utc_offset] += 1
         self.by_day = {k: c.most_common(1)[0][0] for k, c in by_day.items()}
         self.fixed = None if tz_offset_hours is None else int(round(tz_offset_hours * 60))
+        self.zone = get_timezone(timezone_name) if timezone_name else None
         self.overall = overall.most_common(1)[0][0] if overall else None
 
     def for_day(self, date_key: str) -> Optional[int]:
         found = self.by_day.get(date_key)
         if found is not None:
             return found
+        if self.zone:
+            date = datetime.strptime(date_key, "%Y-%m-%d").date()
+            return int(datetime.combine(date, datetime.min.time(), self.zone).utcoffset().total_seconds() // 60)
         return self.fixed if self.fixed is not None else self.overall
 
     def utc_timestamp(self, item) -> Optional[float]:
@@ -243,7 +249,11 @@ class TimeZones:
             return None
         offset = item.utc_offset
         if offset is None:
-            offset = self.for_day(item.dt.strftime("%Y-%m-%d"))
+            offset = self.by_day.get(item.dt.strftime("%Y-%m-%d"))
+        if offset is None and self.zone:
+            return item.dt.replace(tzinfo=self.zone).timestamp()
+        if offset is None:
+            offset = self.fixed if self.fixed is not None else self.overall
         if offset is None:
             return None
         return (item.dt - timedelta(minutes=offset)).replace(tzinfo=timezone.utc).timestamp()
@@ -289,7 +299,7 @@ def locate_from_track(items: list, track: Track, zones: TimeZones) -> int:
         print(f"Placed {located} file(s) without a location on the GPX track.")
     if no_zone:
         print(f"  {no_zone} file(s) without a location couldn't be matched to the GPX track: their "
-              f"time zone is unknown. Pass --tz-offset (e.g. --tz-offset 2) to say what it was.")
+              f"time zone is unknown. Pass --timezone or --tz-offset to say what it was.")
     return located
 
 
@@ -347,12 +357,18 @@ def attach_day_tracks(days: list, track: Track, zones: TimeZones,
     for d in days:
         if d.is_unknown:
             continue
-        offset = zones.for_day(d.date_key)
-        if offset is None:
-            continue
-        start = (datetime.strptime(d.date_key, "%Y-%m-%d") - timedelta(minutes=offset)
-                 ).replace(tzinfo=timezone.utc).timestamp()
-        stretches = track.stretches(start, start + 86400)
+        date = datetime.strptime(d.date_key, "%Y-%m-%d")
+        if zones.zone:
+            start = datetime.combine(date.date(), datetime.min.time(), zones.zone).timestamp()
+            end = datetime.combine((date + timedelta(days=1)).date(), datetime.min.time(),
+                                  zones.zone).timestamp()
+        else:
+            offset = zones.for_day(d.date_key)
+            if offset is None:
+                continue
+            start = (date - timedelta(minutes=offset)).replace(tzinfo=timezone.utc).timestamp()
+            end = start + 86400
+        stretches = track.stretches(start, end)
         if stretches:
             fine = [simplify(s, tolerance_m) for s in stretches]   # GPS jitter would add phantom metres
             d.track_km = sum(route_distance_km(s) for s in fine)
@@ -363,11 +379,11 @@ def attach_day_tracks(days: list, track: Track, zones: TimeZones,
 
 
 def apply_gpx(items: list, input_dir: Path, gpx_args=(), tz_offset: Optional[float] = None,
-              exclude_dirs=()) -> tuple:
+              exclude_dirs=(), timezone_name: Optional[str] = None) -> tuple:
     """Find and read the GPX files, place unlocated files on the track.
     Returns (track or None, TimeZones), for attach_day_tracks once the
     days are known."""
-    zones = TimeZones(items, tz_offset)
+    zones = TimeZones(items, tz_offset, timezone_name)
     files = find_gpx_files(input_dir, gpx_args, exclude_dirs)
     if not files:
         return None, zones

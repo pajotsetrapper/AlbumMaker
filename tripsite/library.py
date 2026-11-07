@@ -3,7 +3,7 @@
     # trips.txt: one trip per line; '#' starts a comment
     /Volumes/Photos/2024 Japan
     ~/Pictures/Italy 2025 | italy
-    /Volumes/NAS/Iceland | iceland | --tz-offset 0 --no-dedupe
+    /Volumes/NAS/Iceland | iceland | --timezone Atlantic/Reykjavik --no-dedupe
 
 Each line is a photos folder, then optionally (after "|") the name the
 trip gets in URLs and in the output folder, and options for that trip only.
@@ -23,7 +23,7 @@ from dataclasses import dataclass, field
 from pathlib import Path, WindowsPath
 from typing import Optional
 
-from .cli import add_content_arg, add_date_check_args, add_location_args, resolve_date_range
+from .cli import add_content_arg, add_date_check_args, add_location_args, add_timezone_arg, resolve_date_range
 from .content import trip_title, _text
 from .model import DAY_COLORS
 from .places import day_places
@@ -130,6 +130,7 @@ def _trip_option_parser() -> argparse.ArgumentParser:
     p = _OptionParser(prog="trip options", add_help=False)
     add_content_arg(p)
     p.add_argument("--tz-offset", type=float)
+    add_timezone_arg(p)
     p.add_argument("--no-dedupe", action="store_true")
     p.add_argument("--no-live-photos", action="store_true")
     add_date_check_args(p)
@@ -217,6 +218,8 @@ def trip_args(args, entry: TripEntry, list_file: Path) -> tuple:
     what the trip's line in the list file sets on top. Raises TripListError."""
     parser = _trip_option_parser()
     parsed = parser.parse_args(entry.options)
+    if getattr(parsed, "timezone", None) and getattr(parsed, "tz_offset", None) is not None:
+        raise TripListError("use either --timezone or --tz-offset for a trip, not both")
     base = Path(list_file).expanduser().resolve().parent
     out = argparse.Namespace(**vars(args))
     for key, value in vars(parsed).items():
@@ -227,6 +230,10 @@ def trip_args(args, entry: TripEntry, list_file: Path) -> tuple:
             value = [_normalize_path_str(g) for g in value]
             value = [_path_for(g).expanduser() if _is_absolute_path(g) else base / _path_for(g).expanduser() for g in value]
         setattr(out, key, value)
+    if "timezone" in vars(parsed):
+        out.tz_offset = None
+    elif "tz_offset" in vars(parsed):
+        out.timezone = None
     out.input = entry.path
     return out, resolve_date_range(out, parser)        # (the parser's errors are TripListErrors)
 

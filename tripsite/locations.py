@@ -12,7 +12,8 @@ def locate_items(items: list, args, exclude_dirs=()) -> tuple:
     their position on the GPX track. Returns what describe_days needs."""
     if args.no_gpx:
         return None, None
-    return apply_gpx(items, args.input, args.gpx, args.tz_offset, exclude_dirs)
+    return apply_gpx(items, args.input, args.gpx, args.tz_offset, exclude_dirs,
+                     timezone_name=getattr(args, "timezone", None))
 
 
 def describe_days(days: list, items: list, located: tuple, args):

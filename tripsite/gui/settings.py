@@ -4,11 +4,13 @@ from __future__ import annotations
 
 import json
 import os
+import shlex
 import sys
 import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
+from ..timezones import get_timezone
 
 SETTINGS_VERSION = 1
 
@@ -87,8 +89,24 @@ def _merge_defaults(saved: object) -> dict:
             if not isinstance(value, dict):
                 raise SettingsError(f"Settings section {section!r} must be an object.")
             merged[section].update(value)
-    if not isinstance(merged["trips"], list) or not all(isinstance(p, str) for p in merged["trips"]):
-        raise SettingsError("'trips' must be a list of folder paths.")
+    if not isinstance(merged["trips"], list):
+        raise SettingsError("'trips' must be a list of trip folders.")
+    trips = []
+    for trip in merged["trips"]:
+        if isinstance(trip, str):
+            trip = {"path": trip, "timezone": ""}
+        if not isinstance(trip, dict) or not isinstance(trip.get("path"), str):
+            raise SettingsError("Each trip must have a folder path.")
+        timezone_name = trip.get("timezone", "")
+        if not isinstance(timezone_name, str):
+            raise SettingsError("Each trip time zone must be text.")
+        if timezone_name:
+            try:
+                get_timezone(timezone_name)
+            except ValueError as exc:
+                raise SettingsError(str(exc)) from exc
+        trips.append({"path": trip["path"], "timezone": timezone_name})
+    merged["trips"] = trips
     if not isinstance(merged["output_dir"], str):
         raise SettingsError("'output_dir' must be a folder path.")
     for key in ("port", "large_thumb_size", "memory_cache_mb"):
@@ -170,18 +188,29 @@ def save_settings(settings: dict, path: Optional[Path] = None) -> None:
         raise SettingsError(f"Could not save settings to {path}: {exc}") from exc
 
 
-def write_library_file(trips: list[str], path: Path) -> Path:
+def write_library_file(trips: list, path: Path) -> Path:
     """Write a library list understood by tripsite.library.read_trip_list."""
     if not trips:
         raise SettingsError("Add at least one trip folder before starting.")
     lines = []
-    for raw_path in trips:
+    for entry in trips:
+        if isinstance(entry, str):
+            raw_path, timezone_name = entry, ""
+        else:
+            raw_path, timezone_name = entry["path"], entry.get("timezone", "")
         trip = Path(raw_path).expanduser()
         if not trip.is_dir():
             raise SettingsError(f"Trip folder does not exist: {trip}")
         if "|" in str(trip) or "\n" in str(trip) or "\r" in str(trip):
             raise SettingsError(f"Trip folder path cannot contain '|', or a newline: {trip}")
-        lines.append(str(trip.resolve()))
+        line = str(trip.resolve())
+        if timezone_name:
+            try:
+                get_timezone(timezone_name)
+            except ValueError as exc:
+                raise SettingsError(str(exc)) from exc
+            line += f" | | --timezone {shlex.quote(timezone_name)}"
+        lines.append(line)
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text("\n".join(lines) + "\n", encoding="utf-8")

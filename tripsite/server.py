@@ -39,8 +39,8 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlsplit
 
 from markupsafe import Markup
 
-from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, large_thumb_size_arg,
-                  positive_thumb_size, resolve_date_range)
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
+                  large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, default_content, hidden_rels, is_hidden,
                       load_or_init_content, parse_content_file, report_unknown_photo_keys,
                       resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, write_content)
@@ -134,14 +134,14 @@ def content_disposition(filename: str) -> str:
 
 def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
                 live_photos: bool = True, cache: Optional[MetadataCache] = None,
-                workers: Optional[int] = None) -> list:
+                workers: Optional[int] = None, timezone_name: Optional[str] = None) -> list:
     """Every photo/video's metadata, read in parallel (EXIF reading and
     ffprobe both spend most of their time waiting on the disk or the ffprobe
     process, so threads help), and taken from the --index-cache where a file
     hasn't changed since it was last read."""
     candidates = collect_candidates(input_dir)
     groups = dedupe_groups(candidates) if dedupe else no_dedupe_groups(candidates)
-    cache = cache or MetadataCache(None, tz_offset)
+    cache = cache or MetadataCache(None, tz_offset, timezone_name)
 
     def rel(p: Path) -> str:
         return p.relative_to(input_dir).as_posix()
@@ -161,7 +161,7 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
 
     def read(job):
         path, media_type = job
-        return read_metadata(path, media_type, tz_offset)
+        return read_metadata(path, media_type, tz_offset, timezone_name)
 
     if todo:
         workers = workers or min(8, (os.cpu_count() or 2) * 2)
@@ -1312,6 +1312,7 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Fixed UTC offset in hours (e.g. 2 or -5.5) for converting VIDEO "
                              "timestamps to your trip's local time. Without it, iPhone videos use "
                              "their recorded local time. Photos are unaffected.")
+    add_timezone_arg(parser)
     parser.add_argument("--no-dedupe", action="store_true",
                         help="Don't skip exact-duplicate files. Duplicate detection is on by default.")
     parser.add_argument("--no-live-photos", action="store_true",
@@ -1363,6 +1364,8 @@ def main(argv=None):
         sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     args = parser.parse_args(argv)
+    if args.tz_offset is not None and args.timezone:
+        parser.error("--tz-offset and --timezone cannot be used together")
     date_range = resolve_date_range(args, parser)
     if args.large_thumb_size is None:             # not given: on, unless the normal thumbnails are already that big
         args.large_thumb_size = 1600 if args.thumb_size < 1600 else 0
@@ -1501,9 +1504,9 @@ def load_trip(args, date_range, shared: "Shared", prefix: str = "", index_cache:
             raise TripLoadError(f"! {e}\n  Nothing was changed. Fix the file and start the server again.")
 
     print(f"Indexing {args.input} ...")
-    cache = MetadataCache(index_cache, args.tz_offset)
+    cache = MetadataCache(index_cache, args.tz_offset, args.timezone)
     items = build_index(args.input, args.tz_offset, dedupe=not args.no_dedupe,
-                        live_photos=not args.no_live_photos, cache=cache)
+                        live_photos=not args.no_live_photos, cache=cache, timezone_name=args.timezone)
     if not items:
         raise TripLoadError("No supported photos or videos found.")
 

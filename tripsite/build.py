@@ -30,8 +30,8 @@ from pathlib import Path, PurePosixPath
 from typing import Optional
 from urllib.parse import quote
 
-from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, large_thumb_size_arg,
-                  positive_thumb_size, resolve_date_range)
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
+                  large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (ContentFileError, hidden_rels, load_or_init_content, parse_content_file,
                       report_unknown_photo_keys, resolve_content_path)
 from .imaging import display_jpeg, image_thumbnails, open_upright, thumbnails_from, video_thumbnails
@@ -391,13 +391,13 @@ def make_video_derivatives(src: Path, out: StaticOutputs, output_dir: Path, thum
 def _process_one_file(path: Path, media_type: str, output_dir: Path, thumb_size: int,
                       tz_offset: Optional[float], base: str, regen_thumb: bool, regen_converted: bool,
                       force_copy: bool, large_thumb_size: int = 0,
-                      meta: Optional[dict] = None) -> tuple:
+                      meta: Optional[dict] = None, timezone_name: Optional[str] = None) -> tuple:
     """Metadata (unless already known) and the derivatives for one file.
     Returns (meta, outputs). This is the unit of work handed to each worker
     process, so it must stay a plain top-level function: that's what lets it
     be pickled, and it's required under Windows' and macOS' 'spawn' model."""
     if meta is None:
-        meta = read_metadata(path, media_type, tz_offset)
+        meta = read_metadata(path, media_type, tz_offset, timezone_name)
     out = planned_outputs(path, media_type, base, bool(meta.get("is_mpo")))
     if media_type == "image":
         make_image_derivatives(path, out, output_dir, thumb_size, large_thumb_size,
@@ -425,7 +425,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                force: bool, tz_offset: Optional[float] = None,
                workers: Optional[int] = None, dedupe: bool = True,
                manifest: Optional[dict] = None, skip_rels: Optional[set] = None,
-               large_thumb_size: int = 0, live_photos: bool = True, exclude_dirs=()) -> tuple:
+               large_thumb_size: int = 0, live_photos: bool = True, exclude_dirs=(),
+               timezone_name: Optional[str] = None) -> tuple:
     """Returns (items, records): the processed media, and the build-record
     entry for every processed file (see save_manifest). `exclude_dirs`: more
     folders to leave out besides output_dir (a library's own folder)."""
@@ -447,7 +448,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
             return None
         if prev.get("size") != st.st_size or prev.get("mtime_ns") != st.st_mtime_ns:
             return None
-        return meta_from_json(prev.get("meta"), tz_offset, media_type)
+        return meta_from_json(prev.get("meta"), tz_offset, media_type, timezone_name)
 
     # the output folder is excluded explicitly too: on the very first run
     # it doesn't hold a build record yet
@@ -459,7 +460,9 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     def video_meta(path: Path) -> dict:
         if path not in video_meta_seen:
-            video_meta_seen[path] = cached_meta(path, "video") or read_metadata(path, "video", tz_offset)
+            video_meta_seen[path] = cached_meta(path, "video") or read_metadata(
+                path, "video", tz_offset, timezone_name
+            )
         return video_meta_seen[path]
 
     groups = drop_hidden_groups(groups, input_dir, skip_rels or set(), live_photos, video_meta)
@@ -527,7 +530,10 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
         records[rel_paths[path]] = {
             "base": bases[path], "size": size, "mtime_ns": mtime_ns,
             "outputs": output_list(out, bool(large_thumb_size)),
-            "meta": meta_to_json(meta, tz_offset if media_type == "video" else None),
+            "meta": meta_to_json(
+                meta, tz_offset if media_type == "video" else None,
+                timezone_name if media_type == "video" else None,
+            ),
         }
         if out.thumb_is_placeholder:
             records[rel_paths[path]]["retry"] = True
@@ -547,7 +553,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
             with ProcessPoolExecutor(max_workers=workers) as executor:
                 futures = {
                     executor.submit(_process_one_file, path, media_type, output_dir, thumb_size, tz_offset,
-                                    bases[path], *flags, large_thumb_size, meta): (path, media_type, dups)
+                                    bases[path], *flags, large_thumb_size, meta, timezone_name):
+                    (path, media_type, dups)
                     for path, media_type, dups, flags, meta in jobs
                 }
                 for future in as_completed(futures):
@@ -693,6 +700,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "UTC) are converted using this computer's timezone. With it, every "
                              "video uses this offset. Photos are unaffected: camera EXIF "
                              "timestamps are already local.")
+    add_timezone_arg(parser)
     parser.add_argument("--workers", type=int, default=None,
                         help="Number of files to process in parallel (default: one per CPU core). "
                              "Lower this if you want to keep using your computer for other things "
@@ -727,6 +735,8 @@ def main(argv=None):
         parser.error("--large-thumb-size must be larger than --thumb-size (or 0 to turn it off)")
     if args.workers is not None and args.workers < 1:
         parser.error("--workers must be at least 1")
+    if args.tz_offset is not None and args.timezone:
+        parser.error("--tz-offset and --timezone cannot be used together")
     if args.library:
         problem = check_library_args(args)
         if problem:
@@ -756,6 +766,8 @@ def build_trip(args, date_range, library_root: Optional[Path] = None,
               "      Install with: pip install pillow-heif", file=sys.stderr)
     if args.tz_offset is not None:
         print(f"Using a fixed UTC{args.tz_offset:+g}h offset for video timestamps.")
+    elif args.timezone:
+        print(f"Using the {args.timezone} time zone for video timestamps and GPS tracks.")
 
     content_path = resolve_content_path(args.content, args.input, fallback=content_fallback)
     # check the content file *before* the (possibly long) processing step, so
@@ -777,7 +789,8 @@ def build_trip(args, date_range, library_root: Optional[Path] = None,
                                 dedupe=not args.no_dedupe, manifest=manifest, skip_rels=skip_rels,
                                 large_thumb_size=args.large_thumb_size,
                                 live_photos=not args.no_live_photos,
-                                exclude_dirs=(library_root,) if library_root else ())
+                                exclude_dirs=(library_root,) if library_root else (),
+                                timezone_name=args.timezone)
     if not items:
         print("No supported photos or videos found.", file=sys.stderr)
         sys.exit(1)

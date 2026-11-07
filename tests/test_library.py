@@ -128,6 +128,12 @@ class TripListTests(TempDirMixin, unittest.TestCase):
         for bad in (["--port", "9"], ["--tz-offset", "x"], ["--date-range", "2026-05-03", "2026-05-01"]):
             with self.subTest(bad=bad), self.assertRaises(library.TripListError):
                 library.trip_args(args, library.TripEntry(Path("/p"), "p", bad, 4), list_file)
+        with self.assertRaisesRegex(library.TripListError, "either --timezone or --tz-offset"):
+            library.trip_args(
+                args,
+                library.TripEntry(Path("/p"), "p", ["--timezone", "Asia/Tokyo", "--tz-offset", "2"]),
+                list_file,
+            )
 
     def test_what_the_command_line_sets_for_all_trips_is_kept_unless_a_line_says_otherwise(self):
         list_file = trip_list(self.tmp / "lists" / "trips.txt", "x")

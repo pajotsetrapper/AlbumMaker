@@ -17,6 +17,7 @@ from typing import Optional
 
 from PIL import Image
 from PIL.ExifTags import GPSTAGS
+from .timezones import get_timezone
 
 try:
     import pillow_heif
@@ -308,16 +309,17 @@ def read_image_metadata(path: Path) -> dict:
     return meta
 
 
-def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> dict:
+def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
+                        timezone_name: Optional[str] = None) -> dict:
     """Pull capture time, GPS, dimensions, codec, frame rate and duration out
     of a video via ffprobe. Missing fields are simply absent.
 
-    Capture time: if tz_offset_hours is given, the container's UTC
-    `creation_time` is converted with that fixed offset. Otherwise an
-    iPhone's local `com.apple.quicktime.creationdate` is used when present,
-    and plain `creation_time` is converted using the timezone this script
-    runs in (only right if that's the trip's timezone). Photos aren't
-    affected: camera EXIF timestamps are already local."""
+    Capture time: a named IANA time zone converts UTC `creation_time` and
+    iPhone local timestamps to the trip's local time. Otherwise a fixed
+    offset converts UTC `creation_time`; without either, an iPhone's local
+    timestamp is used when present and other UTC times use this computer's
+    time zone. Photos aren't affected: camera EXIF timestamps are already
+    local."""
     meta = {}
     try:
         result = subprocess.run(
@@ -351,17 +353,23 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
             video_stream = s
 
     # iPhones also store the local capture time with its UTC offset (e.g.
-    # 2024-05-02T14:00:00+0200). Unless --tz-offset says otherwise, that's
+    # 2024-05-02T14:00:00+0200). Unless a time-zone setting says otherwise, that's
     # the best source: the clock time where the video was shot, the same
     # thing a photo's EXIF time records, with no timezone guesswork.
     local_ct = tags.get("com.apple.quicktime.creationdate")
     if local_ct and tz_offset_hours is None:
         parsed = _parse_iso_datetime(local_ct)
         if parsed is not None:
-            meta["dt"] = parsed.replace(tzinfo=None)
-            if parsed.utcoffset() is not None:
-                meta["utc_offset"] = int(parsed.utcoffset().total_seconds() // 60)
-                meta["utc_offset_src"] = "apple"
+            if timezone_name and parsed.tzinfo is not None:
+                localized = parsed.astimezone(get_timezone(timezone_name))
+                meta["dt"] = localized.replace(tzinfo=None)
+                meta["utc_offset"] = int(localized.utcoffset().total_seconds() // 60)
+                meta["utc_offset_src"] = "utc"
+            else:
+                meta["dt"] = parsed.replace(tzinfo=None)
+                if parsed.utcoffset() is not None:
+                    meta["utc_offset"] = int(parsed.utcoffset().total_seconds() // 60)
+                    meta["utc_offset_src"] = "apple"
 
     ct = tags.get("creation_time")
     if ct and "dt" not in meta:
@@ -370,12 +378,17 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
             parsed = datetime.fromisoformat(ct_clean)
             if parsed.tzinfo is not None:
                 utc = parsed.astimezone(timezone.utc).replace(tzinfo=None)
-                if tz_offset_hours is not None:
+                if timezone_name:
+                    localized = utc.replace(tzinfo=timezone.utc).astimezone(get_timezone(timezone_name))
+                    meta["utc_offset"] = int(localized.utcoffset().total_seconds() // 60)
+                    meta["utc_offset_src"] = "utc"
+                    parsed = localized.replace(tzinfo=None)
+                elif tz_offset_hours is not None:
                     parsed = utc + timedelta(hours=tz_offset_hours)
                 else:
                     parsed = parsed.astimezone().replace(tzinfo=None)
                 # the instant is exact, but the offset is only an assumption
-                # (--tz-offset, or this computer's timezone): "utc", not a vote
+                # (a configured offset/zone, or this computer's zone): "utc", not a vote
                 # for the trip's timezone (see tripsite.gpx.TimeZones)
                 meta["utc_offset"] = int(round((parsed - utc).total_seconds() / 60))
                 meta["utc_offset_src"] = "utc"
@@ -449,7 +462,8 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None) -> 
 META_FORMAT = 2   # bump when read_*_metadata start returning something new (2: utc_offset)
 
 
-def meta_to_json(meta: dict, tz_offset: Optional[float] = None) -> dict:
+def meta_to_json(meta: dict, tz_offset: Optional[float] = None,
+                 timezone_name: Optional[str] = None) -> dict:
     out = {}
     for k, v in meta.items():
         if isinstance(v, datetime):
@@ -459,16 +473,17 @@ def meta_to_json(meta: dict, tz_offset: Optional[float] = None) -> dict:
         else:
             out[k] = v
     out["_format"] = META_FORMAT
-    out["_tz"] = tz_offset
+    out["_tz"] = timezone_name if timezone_name else tz_offset
     return out
 
 
-def meta_from_json(data, tz_offset: Optional[float] = None, media_type: str = "image") -> Optional[dict]:
+def meta_from_json(data, tz_offset: Optional[float] = None, media_type: str = "image",
+                   timezone_name: Optional[str] = None) -> Optional[dict]:
     """The cached metadata, or None if it can't be used (other format, or a
-    video read with a different --tz-offset)."""
+    video read with a different time-zone setting)."""
     if not isinstance(data, dict) or data.get("_format") != META_FORMAT:
         return None
-    if media_type == "video" and data.get("_tz") != tz_offset:
+    if media_type == "video" and data.get("_tz") != (timezone_name if timezone_name else tz_offset):
         return None
     meta = {}
     try:
@@ -486,19 +501,22 @@ def meta_from_json(data, tz_offset: Optional[float] = None, media_type: str = "i
     return meta
 
 
-def read_metadata(path: Path, media_type: str, tz_offset: Optional[float] = None) -> dict:
+def read_metadata(path: Path, media_type: str, tz_offset: Optional[float] = None,
+                  timezone_name: Optional[str] = None) -> dict:
     if media_type == "image":
         return read_image_metadata(path)
-    return read_video_metadata(path, tz_offset)
+    return read_video_metadata(path, tz_offset, timezone_name)
 
 
 class MetadataCache:
     """A JSON file of {relative path: {size, mtime_ns, meta}} (trip_server
     --index-cache). Only touched from the main thread."""
 
-    def __init__(self, path: Optional[Path], tz_offset: Optional[float]):
+    def __init__(self, path: Optional[Path], tz_offset: Optional[float],
+                 timezone_name: Optional[str] = None):
         self.path = Path(path) if path else None
         self.tz = tz_offset
+        self.timezone_name = timezone_name
         self.entries = {}
         self.dirty = False
         if self.path and self.path.exists():
@@ -519,7 +537,7 @@ class MetadataCache:
             return None
         if rec.get("size") != st.st_size or rec.get("mtime_ns") != st.st_mtime_ns:
             return None
-        return meta_from_json(rec.get("meta"), self.tz, media_type)
+        return meta_from_json(rec.get("meta"), self.tz, media_type, self.timezone_name)
 
     def put(self, rel: str, path: Path, meta: dict):
         try:
@@ -527,7 +545,7 @@ class MetadataCache:
         except OSError:
             return
         self.entries[rel] = {"size": st.st_size, "mtime_ns": st.st_mtime_ns,
-                             "meta": meta_to_json(meta, self.tz)}
+                             "meta": meta_to_json(meta, self.tz, self.timezone_name)}
         self.dirty = True
 
     def save(self, keep: set):
