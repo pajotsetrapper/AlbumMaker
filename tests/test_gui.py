@@ -14,9 +14,17 @@ from tripsite.gui.settings import (
     write_library_file,
 )
 from tripsite.library import read_trip_list, trip_args
+from tripsite.timezones import timezone_choices
 
 
 class GuiSettingsTests(unittest.TestCase):
+    def test_timezone_choices_include_bundled_database_without_system_zoneinfo(self):
+        with mock.patch("tripsite.timezones.available_timezones", return_value=set()):
+            choices = timezone_choices()
+        self.assertIn("Europe/Paris", choices)
+        self.assertIn("America/Los_Angeles", choices)
+        self.assertEqual(choices, sorted(set(choices)))
+
     def test_metadata_cache_folder_is_created_and_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
             cache = Path(tmp) / "cache" / "metadata"
