@@ -53,7 +53,7 @@ from .library import (TripListError, build_library_context, check_library_args, 
                       trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
-                     build_day_context, build_index_context)
+                     build_day_context, build_index_context, get_templates_for_content)
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
 from .util import atomic_write_bytes
@@ -532,7 +532,8 @@ class App:
     def render_homepage(self, editable: bool = False) -> str:
         content = self.content.get()
         days = visible_days(self.days, content, editable)
-        return INDEX_TEMPLATE.render(**build_index_context(days, content, self.urls()))
+        template = get_templates_for_content(content)['index']
+        return template.render(**build_index_context(days, content, self.urls()))
 
     def render_day(self, date_key: str, editable: bool = False) -> Optional[str]:
         content = self.content.get()
@@ -540,7 +541,8 @@ class App:
         idx = next((i for i, d in enumerate(days) if d.date_key == date_key), None)
         if idx is None:
             return None
-        return DAY_TEMPLATE.render(**build_day_context(days, idx, content, self.urls(), editable=editable))
+        template = get_templates_for_content(content)['day']
+        return template.render(**build_day_context(days, idx, content, self.urls(), editable=editable))
 
     # -- image work, cached and limited -------------------------------------
 

@@ -42,8 +42,8 @@ from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
 from .library import (TripListError, build_library_context, check_library_args, missing_folder, read_trip_list,
                       trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
-from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls, build_day_context,
-                     build_index_context)
+from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
+                     build_day_context, build_index_context, get_templates_for_content)
 from .scan import (LIBRARY_MARKER, SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, drop_hidden_groups, group_by_day, no_dedupe_groups, pair_live_photos)
 from .util import atomic_write_bytes, atomic_write_text
@@ -651,11 +651,13 @@ def write_assets(folder: Path, has_vendor: bool):
 
 def render_site(days: list, content: dict, output_dir: Path, urls: StaticUrls) -> list:
     """Write all pages. Returns the day pages written (relative paths)."""
+    index_template = get_templates_for_content(content)['index']
     atomic_write_text(output_dir / "index.html",
-                      INDEX_TEMPLATE.render(**build_index_context(days, content, urls)))
+                      index_template.render(**build_index_context(days, content, urls)))
     pages = []
     for i, d in enumerate(days):
-        html = DAY_TEMPLATE.render(**build_day_context(days, i, content, urls))
+        day_template = get_templates_for_content(content)['day']
+        html = day_template.render(**build_day_context(days, i, content, urls))
         atomic_write_text(output_dir / "days" / f"{d.date_key}.html", html)
         pages.append(f"days/{d.date_key}.html")
     write_assets(output_dir, urls.has_vendor)
