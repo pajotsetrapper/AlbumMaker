@@ -40,8 +40,10 @@ from PySide6.QtWidgets import (
 )
 
 from .commands import build_command, offline_assets_command, server_command
-from .settings import SettingsError, load_settings, save_settings, settings_path, write_library_file
+from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache, save_settings,
+                       settings_path, write_library_file)
 from ..timezones import get_timezone, timezone_choices
+from ..offline import vendor_ready
 from ..util import project_dir
 
 PROJECT_ROOT = project_dir()
@@ -83,8 +85,10 @@ QLabel#status { color: #315fce; font-weight: 600; }
 
 HELP_HTML = """
 <h2>TripServer help</h2>
-<p>Add one or more photo folders to the trip library. The selected trips are
-processed together. Settings are saved automatically on this computer.</p>
+<p>Start by adding your photo folders to the trip library. Then choose one of the two workflows:
+<b>Run a Live Server</b> to browse and edit in your browser, or <b>Create a Site</b> to make a
+folder you can share. Each screen contains only the settings for that workflow. Settings are
+saved automatically on this computer.</p>
 <h3>Trip library</h3>
 <ul>
 <li><b>Add folders:</b> choose multiple trip folders in the folder picker.
@@ -96,10 +100,21 @@ timestamps to the existing metadata-based behavior.</li>
 <li><b>Remove:</b> removes selected folders from the library; it never
 deletes photos or generated files.</li>
 <li><b>Folder order:</b> drag trips to change their order on the library page.</li>
-<li><b>Output folder:</b> destination for the static site. It is not used by
-the live server.</li>
 </ul>
-<h3>Server settings</h3>
+<h3>Run a Live Server</h3>
+<p>The live server scans your folders, then hosts a site in your browser. The two setup items at
+the top of this screen are required:</p>
+<ul>
+<li><b>Metadata cache folder:</b> required. Stores a small JSON index per trip with each media
+file's size and modification time plus metadata read from it, including capture date, GPS
+coordinates, dimensions, camera details and video information. On a later server start, unchanged
+files can reuse these results instead of being read again. It does not store photo or video copies.
+The default is TripServer's application-support folder.</li>
+<li><b>Offline assets:</b> required in this app before starting the server. Downloads local copies
+of the map library and fonts once, so those interface assets are served locally. Map backgrounds
+(tiles) are separate: they come from the configured map provider unless you use a tile cache.</li>
+</ul>
+<p>Other live server settings:</p>
 <ul>
 <li><b>Port:</b> local web-server port (1–65535; default 8000); open the shown URL in a browser.</li>
 <li><b>Image cache:</b> maximum memory for generated thumbnails and converted photos (16–65536 MB;
@@ -115,8 +130,9 @@ private editor link printed in the activity log. Off by default; useful behind a
 <li><b>Show every request:</b> adds all HTTP requests to the activity log; otherwise errors
 and slow requests are shown. On by default in the desktop app.</li>
 </ul>
-<h3>Build settings</h3>
+<h3>Create a Site</h3>
 <ul>
+<li><b>Output folder:</b> where the generated, shareable website is written.</li>
 <li><b>Thumbnail size:</b> maximum thumbnail dimension in pixels (16–4096; default 400).</li>
 <li><b>High-resolution thumbnail:</b> optional larger version in pixels; Off by default and otherwise it must
 be larger than the normal thumbnail size. The live server uses 1600 by default.</li>
@@ -135,30 +151,26 @@ instead of attaching them to their photos. Off by default.</li>
 is ignored when enabled. Off by default.</li>
 <li><b>Ignore GPS tracks:</b> disables GPX track matching and route drawing. Off by default.</li>
 <li><b>Hide offline place names:</b> omits nearest-town names. Off by default.</li>
-<li><b>Regenerate all static site media:</b> rebuilds every thumbnail and media copy. Only
-applies to Generate site and is off by default.</li>
+<li><b>Regenerate all media:</b> rebuilds every thumbnail and media copy instead of reusing
+unchanged generated files. Off by default.</li>
 <li><b>GPX paths:</b> optional .gpx files or folders, one per line. Tracks inside each trip
 folder are found automatically. No extra paths are used by default. These paths are ignored
 when GPS tracks are disabled.</li>
 </ul>
-<h3>Advanced settings</h3>
+<h3>Additional live server settings</h3>
 <ul>
 <li><b>Tile cache folder:</b> for the live server, stores map tiles as they are viewed, so they can be reused offline.
 Blank by default.</li>
 <li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
 <code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap.</li>
-<li><b>Metadata index cache folder:</b> for the live server, an optional folder for caching file dates, GPS and
-camera metadata between server starts. TripServer keeps one cache file per trip in this folder. Off by default.</li>
 <li><b>Allowed host names:</b> for the live server, additional host names the server may answer to, one per line.
 Blank by default; use only for a trusted custom local DNS name.</li>
 </ul>
 <h3>Actions and activity</h3>
 <ul>
-<li><b>Start server:</b> opens the live, editable site for all listed trips.</li>
-<li><b>Generate site:</b> creates a static copy in the output folder.</li>
-<li><b>Download offline assets:</b> downloads the map library and fonts needed for offline pages;
-map tiles are cached only when viewed.</li>
-<li><b>Stop:</b> stops the currently running operation. Progress and errors appear in Activity.</li>
+<li><b>Start server:</b> starts the live site for all listed trips after required server setup is complete.</li>
+<li><b>Create site:</b> creates a static copy in the chosen output folder.</li>
+<li><b>Stop:</b> stops the running server or site generation. Progress and errors appear in Activity.</li>
 </ul>
 """
 
@@ -229,7 +241,7 @@ class MainWindow(QMainWindow):
         title = _label("TripServer")
         title.setFont(QFont(title.font().family(), 21, QFont.Weight.Bold))
         title_block.addWidget(title)
-        title_block.addWidget(_label("Your trips, ready to browse or publish.", "muted"))
+        title_block.addWidget(_label("Add your trips, then choose how you want to use them.", "muted"))
         header_layout.addLayout(title_block)
         header_layout.addStretch(1)
         help_button = QPushButton("Help")
@@ -239,18 +251,10 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
 
-        actions = QHBoxLayout()
-        self.start_button = QPushButton("Start server")
-        self.start_button.setObjectName("primary")
-        self.stop_button = QPushButton("Stop")
+        self.stop_button = QPushButton("Stop current task")
         self.stop_button.setObjectName("stop")
-        self.build_button = QPushButton("Generate site")
-        self.build_button.setObjectName("primary")
-        self.offline_button = QPushButton("Download offline assets")
-        for button in (self.start_button, self.stop_button, self.build_button, self.offline_button):
-            actions.addWidget(button)
-        actions.addStretch(1)
-        outer.addLayout(actions)
+        self.stop_button.setEnabled(False)
+        outer.addWidget(self.stop_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         panes = QSplitter(Qt.Orientation.Horizontal)
         panes.setChildrenCollapsible(False)
@@ -258,7 +262,7 @@ class MainWindow(QMainWindow):
         panes.addWidget(self._build_settings_panel())
         panes.setStretchFactor(0, 1)
         panes.setStretchFactor(1, 3)
-        panes.setSizes([280, 780])
+        panes.setSizes([310, 750])
 
         activity_box = QGroupBox("Activity & requests")
         activity_layout = QVBoxLayout(activity_box)
@@ -288,6 +292,7 @@ class MainWindow(QMainWindow):
         self.stop_button.clicked.connect(self._stop_process)
         self.build_button.clicked.connect(self._build_site)
         self.offline_button.clicked.connect(self._fetch_offline_assets)
+        self.index_cache.textChanged.connect(self._update_server_setup)
 
     def _build_library_panel(self) -> QWidget:
         panel = QWidget()
@@ -318,18 +323,6 @@ class MainWindow(QMainWindow):
         self.trip_count = _label("0 folders", "muted")
         layout.addWidget(self.trip_count)
 
-        output_box, output_form = _group("Generated site")
-        self.output_dir = QLineEdit()
-        output_row = QWidget()
-        output_layout = QHBoxLayout(output_row)
-        output_layout.setContentsMargins(0, 0, 0, 0)
-        output_layout.addWidget(self.output_dir, 1)
-        browse_output = QPushButton("Browse…")
-        browse_output.clicked.connect(self._browse_output)
-        output_layout.addWidget(browse_output)
-        output_form.addRow("Output folder", output_row)
-        layout.addWidget(output_box)
-
         self.add_trip_button.clicked.connect(self._add_trip)
         self.timezone_button.clicked.connect(self._set_trip_timezone)
         self.remove_trip_button.clicked.connect(self._remove_trips)
@@ -338,14 +331,47 @@ class MainWindow(QMainWindow):
         return panel
 
     def _build_settings_panel(self) -> QTabWidget:
-        tabs = QTabWidget()
-        tabs.addTab(self._server_tab(), "Server")
-        tabs.addTab(self._build_tab(), "Build")
-        tabs.addTab(self._advanced_tab(), "Advanced")
-        return tabs
+        self.workflow_tabs = QTabWidget()
+        self.workflow_tabs.setDocumentMode(True)
+        self.workflow_tabs.addTab(self._server_tab(), "Run a Live Server")
+        self.workflow_tabs.addTab(self._build_tab(), "Create a Site")
+        return self.workflow_tabs
 
     def _server_tab(self) -> QWidget:
-        server_box, form = _group("Live server")
+        setup_box = QGroupBox("One-time server setup")
+        setup_layout = QVBoxLayout(setup_box)
+        setup_intro = _label(
+            "These two items are required before the live server can start. You only need to set them up once.",
+            "muted",
+        )
+        setup_intro.setWordWrap(True)
+        setup_layout.addWidget(setup_intro)
+        cache_form = QFormLayout()
+        self.index_cache = QLineEdit()
+        self.index_cache.setPlaceholderText("Choose where TripServer should store the metadata index")
+        cache_form.addRow("Metadata cache folder", self._path_field(self.index_cache, directory=True))
+        setup_layout.addLayout(cache_form)
+        self.metadata_cache_help = _label(
+            "Stores a small index of file size, modified time and extracted metadata (capture date, "
+            "GPS, camera and video details), not copies of your photos. Reusing it makes later starts "
+            "faster when files have not changed.",
+            "muted",
+        )
+        self.metadata_cache_help.setWordWrap(True)
+        setup_layout.addWidget(self.metadata_cache_help)
+
+        offline_row = QHBoxLayout()
+        self.offline_status = _label("", "status")
+        self.offline_status.setWordWrap(True)
+        offline_row.addWidget(self.offline_status, 1)
+        self.offline_button = QPushButton("Download offline assets")
+        offline_row.addWidget(self.offline_button)
+        setup_layout.addLayout(offline_row)
+        self.server_setup_status = _label("", "muted")
+        self.server_setup_status.setWordWrap(True)
+        setup_layout.addWidget(self.server_setup_status)
+
+        server_box, form = _group("Live server options")
         self.port = QSpinBox()
         self.port.setRange(1, 65535)
         self.port.setToolTip("TCP port used by the local web server.")
@@ -372,14 +398,52 @@ class MainWindow(QMainWindow):
         form.addRow("", self.editor_link_only)
         self.verbose = QCheckBox("Show every request in the activity log")
         form.addRow("", self.verbose)
-        note = _label(
-            "LAN access has no login protection. Use it only on a trusted network.",
+        network_note = _label(
+            "LAN access has no login protection. Only allow other devices on a trusted home network.",
             "muted",
         )
-        note.setWordWrap(True)
-        return _scroll_page(server_box, note)
+        network_note.setWordWrap(True)
+
+        maps_box, maps_form = _group("Maps and network (optional)")
+        self.tile_cache = QLineEdit()
+        maps_form.addRow("Map tile cache folder", self._path_field(self.tile_cache, directory=True))
+        self.tile_url = QLineEdit()
+        self.tile_url.setPlaceholderText("Use the default map provider")
+        self.tile_url.setToolTip("Optional custom URL template must include {z}, {x}, and {y}.")
+        maps_form.addRow("Custom map URL", self.tile_url)
+        self.allow_hosts = QPlainTextEdit()
+        self.allow_hosts.setPlaceholderText("Leave blank unless you use a custom local host name")
+        self.allow_hosts.setMaximumHeight(65)
+        maps_form.addRow("Extra allowed host names", self.allow_hosts)
+
+        self.start_button = QPushButton("Start live server")
+        self.start_button.setObjectName("primary")
+        self.start_button.setMinimumHeight(38)
+        action_row = QHBoxLayout()
+        action_row.addWidget(self.start_button)
+        action_row.addStretch(1)
+        action_box = QWidget()
+        action_box.setLayout(action_row)
+        return _scroll_page(setup_box, server_box, maps_box, network_note, action_box)
 
     def _build_tab(self) -> QWidget:
+        output_box, output_form = _group("Where should the site go?")
+        self.output_dir = QLineEdit()
+        output_row = QWidget()
+        output_layout = QHBoxLayout(output_row)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        output_layout.addWidget(self.output_dir, 1)
+        browse_output = QPushButton("Choose folder…")
+        browse_output.clicked.connect(self._browse_output)
+        output_layout.addWidget(browse_output)
+        output_form.addRow("Site folder", output_row)
+        output_help = _label(
+            "TripServer creates a shareable website here. Your original photos stay in their folders.",
+            "muted",
+        )
+        output_help.setWordWrap(True)
+        output_form.addRow("", output_help)
+
         media_box, media_form = _group("Media & dates")
         self.thumb_size = QSpinBox()
         self.thumb_size.setRange(16, 4096)
@@ -436,31 +500,10 @@ class MainWindow(QMainWindow):
         self.gpx_files.setToolTip("These additional tracks are ignored when 'Ignore GPS tracks' is enabled.")
         self.gpx_files.setMaximumHeight(90)
         gpx_form.addRow("GPX paths", self.gpx_files)
-        return _scroll_page(media_box, behavior_box, gpx_box)
-
-    def _advanced_tab(self) -> QWidget:
-        map_box, map_form = _group("Maps")
-        self.tile_cache = QLineEdit()
-        map_form.addRow("Tile cache folder", self._path_field(self.tile_cache, directory=True))
-        self.tile_url = QLineEdit()
-        self.tile_url.setPlaceholderText("Default OpenStreetMap tile server")
-        self.tile_url.setToolTip("Custom URL template must include {z}, {x}, and {y}.")
-        map_form.addRow("Tile URL template", self.tile_url)
-        self.index_cache = QLineEdit()
-        map_form.addRow("Metadata index cache folder", self._path_field(self.index_cache, directory=True))
-
-        hosts_box, hosts_form = _group("Network")
-        self.allow_hosts = QPlainTextEdit()
-        self.allow_hosts.setPlaceholderText("One extra host name per line")
-        self.allow_hosts.setMaximumHeight(100)
-        hosts_form.addRow("Allowed host names", self.allow_hosts)
-        note = _label(
-            "The offline-assets button downloads Leaflet and fonts into the project's vendor folder. "
-            "Map tiles are cached only when viewed.",
-            "muted",
-        )
-        note.setWordWrap(True)
-        return _scroll_page(map_box, hosts_box, note)
+        self.build_button = QPushButton("Create site")
+        self.build_button.setObjectName("primary")
+        self.build_button.setMinimumHeight(38)
+        return _scroll_page(output_box, media_box, behavior_box, gpx_box, self.build_button)
 
     def _path_field(self, line_edit: QLineEdit, directory: bool) -> QWidget:
         row = QWidget()
@@ -506,12 +549,15 @@ class MainWindow(QMainWindow):
         advanced = self.settings["advanced"]
         self.tile_cache.setText(str(advanced["tile_cache"]))
         self.tile_url.setText(str(advanced["tile_url"]))
-        self.index_cache.setText(str(advanced["index_cache"]))
+        self.index_cache.setText(
+            str(advanced["index_cache"] or default_settings()["advanced"]["index_cache"])
+        )
         self.allow_hosts.setPlainText("\n".join(advanced["allow_hosts"]))
         self._update_date_controls()
         self.gpx_files.setEnabled(not self.no_gpx.isChecked())
         self._update_trip_count()
         self._update_trip_selection()
+        self._update_server_setup()
 
     def _connect_persistence(self) -> None:
         for widget in (
@@ -767,7 +813,16 @@ class MainWindow(QMainWindow):
         return " ".join(f'"{arg}"' if " " in arg else arg for arg in arguments)
 
     def _start_server(self) -> None:
+        if not vendor_ready():
+            QMessageBox.warning(
+                self, "Offline assets are required",
+                "Download the offline assets in the Live Server setup before starting the server.",
+            )
+            self._update_server_setup()
+            return
         try:
+            cache_folder = prepare_metadata_cache(self.index_cache.text())
+            self.index_cache.setText(str(cache_folder))
             library = self._prepare_library()
             arguments = server_command(sys.executable, library, self.settings)
         except (OSError, SettingsError, ValueError, KeyError) as exc:
@@ -839,6 +894,8 @@ class MainWindow(QMainWindow):
         self.status_label.setText(label)
         if kind == "server":
             self.server_url.setText("Server URL: not running")
+        if kind == "offline assets":
+            self._update_server_setup()
         self._append_log(f"{kind.capitalize()} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
@@ -864,10 +921,41 @@ class MainWindow(QMainWindow):
 
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
-        self.start_button.setEnabled(not running)
+        self.start_button.setEnabled(
+            not running and vendor_ready() and bool(self.index_cache.text().strip())
+        )
         self.build_button.setEnabled(not running)
         self.offline_button.setEnabled(not running)
         self.stop_button.setEnabled(running)
+        if not running:
+            self._update_server_setup()
+
+    def _update_server_setup(self, *_args) -> None:
+        assets_ready = vendor_ready()
+        cache_configured = bool(self.index_cache.text().strip())
+        self.offline_status.setText(
+            "Offline assets are ready."
+            if assets_ready
+            else "Offline assets are missing. Download them before starting the live server."
+        )
+        self.offline_button.setText(
+            "Refresh offline assets" if assets_ready else "Download offline assets"
+        )
+        requirements = []
+        if not cache_configured:
+            requirements.append("Choose a metadata cache folder")
+        if not assets_ready:
+            requirements.append("download the offline assets")
+        if requirements:
+            self.server_setup_status.setText(
+                "To start the live server, " + " and ".join(requirements) + "."
+            )
+        else:
+            self.server_setup_status.setText(
+                "Server setup is complete. The metadata cache folder will be created if needed."
+            )
+        running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
+        self.start_button.setEnabled(not running and cache_configured and assets_ready)
 
     def closeEvent(self, event) -> None:
         self._save_timer.stop()

@@ -8,6 +8,7 @@ from tripsite.gui.settings import (
     SettingsError,
     default_settings,
     load_settings,
+    prepare_metadata_cache,
     save_settings,
     write_library_file,
 )
@@ -15,6 +16,21 @@ from tripsite.library import read_trip_list, trip_args
 
 
 class GuiSettingsTests(unittest.TestCase):
+    def test_metadata_cache_folder_is_created_and_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "cache" / "metadata"
+            self.assertEqual(prepare_metadata_cache(str(cache)), cache.resolve())
+            self.assertTrue(cache.is_dir())
+
+            existing_file = Path(tmp) / "not-a-folder"
+            existing_file.write_text("data", encoding="utf-8")
+            with self.assertRaisesRegex(SettingsError, "Could not create the metadata cache folder"):
+                prepare_metadata_cache(str(existing_file))
+
+    def test_metadata_cache_folder_is_required(self):
+        with self.assertRaisesRegex(SettingsError, "Choose a metadata cache folder"):
+            prepare_metadata_cache("  ")
+
     def test_settings_round_trip_and_default_merge(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config" / "settings.json"

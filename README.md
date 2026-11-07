@@ -111,17 +111,26 @@ settings are saved automatically and restored on the next launch:
 - Windows: `%APPDATA%\TripServer\settings.json`
 - Linux: `$XDG_CONFIG_HOME/tripserver/settings.json`, or `~/.config/tripserver/settings.json`
 
-Use **Start server** to serve all listed trips, or **Generate site** to
-build them under the selected output folder. The Server tab includes
-`--editor-link-only`, read-only mode, LAN access, and request logging.
-Build and Advanced tabs expose media, date, GPS, map-cache, and host
-settings. Choose **Help** in the app for an end-user description of every
-setting. Drag trips in the list to change their library order.
+The app separates the two tasks into **Run a Live Server** and **Create a
+Site**. The live server shares an editable (or read-only) site from your
+computer; the site generator writes a copy to the output folder you choose.
+The live-server screen groups its own settings together, and the site screen
+contains only options for the generated site. Choose **Help** for plain-language
+descriptions of each setting. Drag trips in the list to change their order.
+
+Before starting the live server in the app, configure a **Metadata cache
+folder** and download the **Offline assets**. The cache keeps a JSON index per
+trip of media file sizes, modification times, and extracted metadata, so
+unchanged files do not need to be scanned again on later starts. It does not
+store media copies. The default cache location is under TripServer's
+application-support folder. Offline assets are the local map interface library
+and fonts; map tiles are separate and are fetched from the configured provider
+unless you set a tile cache. These setup requirements apply to the GUI live
+server, not to static site generation.
 
 The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
 command-line tools. PySide6 is optional and is not installed for CLI-only
-users. To create offline map assets, use **Download offline assets** once
-while connected to the internet.
+users. Download offline assets while connected to the internet.
 
 ## Step by step
 
@@ -422,7 +431,7 @@ Options:
   and requests slower than two seconds are printed.
 
 The GUI's **Help** window describes each field, its units, defaults and
-effect. Map tile, metadata index and allowed-host settings apply to the
+effect. Map tile, metadata cache and allowed-host settings apply to the
 live server; the output folder and force-regeneration setting apply to
 static site generation.
 
