@@ -9,6 +9,7 @@ from tripsite.gui.settings import (
     default_settings,
     load_settings,
     prepare_metadata_cache,
+    prepare_tile_cache,
     save_settings,
     write_library_file,
 )
@@ -31,6 +32,14 @@ class GuiSettingsTests(unittest.TestCase):
         with self.assertRaisesRegex(SettingsError, "Choose a metadata cache folder"):
             prepare_metadata_cache("  ")
 
+    def test_map_tile_cache_folder_is_created_and_required(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            cache = Path(tmp) / "cache" / "tiles"
+            self.assertEqual(prepare_tile_cache(str(cache)), cache.resolve())
+            self.assertTrue(cache.is_dir())
+        with self.assertRaisesRegex(SettingsError, "Choose a map tile cache folder"):
+            prepare_tile_cache("")
+
     def test_settings_round_trip_and_default_merge(self):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config" / "settings.json"
@@ -46,6 +55,8 @@ class GuiSettingsTests(unittest.TestCase):
             )
             self.assertTrue(loaded["server"]["editor_link_only"])
             self.assertEqual(loaded["build"]["thumb_size"], 400)
+            self.assertEqual(loaded["server"]["large_thumb_size"], 2400)
+            self.assertTrue(loaded["advanced"]["tile_cache"])
 
     def test_legacy_trip_paths_are_migrated_and_time_zones_are_validated(self):
         settings = default_settings()
@@ -147,6 +158,10 @@ class GuiCommandTests(unittest.TestCase):
         self.assertIn("--read-only", command)
         self.assertIn("--lan", command)
         self.assertEqual(command[command.index("--port") + 1], "8123")
+        self.assertEqual(
+            command[command.index("--tile-cache") + 1],
+            self.settings["advanced"]["tile_cache"],
+        )
         from tripsite.server import build_parser
         args = build_parser().parse_args(command[command.index("serve") + 1:])
         self.assertEqual(args.large_thumb_size, 0)
@@ -158,6 +173,11 @@ class GuiCommandTests(unittest.TestCase):
         _, date_range = trip_args(args, entry, self.library)
         self.assertEqual(date_range[0].strftime("%Y-%m-%d"), "2024-05-01")
         self.assertEqual(date_range[1].strftime("%Y-%m-%d"), "2024-05-04")
+
+    def test_server_command_requires_a_tile_cache_folder(self):
+        self.settings["advanced"]["tile_cache"] = ""
+        with self.assertRaisesRegex(ValueError, "map tile cache folder"):
+            server_command("python", self.library, self.settings)
 
     def test_build_command_maps_media_options_and_output(self):
         self.settings["build"].update({

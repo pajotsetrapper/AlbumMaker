@@ -7,7 +7,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QSize, QTimer, Qt
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt
 from PySide6.QtGui import QFont, QDoubleValidator
 from PySide6.QtWidgets import (
     QApplication,
@@ -19,12 +19,10 @@ from PySide6.QtWidgets import (
     QFormLayout,
     QFrame,
     QGroupBox,
+    QHeaderView,
     QHBoxLayout,
-    QInputDialog,
     QLabel,
     QLineEdit,
-    QListWidget,
-    QListWidgetItem,
     QMainWindow,
     QMessageBox,
     QPlainTextEdit,
@@ -33,16 +31,19 @@ from PySide6.QtWidgets import (
     QSizePolicy,
     QSpinBox,
     QSplitter,
+    QTableWidget,
+    QTableWidgetItem,
     QTabWidget,
     QTextBrowser,
     QVBoxLayout,
     QWidget,
+    QComboBox,
 )
 
 from .commands import build_command, offline_assets_command, server_command
-from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache, save_settings,
-                       settings_path, write_library_file)
-from ..timezones import get_timezone, timezone_choices
+from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
+                       prepare_tile_cache, save_settings, settings_path, write_library_file)
+from ..timezones import timezone_choices
 from ..offline import vendor_ready
 from ..util import project_dir
 
@@ -50,7 +51,7 @@ PROJECT_ROOT = project_dir()
 
 APP_STYLE = """
 QMainWindow, QWidget { background: #f4f6f9; color: #172033; font-size: 13px; }
-QFrame#header, QGroupBox, QListWidget, QTabWidget::pane, QPlainTextEdit {
+QFrame#header, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit {
     background: #ffffff; border: 1px solid #dfe4ec; border-radius: 9px;
 }
 QFrame#header { border: 0; }
@@ -70,9 +71,12 @@ QLineEdit, QSpinBox, QPlainTextEdit {
     selection-background-color: #315fce;
 }
 QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus { border-color: #537ddd; }
-QListWidget { padding: 5px; }
-QListWidget::item { border-radius: 5px; padding: 3px 6px; }
-QListWidget::item:selected { background: #e7eefc; color: #173c88; }
+QTableWidget { gridline-color: #e6eaf0; }
+QTableWidget::item:selected { background: #e7eefc; color: #173c88; }
+QComboBox {
+    background: #ffffff; border: 1px solid #cfd7e3; border-radius: 6px;
+    padding: 5px 7px; selection-background-color: #315fce;
+}
 QTabBar::tab {
     background: #e9edf3; border-top-left-radius: 7px; border-top-right-radius: 7px;
     padding: 9px 14px; margin-right: 3px;
@@ -93,16 +97,23 @@ saved automatically on this computer.</p>
 <ul>
 <li><b>Add folders:</b> choose multiple trip folders in the folder picker.
 Existing entries are skipped.</li>
-<li><b>Time zone:</b> select one or more trips and choose an IANA time zone,
-such as <code>Europe/Paris</code> or <code>Asia/Tokyo</code>. This is saved
-with each folder and handles daylight-saving changes. Automatic leaves
-timestamps to the existing metadata-based behavior.</li>
+<li><b>Time zone:</b> choose a zone from that trip's Time zone column, such as
+<code>Europe/Paris</code>. It is saved with the folder and handles daylight-saving changes.
+<b>Automatic</b> does not guess the trip's location. Photo EXIF times stay as recorded. For videos,
+the shared Default video UTC offset is used if set; otherwise iPhone local timestamps are kept as
+recorded and other UTC capture times use this computer's time zone. Choose a named zone when you
+want a consistent trip-local time, especially for video. For GPS-track matching, TripServer uses
+offsets recorded in the files first, then the same day's media, then the trip zone or default
+offset, and finally the trip's overall media offsets when available.</li>
+<li><b>Default video UTC offset:</b> optional fallback for trips set to Automatic, shared by live
+server and site generation. Enter hours east of UTC (for example, <code>2</code> or <code>-5.5</code>).
+Leave blank to use the automatic video handling described above.</li>
 <li><b>Remove:</b> removes selected folders from the library; it never
 deletes photos or generated files.</li>
-<li><b>Folder order:</b> drag trips to change their order on the library page.</li>
+<li><b>Folder order:</b> select one trip and use <b>Move up</b> or <b>Move down</b> to change its order.</li>
 </ul>
 <h3>Run a Live Server</h3>
-<p>The live server scans your folders, then hosts a site in your browser. The two setup items at
+<p>The live server scans your folders, then hosts a site in your browser. All three setup items at
 the top of this screen are required:</p>
 <ul>
 <li><b>Metadata cache folder:</b> required. Stores a small JSON index per trip with each media
@@ -113,14 +124,19 @@ The default is TripServer's application-support folder.</li>
 <li><b>Offline assets:</b> required in this app before starting the server. Downloads local copies
 of the map library and fonts once, so those interface assets are served locally. Map backgrounds
 (tiles) are separate: they come from the configured map provider unless you use a tile cache.</li>
+<li><b>Map tile cache folder:</b> required. Stores map tiles as they are viewed, preventing repeat
+downloads and allowing previously viewed map areas to work offline. The folder is created if needed.</li>
 </ul>
 <p>Other live server settings:</p>
 <ul>
 <li><b>Port:</b> local web-server port (1–65535; default 8000); open the shown URL in a browser.</li>
 <li><b>Image cache:</b> maximum memory for generated thumbnails and converted photos (16–65536 MB;
 default 512 MB).</li>
-<li><b>High-resolution thumbnail:</b> larger preview size in pixels (default 1600); it must be larger than the
-normal thumbnail size, or Off disables it.</li>
+<li><b>High-resolution thumbnail:</b> a larger preview used for large gallery tiles and trip cards on
+high-pixel-density screens, so small thumbnails do not look soft when enlarged. It is measured by its
+longest side in pixels. The live-server default is 2400 pixels, a good choice for Full HD and 4K displays;
+the server creates these previews on demand. It must exceed the normal thumbnail size. Larger images
+need more processing and memory; Off disables them.</li>
 <li><b>Allow other devices on my network:</b> lets devices on the local network view the site.
 Off by default. There is no password, so use only a trusted network.</li>
 <li><b>Disable all in-page editing:</b> prevents edits to captions, favorites, hidden photos,
@@ -134,11 +150,11 @@ and slow requests are shown. On by default in the desktop app.</li>
 <ul>
 <li><b>Output folder:</b> where the generated, shareable website is written.</li>
 <li><b>Thumbnail size:</b> maximum thumbnail dimension in pixels (16–4096; default 400).</li>
-<li><b>High-resolution thumbnail:</b> optional larger version in pixels; Off by default and otherwise it must
-be larger than the normal thumbnail size. The live server uses 1600 by default.</li>
-<li><b>Video UTC offset:</b> optional fixed offset in hours (for example 2 or -5.5; blank by default) for video
-timestamps when no trip-specific time zone is set. If blank, iPhone videos use their recorded local time and
-other videos use this computer's time zone. Per-trip time zones take precedence.</li>
+<li><b>High-resolution thumbnail:</b> optional larger version for large gallery tiles and trip cards on
+high-pixel-density screens, so small thumbnails do not look soft when enlarged. It is measured by its
+longest side in pixels. 2400 pixels is a good choice for Full HD and 4K displays; Off is the default for
+generated sites, and any enabled value must be larger than the normal thumbnail size. Larger images
+increase build time and site size.</li>
 <li><b>Parallel workers:</b> number of files processed simultaneously. Automatic uses
 available CPU cores and is the default.</li>
 <li><b>Optional date range:</b> include the start and end dates (YYYY-MM-DD) for every trip;
@@ -159,8 +175,6 @@ when GPS tracks are disabled.</li>
 </ul>
 <h3>Additional live server settings</h3>
 <ul>
-<li><b>Tile cache folder:</b> for the live server, stores map tiles as they are viewed, so they can be reused offline.
-Blank by default.</li>
 <li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
 <code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap.</li>
 <li><b>Allowed host names:</b> for the live server, additional host names the server may answer to, one per line.
@@ -170,7 +184,8 @@ Blank by default; use only for a trusted custom local DNS name.</li>
 <ul>
 <li><b>Start server:</b> starts the live site for all listed trips after required server setup is complete.</li>
 <li><b>Create site:</b> creates a static copy in the chosen output folder.</li>
-<li><b>Stop:</b> stops the running server or site generation. Progress and errors appear in Activity.</li>
+<li><b>Stop current task:</b> appears while a server, site generation, or offline-assets download is running.
+Progress and errors appear in Activity.</li>
 </ul>
 """
 
@@ -253,7 +268,7 @@ class MainWindow(QMainWindow):
 
         self.stop_button = QPushButton("Stop current task")
         self.stop_button.setObjectName("stop")
-        self.stop_button.setEnabled(False)
+        self.stop_button.setVisible(False)
         outer.addWidget(self.stop_button, alignment=Qt.AlignmentFlag.AlignRight)
 
         panes = QSplitter(Qt.Orientation.Horizontal)
@@ -293,6 +308,7 @@ class MainWindow(QMainWindow):
         self.build_button.clicked.connect(self._build_site)
         self.offline_button.clicked.connect(self._fetch_offline_assets)
         self.index_cache.textChanged.connect(self._update_server_setup)
+        self.tile_cache.textChanged.connect(self._update_server_setup)
 
     def _build_library_panel(self) -> QWidget:
         panel = QWidget()
@@ -300,34 +316,55 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 8, 0)
         layout.setSpacing(9)
         layout.addWidget(_label("Trip library"))
-        layout.addWidget(_label("Add folders in bulk; select trips to set their time zone.",
+        layout.addWidget(_label("Add folders in bulk and choose a time zone for each trip.",
                                 "muted"))
-        self.trip_list = QListWidget()
-        self.trip_list.setToolTip(
-            "Drag folders to change their order. Select one or more trips to set their time zone."
+        self.trip_table = QTableWidget(0, 2)
+        self.trip_table.setHorizontalHeaderLabels(["Trip folder", "Time zone"])
+        self.trip_table.setToolTip(
+            "Select rows to remove trips. Choose a time zone directly from its dropdown."
         )
-        self.trip_list.setDragDropMode(QListWidget.DragDropMode.InternalMove)
-        self.trip_list.setDefaultDropAction(Qt.DropAction.MoveAction)
-        self.trip_list.setSelectionMode(QListWidget.SelectionMode.ExtendedSelection)
-        self.trip_list.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.trip_list, 1)
+        self.trip_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
+        self.trip_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
+        self.trip_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.trip_table.setAlternatingRowColors(True)
+        self.trip_table.verticalHeader().setVisible(False)
+        header = self.trip_table.horizontalHeader()
+        header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
+        self.trip_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
+        layout.addWidget(self.trip_table, 1)
+
+        video_time_box, video_time_form = _group("Automatic video times")
+        self.tz_offset = QLineEdit()
+        self.tz_offset.setPlaceholderText("Use computer time zone")
+        self.tz_offset.setValidator(QDoubleValidator(-24.0, 24.0, 2, self.tz_offset))
+        self.tz_offset.setToolTip(
+            "Optional fixed UTC offset in hours for videos when a trip uses Automatic. "
+            "This applies to both the live server and generated sites."
+        )
+        video_time_form.addRow("Default video UTC offset", self.tz_offset)
+        layout.addWidget(video_time_box)
 
         buttons = QHBoxLayout()
         self.add_trip_button = QPushButton("Add folders")
-        self.timezone_button = QPushButton("Set time zone…")
         self.remove_trip_button = QPushButton("Remove")
         buttons.addWidget(self.add_trip_button)
         buttons.addWidget(self.remove_trip_button)
         layout.addLayout(buttons)
-        layout.addWidget(self.timezone_button)
+        order_buttons = QHBoxLayout()
+        self.move_trip_up_button = QPushButton("Move up")
+        self.move_trip_down_button = QPushButton("Move down")
+        order_buttons.addWidget(self.move_trip_up_button)
+        order_buttons.addWidget(self.move_trip_down_button)
+        layout.addLayout(order_buttons)
         self.trip_count = _label("0 folders", "muted")
         layout.addWidget(self.trip_count)
 
         self.add_trip_button.clicked.connect(self._add_trip)
-        self.timezone_button.clicked.connect(self._set_trip_timezone)
         self.remove_trip_button.clicked.connect(self._remove_trips)
-        self.trip_list.itemSelectionChanged.connect(self._update_trip_selection)
-        self.trip_list.model().rowsMoved.connect(self._schedule_save)
+        self.move_trip_up_button.clicked.connect(lambda: self._move_selected_trip(-1))
+        self.move_trip_down_button.clicked.connect(lambda: self._move_selected_trip(1))
+        self.trip_table.itemSelectionChanged.connect(self._update_trip_selection)
         return panel
 
     def _build_settings_panel(self) -> QTabWidget:
@@ -341,7 +378,7 @@ class MainWindow(QMainWindow):
         setup_box = QGroupBox("One-time server setup")
         setup_layout = QVBoxLayout(setup_box)
         setup_intro = _label(
-            "These two items are required before the live server can start. You only need to set them up once.",
+            "All three items are required before the live server can start. The folders are created if needed.",
             "muted",
         )
         setup_intro.setWordWrap(True)
@@ -350,6 +387,9 @@ class MainWindow(QMainWindow):
         self.index_cache = QLineEdit()
         self.index_cache.setPlaceholderText("Choose where TripServer should store the metadata index")
         cache_form.addRow("Metadata cache folder", self._path_field(self.index_cache, directory=True))
+        self.tile_cache = QLineEdit()
+        self.tile_cache.setPlaceholderText("Choose where viewed map tiles should be saved")
+        cache_form.addRow("Map tile cache folder", self._path_field(self.tile_cache, directory=True))
         setup_layout.addLayout(cache_form)
         self.metadata_cache_help = _label(
             "Stores a small index of file size, modified time and extracted metadata (capture date, "
@@ -384,6 +424,9 @@ class MainWindow(QMainWindow):
         self.server_large_thumb_size.setRange(0, 4096)
         self.server_large_thumb_size.setSpecialValueText("Off")
         self.server_large_thumb_size.setSuffix(" px")
+        self.server_large_thumb_size.setToolTip(
+            "Maximum width or height for larger previews. 2400 pixels is recommended for Full HD and 4K displays."
+        )
         form.addRow("High-resolution thumbnail", self.server_large_thumb_size)
 
         self.lan = QCheckBox("Allow other devices on my network to connect")
@@ -405,8 +448,6 @@ class MainWindow(QMainWindow):
         network_note.setWordWrap(True)
 
         maps_box, maps_form = _group("Maps and network (optional)")
-        self.tile_cache = QLineEdit()
-        maps_form.addRow("Map tile cache folder", self._path_field(self.tile_cache, directory=True))
         self.tile_url = QLineEdit()
         self.tile_url.setPlaceholderText("Use the default map provider")
         self.tile_url.setToolTip("Optional custom URL template must include {z}, {x}, and {y}.")
@@ -453,12 +494,10 @@ class MainWindow(QMainWindow):
         self.large_thumb_size.setRange(0, 4096)
         self.large_thumb_size.setSpecialValueText("Off")
         self.large_thumb_size.setSuffix(" px")
+        self.large_thumb_size.setToolTip(
+            "Maximum width or height for larger generated previews. 2400 pixels is recommended for Full HD and 4K displays."
+        )
         media_form.addRow("High-resolution thumbnail", self.large_thumb_size)
-        self.tz_offset = QLineEdit()
-        self.tz_offset.setPlaceholderText("Automatic")
-        self.tz_offset.setValidator(QDoubleValidator(-24.0, 24.0, 2, self.tz_offset))
-        self.tz_offset.setToolTip("Optional UTC offset in hours for video timestamps, e.g. 2 or -5.5.")
-        media_form.addRow("Video UTC offset (hours)", self.tz_offset)
         self.workers = QSpinBox()
         self.workers.setRange(0, 256)
         self.workers.setSpecialValueText("Automatic")
@@ -547,7 +586,9 @@ class MainWindow(QMainWindow):
         self.gpx_files.setPlainText("\n".join(build["gpx_files"]))
 
         advanced = self.settings["advanced"]
-        self.tile_cache.setText(str(advanced["tile_cache"]))
+        self.tile_cache.setText(
+            str(advanced["tile_cache"] or default_settings()["advanced"]["tile_cache"])
+        )
         self.tile_url.setText(str(advanced["tile_url"]))
         self.index_cache.setText(
             str(advanced["index_cache"] or default_settings()["advanced"]["index_cache"])
@@ -556,7 +597,6 @@ class MainWindow(QMainWindow):
         self._update_date_controls()
         self.gpx_files.setEnabled(not self.no_gpx.isChecked())
         self._update_trip_count()
-        self._update_trip_selection()
         self._update_server_setup()
 
     def _connect_persistence(self) -> None:
@@ -587,27 +627,46 @@ class MainWindow(QMainWindow):
         self.date_end.setEnabled(enabled)
 
     def _add_trip_item(self, path: str, timezone_name: str = "") -> None:
-        folder = Path(path).expanduser()
-        item = QListWidgetItem()
-        item.setData(Qt.ItemDataRole.UserRole, str(folder))
-        item.setData(Qt.ItemDataRole.UserRole + 1, timezone_name)
-        self._refresh_trip_item(item)
-        self.trip_list.addItem(item)
+        self._insert_trip_item(self.trip_table.rowCount(), path, timezone_name)
 
-    def _refresh_trip_item(self, item: QListWidgetItem) -> None:
-        folder = Path(item.data(Qt.ItemDataRole.UserRole)).expanduser()
-        timezone_name = item.data(Qt.ItemDataRole.UserRole + 1) or ""
-        zone_label = timezone_name or "Automatic"
-        item.setText(f"{folder.name or str(folder)}  —  {zone_label}")
-        item.setToolTip(f"{folder}\nTime zone: {zone_label}")
-        if not folder.is_dir():
-            item.setToolTip(f"{folder}\nFolder not found\nTime zone: {zone_label}")
-        item.setSizeHint(QSize(0, 31))
+    def _insert_trip_item(self, row: int, path: str, timezone_name: str = "") -> None:
+        folder = Path(path).expanduser()
+        self.trip_table.insertRow(row)
+        trip_item = QTableWidgetItem(folder.name or str(folder))
+        trip_item.setFlags(trip_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
+        trip_item.setData(Qt.ItemDataRole.UserRole, str(folder))
+        trip_item.setToolTip(
+            f"{folder}\nFolder not found" if not folder.is_dir() else str(folder)
+        )
+        self.trip_table.setItem(row, 0, trip_item)
+
+        zone_combo = QComboBox()
+        zone_combo.addItem("Automatic", "")
+        for zone_name in timezone_choices():
+            zone_combo.addItem(zone_name, zone_name)
+        if timezone_name:
+            zone_combo.setCurrentIndex(zone_combo.findData(timezone_name))
+        zone_combo.setMaxVisibleItems(20)
+        zone_combo.setToolTip(
+            "Automatic does not infer a trip location. Photos keep their EXIF times. Videos use the shared default offset if set; otherwise iPhone local times are kept and other UTC times use this computer's time zone."
+        )
+        zone_combo.currentIndexChanged.connect(
+            lambda *_args, combo=zone_combo: self._on_timezone_changed(combo)
+        )
+        self.trip_table.setCellWidget(row, 1, zone_combo)
+        self.trip_table.setRowHeight(row, 34)
+
+    def _on_timezone_changed(self, combo: QComboBox) -> None:
+        position = combo.mapTo(self.trip_table.viewport(), combo.rect().center())
+        index = self.trip_table.indexAt(position)
+        if index.isValid():
+            self.trip_table.selectRow(index.row())
+        self._schedule_save()
 
     def _trip_paths(self) -> list[str]:
         return [
-            str(self.trip_list.item(index).data(Qt.ItemDataRole.UserRole))
-            for index in range(self.trip_list.count())
+            str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole))
+            for row in range(self.trip_table.rowCount())
         ]
 
     def _add_trip(self) -> None:
@@ -644,49 +703,44 @@ class MainWindow(QMainWindow):
                 f"Added {added} folder(s). Skipped {skipped} folder(s) already in the library.",
             )
 
-    def _set_trip_timezone(self) -> None:
-        selected = self.trip_list.selectedItems()
-        if not selected:
-            QMessageBox.information(self, "Select trips", "Select one or more trips before setting a time zone.")
-            return
-        selected_zones = {
-            item.data(Qt.ItemDataRole.UserRole + 1) or "Automatic"
-            for item in selected
-        }
-        mixed = len(selected_zones) > 1
-        zones = ["Automatic"] + (["Multiple time zones"] if mixed else []) + timezone_choices()
-        current = "Multiple time zones" if mixed else next(iter(selected_zones))
-        current_index = zones.index(current) if current in zones else 0
-        chosen, accepted = QInputDialog.getItem(
-            self, "Set trip time zone", "Time zone for the selected trip folder(s):",
-            zones, current_index, True,
-        )
-        if not accepted or chosen == "Multiple time zones":
-            return
-        timezone_name = "" if chosen.strip().lower() == "automatic" else chosen.strip()
-        try:
-            if timezone_name:
-                get_timezone(timezone_name)
-        except ValueError as exc:
-            QMessageBox.warning(self, "Unknown time zone", str(exc))
-            return
-        for item in selected:
-            item.setData(Qt.ItemDataRole.UserRole + 1, timezone_name)
-            self._refresh_trip_item(item)
-        self._schedule_save()
-
-    def _update_trip_selection(self) -> None:
-        self.timezone_button.setEnabled(bool(self.trip_list.selectedItems()))
-
     def _remove_trips(self) -> None:
-        for item in self.trip_list.selectedItems():
-            self.trip_list.takeItem(self.trip_list.row(item))
+        rows = sorted(
+            {index.row() for index in self.trip_table.selectionModel().selectedRows()},
+            reverse=True,
+        )
+        for row in rows:
+            self.trip_table.removeRow(row)
         self._update_trip_count()
         self._schedule_save()
 
+    def _move_selected_trip(self, direction: int) -> None:
+        selected = self.trip_table.selectionModel().selectedRows()
+        if len(selected) != 1:
+            return
+        row = selected[0].row()
+        destination = row + direction
+        if not 0 <= destination < self.trip_table.rowCount():
+            return
+        trip = self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
+        timezone_name = self.trip_table.cellWidget(row, 1).currentData() or ""
+        self.trip_table.removeRow(row)
+        self._insert_trip_item(destination, trip, timezone_name)
+        self.trip_table.selectRow(destination)
+        self._schedule_save()
+
+    def _update_trip_selection(self) -> None:
+        selected = self.trip_table.selectionModel().selectedRows()
+        can_move = len(selected) == 1
+        row = selected[0].row() if can_move else -1
+        self.move_trip_up_button.setEnabled(can_move and row > 0)
+        self.move_trip_down_button.setEnabled(
+            can_move and row < self.trip_table.rowCount() - 1
+        )
+
     def _update_trip_count(self) -> None:
-        count = self.trip_list.count()
+        count = self.trip_table.rowCount()
         self.trip_count.setText(f"{count} folder" + ("" if count == 1 else "s"))
+        self._update_trip_selection()
 
     def _browse_output(self) -> None:
         selected = QFileDialog.getExistingDirectory(
@@ -710,10 +764,10 @@ class MainWindow(QMainWindow):
             "version": self.settings["version"],
             "trips": [
                 {
-                    "path": str(self.trip_list.item(index).data(Qt.ItemDataRole.UserRole)),
-                    "timezone": self.trip_list.item(index).data(Qt.ItemDataRole.UserRole + 1) or "",
+                    "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
+                    "timezone": self.trip_table.cellWidget(row, 1).currentData() or "",
                 }
-                for index in range(self.trip_list.count())
+                for row in range(self.trip_table.rowCount())
             ],
             "output_dir": self.output_dir.text().strip(),
             "server": {
@@ -823,6 +877,8 @@ class MainWindow(QMainWindow):
         try:
             cache_folder = prepare_metadata_cache(self.index_cache.text())
             self.index_cache.setText(str(cache_folder))
+            tile_cache_folder = prepare_tile_cache(self.tile_cache.text())
+            self.tile_cache.setText(str(tile_cache_folder))
             library = self._prepare_library()
             arguments = server_command(sys.executable, library, self.settings)
         except (OSError, SettingsError, ValueError, KeyError) as exc:
@@ -922,10 +978,14 @@ class MainWindow(QMainWindow):
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
         self.start_button.setEnabled(
-            not running and vendor_ready() and bool(self.index_cache.text().strip())
+            not running
+            and vendor_ready()
+            and bool(self.index_cache.text().strip())
+            and bool(self.tile_cache.text().strip())
         )
         self.build_button.setEnabled(not running)
         self.offline_button.setEnabled(not running)
+        self.stop_button.setVisible(running)
         self.stop_button.setEnabled(running)
         if not running:
             self._update_server_setup()
@@ -933,6 +993,7 @@ class MainWindow(QMainWindow):
     def _update_server_setup(self, *_args) -> None:
         assets_ready = vendor_ready()
         cache_configured = bool(self.index_cache.text().strip())
+        tile_cache_configured = bool(self.tile_cache.text().strip())
         self.offline_status.setText(
             "Offline assets are ready."
             if assets_ready
@@ -944,6 +1005,8 @@ class MainWindow(QMainWindow):
         requirements = []
         if not cache_configured:
             requirements.append("Choose a metadata cache folder")
+        if not tile_cache_configured:
+            requirements.append("choose a map tile cache folder")
         if not assets_ready:
             requirements.append("download the offline assets")
         if requirements:
@@ -952,10 +1015,12 @@ class MainWindow(QMainWindow):
             )
         else:
             self.server_setup_status.setText(
-                "Server setup is complete. The metadata cache folder will be created if needed."
+                "Server setup is complete. The cache folders will be created if needed."
             )
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
-        self.start_button.setEnabled(not running and cache_configured and assets_ready)
+        self.start_button.setEnabled(
+            not running and cache_configured and tile_cache_configured and assets_ready
+        )
 
     def closeEvent(self, event) -> None:
         self._save_timer.stop()

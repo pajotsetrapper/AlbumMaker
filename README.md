@@ -116,17 +116,32 @@ Site**. The live server shares an editable (or read-only) site from your
 computer; the site generator writes a copy to the output folder you choose.
 The live-server screen groups its own settings together, and the site screen
 contains only options for the generated site. Choose **Help** for plain-language
-descriptions of each setting. Drag trips in the list to change their order.
+descriptions of each setting. Select one trip and use **Move up** or **Move
+down** to change its order.
 
-Before starting the live server in the app, configure a **Metadata cache
-folder** and download the **Offline assets**. The cache keeps a JSON index per
-trip of media file sizes, modification times, and extracted metadata, so
-unchanged files do not need to be scanned again on later starts. It does not
-store media copies. The default cache location is under TripServer's
-application-support folder. Offline assets are the local map interface library
-and fonts; map tiles are separate and are fetched from the configured provider
-unless you set a tile cache. These setup requirements apply to the GUI live
-server, not to static site generation.
+Before starting the live server in the app, set up the **Metadata cache
+folder**, the **Map tile cache folder**, and the **Offline assets**. Both cache
+folders are created if needed and must be writable. By default they are under
+TripServer's application-support folder. The metadata cache keeps a JSON index
+per trip of media file sizes, modification times, and extracted metadata, so
+unchanged files do not need to be scanned again on later starts; it does not
+store media copies. The tile cache keeps map tiles after they are viewed, so
+they don't need to be downloaded again and remain available offline. Offline
+assets are the local map interface library and fonts. These setup requirements
+apply to the GUI live server, not to static site generation.
+
+The GUI's live-server high-resolution thumbnail defaults to **2400 pixels**
+(longest side), a sensible balance for Full HD and 4K displays. Only larger
+gallery tiles and trip cards on high-pixel-density displays use it, avoiding
+soft-looking images when a small thumbnail is enlarged. The server creates
+these previews on demand; they cost more processing and memory than normal
+thumbnails. For generated sites the larger thumbnails are off by default;
+2400 pixels is also a good setting when you want them.
+**Automatic** in a trip's time-zone dropdown is not a location guess: photo
+EXIF times stay as recorded. For videos, the shared default UTC offset is used
+if set; otherwise iPhone local times are kept as recorded and other UTC times
+are converted to the computer's local time zone. The shared **Default video
+UTC offset** control is below the trip library and applies to both workflows.
 
 The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
 command-line tools. PySide6 is optional and is not installed for CLI-only
