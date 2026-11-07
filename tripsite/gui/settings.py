@@ -39,7 +39,7 @@ def default_settings() -> dict:
         "output_dir": str(Path.home() / "TripSites"),
         "server": {
             "port": 8000,
-            "large_thumb_size": 1600,
+            "large_thumb_size": 2400,
             "lan": False,
             "read_only": False,
             "editor_link_only": False,
@@ -62,7 +62,7 @@ def default_settings() -> dict:
             "gpx_files": [],
         },
         "advanced": {
-            "tile_cache": "",
+            "tile_cache": str(config_dir() / "tile-cache"),
             "tile_url": "",
             "index_cache": str(config_dir() / "metadata-cache"),
             "allow_hosts": [],
@@ -218,21 +218,30 @@ def write_library_file(trips: list, path: Path) -> Path:
     return path
 
 
-def prepare_metadata_cache(path: str) -> Path:
-    """Create and validate the required on-disk cache folder for GUI server mode."""
+def _prepare_cache_folder(path: str, label: str) -> Path:
     value = str(path).strip()
     if not value:
-        raise SettingsError("Choose a metadata cache folder before starting the live server.")
+        raise SettingsError(f"Choose a {label} folder before starting the live server.")
     folder = Path(value).expanduser()
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:
-        raise SettingsError(f"Could not create the metadata cache folder {folder}: {exc}") from exc
+        raise SettingsError(f"Could not create the {label} folder {folder}: {exc}") from exc
     if not folder.is_dir():
-        raise SettingsError(f"The metadata cache path is not a folder: {folder}")
+        raise SettingsError(f"The {label} path is not a folder: {folder}")
     try:
         with tempfile.TemporaryFile(dir=folder):
             pass
     except OSError as exc:
-        raise SettingsError(f"Could not write to the metadata cache folder {folder}: {exc}") from exc
+        raise SettingsError(f"Could not write to the {label} folder {folder}: {exc}") from exc
     return folder.resolve()
+
+
+def prepare_metadata_cache(path: str) -> Path:
+    """Create and validate the required metadata cache folder for GUI server mode."""
+    return _prepare_cache_folder(path, "metadata cache")
+
+
+def prepare_tile_cache(path: str) -> Path:
+    """Create and validate the required map tile cache folder for GUI server mode."""
+    return _prepare_cache_folder(path, "map tile cache")

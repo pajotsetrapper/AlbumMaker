@@ -100,11 +100,14 @@ def _library_with_date_range(
 
 def server_command(python: str, library_file: Path, settings: dict) -> list[str]:
     server, build, advanced = settings["server"], settings["build"], settings["advanced"]
-    _validate_common(build, int(server.get("large_thumb_size", 1600)))
+    _validate_common(build, int(server.get("large_thumb_size", 2400)))
     if not 1 <= int(server["port"]) <= 65535:
         raise ValueError("Port must be between 1 and 65535.")
     if int(server.get("memory_cache_mb", 512)) < 16:
         raise ValueError("Image cache must be at least 16 MB.")
+    tile_cache = str(advanced.get("tile_cache", "")).strip()
+    if not tile_cache:
+        raise ValueError("Choose a map tile cache folder before starting the live server.")
     tile_url = str(advanced.get("tile_url", "")).strip()
     if tile_url and not (
         tile_url.startswith(("http://", "https://"))
@@ -117,13 +120,13 @@ def server_command(python: str, library_file: Path, settings: dict) -> list[str]
     args.extend(("--port", str(server["port"])))
     args.extend(_shared_options(build))
     _append_value(args, "--thumb-size", build.get("thumb_size", "400"))
-    _append_value(args, "--large-thumb-size", server.get("large_thumb_size", "1600"))
+    _append_value(args, "--large-thumb-size", server.get("large_thumb_size", "2400"))
     _append_value(args, "--memory-cache-mb", server.get("memory_cache_mb", "512"))
     _append_bool(args, server.get("lan", False), "--lan")
     _append_bool(args, server.get("read_only", False), "--read-only")
     _append_bool(args, server.get("editor_link_only", False), "--editor-link-only")
     _append_bool(args, server.get("verbose", True), "--verbose")
-    _append_value(args, "--tile-cache", advanced.get("tile_cache", ""))
+    _append_value(args, "--tile-cache", tile_cache)
     _append_value(args, "--tile-url", advanced.get("tile_url", ""))
     _append_value(args, "--index-cache", advanced.get("index_cache", ""))
     for hostname in advanced.get("allow_hosts", []):
