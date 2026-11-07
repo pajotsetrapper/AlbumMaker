@@ -32,29 +32,47 @@ def _load_template(name: str):
 _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
 
 
-def get_template_name(content: dict, template_type: str) -> str:
-    """Get the template name for a specific template type from trip content.
+def _resolve_template_names(content: dict) -> tuple[str, str]:
+    """Normalize the template config accepted by the project.
 
-    The old `template` key is a legacy theme name that applies to both pages,
-    but the built-in default theme still needs the day page to use the day
-    template while the index page keeps the homepage layout.
+    Supported forms are:
+      - {"template": "modern"}
+      - {"templates": {"index": "modern", "day": "modern"}}
+      - {"trip_content": {"templates": {...}}}
+
+    The legacy single-name form applies to both pages. A `default` theme is
+    resolved to the built-in split default theme: index uses `index.html`, day
+    uses `day.html`.
     """
-    if 'trip_content' in content and 'templates' in content['trip_content']:
-        templates = content['trip_content']['templates']
-        if template_type == 'index' and 'index' in templates:
-            return templates['index']
-        if template_type == 'day' and 'day' in templates:
-            return templates['day']
-        if template_type == 'day' and 'index' in templates:
-            return templates['index']
+    templates = content.get("templates") if isinstance(content.get("templates"), dict) else {}
+    trip_content = content.get("trip_content")
+    if isinstance(trip_content, dict):
+        trip_templates = trip_content.get("templates")
+        if isinstance(trip_templates, dict):
+            templates = {**trip_templates, **templates}
 
-    legacy = content.get('template')
+    legacy = content.get("template")
     if isinstance(legacy, str):
-        if legacy == 'default':
-            return 'default' if template_type == 'index' else 'day'
-        return legacy
+        if not templates.get("index"):
+            templates["index"] = legacy
+        if not templates.get("day"):
+            templates["day"] = legacy
 
-    return 'default' if template_type == 'index' else 'day'
+    index_name = templates.get("index") or "index"
+    day_name = templates.get("day") or templates.get("index") or "day"
+
+    if index_name == "default":
+        index_name = "index"
+    if day_name == "default":
+        day_name = "day"
+
+    return index_name, day_name
+
+
+def get_template_name(content: dict, template_type: str) -> str:
+    """Return the configured template name for one page type."""
+    index_name, day_name = _resolve_template_names(content)
+    return {"index": index_name, "day": day_name}[template_type]
 
 
 def get_template(template_name: str):
@@ -75,12 +93,10 @@ LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
 
 def get_templates_for_content(content: dict):
     """Get the appropriate templates for a given trip content."""
-    index_template_name = get_template_name(content, 'index')
-    day_template_name = get_template_name(content, 'day')
-    
+    index_template_name, day_template_name = _resolve_template_names(content)
     return {
-        'index': get_template(index_template_name),
-        'day': get_template(day_template_name)
+        "index": get_template(index_template_name),
+        "day": get_template(day_template_name),
     }
 
 
