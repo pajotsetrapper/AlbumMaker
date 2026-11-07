@@ -20,6 +20,7 @@ sections after it are the full reference.
 
 **Contents:**
 [Quick start](#quick-start) ·
+[Desktop app](#desktop-app) ·
 [Step by step](#step-by-step) ·
 [1. Install](#1-install) ·
 [2a. Static site](#2a-build-a-static-site-generate_sitepy) ·
@@ -52,6 +53,10 @@ python trip_server.py --fetch-offline-assets
 
 # Several trips at once, one page linking them (see "Several trips"):
 python generate_site.py --library trips.txt -o ~/TripSites
+
+# Optional desktop app (Mac, Windows, Linux):
+python -m pip install -r requirements-gui.txt
+python trip_gui.py
 ```
 
 A `.gpx` track in the photos folder is picked up by itself (see "GPS
@@ -78,6 +83,41 @@ Both use the same `requirements.txt` and the same `trip_content.json`
 format, so you can switch between them, or use both, at any time. A
 typical workflow is to curate in the live server, then run
 `generate_site.py` to produce the version you share.
+
+## Desktop app
+
+The optional desktop app provides a resizable interface for managing a
+trip library, starting the live server, generating static sites, and
+watching progress and HTTP requests. It uses the same server and build
+commands as the terminal tools.
+
+Install the normal project requirements and the optional GUI dependency,
+then launch it from the project folder:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-gui.txt
+python trip_gui.py
+# Or: python -m tripsite gui
+```
+
+Add each trip's photo folder to the library. The folder list and GUI
+settings are saved automatically and restored on the next launch:
+
+- macOS: `~/Library/Application Support/TripServer/settings.json`
+- Windows: `%APPDATA%\TripServer\settings.json`
+- Linux: `$XDG_CONFIG_HOME/tripserver/settings.json`, or `~/.config/tripserver/settings.json`
+
+Use **Start server** to serve all listed trips, or **Generate site** to
+build them under the selected output folder. The Server tab includes
+`--editor-link-only`, read-only mode, LAN access, and request logging.
+Build and Advanced tabs expose the most-used media, date, GPS, map-cache,
+and host settings. Drag trips in the list to change their library order.
+
+The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
+command-line tools. PySide6 is optional and is not installed for CLI-only
+users. To create offline map assets, use **Download offline assets** once
+while connected to the internet.
 
 ## Step by step
 

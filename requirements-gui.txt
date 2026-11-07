@@ -1,0 +1,2 @@
+# Optional cross-platform desktop interface. Install requirements.txt first.
+PySide6>=6.6
