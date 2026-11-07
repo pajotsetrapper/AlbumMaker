@@ -34,28 +34,27 @@ _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
 
 def get_template_name(content: dict, template_type: str) -> str:
     """Get the template name for a specific template type from trip content.
-    
-    Args:
-        content: The trip content dictionary
-        template_type: Either 'index' or 'day'
-        
-    Returns:
-        Template name (e.g., 'default', 'modern') or None if not specified
+
+    The old `template` key is a legacy theme name that applies to both pages,
+    but the built-in default theme still needs the day page to use the day
+    template while the index page keeps the homepage layout.
     """
-    # Check if there's a template setting in the content
     if 'trip_content' in content and 'templates' in content['trip_content']:
         templates = content['trip_content']['templates']
         if template_type == 'index' and 'index' in templates:
             return templates['index']
-        elif template_type == 'day' and 'day' in templates:
+        if template_type == 'day' and 'day' in templates:
             return templates['day']
-    
-    # Check for legacy template setting
-    if 'template' in content:
-        return content['template']
-    
-    # Default to 'default' if no specific template is set
-    return 'default'
+        if template_type == 'day' and 'index' in templates:
+            return templates['index']
+
+    legacy = content.get('template')
+    if isinstance(legacy, str):
+        if legacy == 'default':
+            return 'default' if template_type == 'index' else 'day'
+        return legacy
+
+    return 'default' if template_type == 'index' else 'day'
 
 
 def get_template(template_name: str):
@@ -67,9 +66,10 @@ def get_template(template_name: str):
         return _JINJA.get_template("default.html")
 
 
-# Global template instances - these will be dynamically loaded based on trip content
-INDEX_TEMPLATE = _JINJA.get_template("default.html")
-DAY_TEMPLATE = _JINJA.get_template("default.html")
+# Default templates for the project itself. Individual trips may override
+# these through trip_content.json with templates['index'] / templates['day'].
+INDEX_TEMPLATE = _JINJA.get_template("index.html")
+DAY_TEMPLATE = _JINJA.get_template("day.html")
 LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
 
 
@@ -258,6 +258,7 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
     ranks = _day_ranks(days)
     d = days[i]
     title, desc = _day_title(d, content, ranks)
+    templates = get_templates_for_content(content)
 
     items_ctx, slides, route_thumbs, route_slide_indices = [], [], [], []
     for idx, it in enumerate(d.items):
