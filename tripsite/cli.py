@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from .offline import add_offline_args  # noqa: F401  (re-exported for the scripts)
+from .timezones import get_timezone
 
 
 def large_thumb_size_arg(value: str) -> int:
@@ -73,3 +74,16 @@ def add_location_args(parser):
     parser.add_argument("--no-places", action="store_true",
                         help="Don't show place names (the nearest town to each photo, looked up "
                              "offline).")
+
+
+def add_timezone_arg(parser):
+    def valid_timezone(value):
+        try:
+            get_timezone(value)
+        except ValueError as exc:
+            raise argparse.ArgumentTypeError(str(exc)) from exc
+        return value
+
+    parser.add_argument("--timezone", type=valid_timezone, default=None, metavar="IANA_NAME",
+                        help="IANA time zone for video UTC timestamps and GPS-track matching, "
+                             "for example Europe/Paris. It accounts for daylight-saving changes.")

@@ -11,6 +11,7 @@ import unittest
 from datetime import datetime
 from pathlib import Path
 from types import SimpleNamespace
+from types import SimpleNamespace
 from unittest import mock
 
 from .helpers import (TempDirMixin, TripServer, install_app, make_gpx, make_jpeg, read_json, run_script,
@@ -197,8 +198,64 @@ class TimeZoneTests(unittest.TestCase):
                          ts("2026-05-01T15:00:00Z"), "its own offset comes first")
         self.assertIsNone(zones.utc_timestamp(item(fallback=True)), "no real date, no match")
 
+    def test_named_time_zone_matches_video_and_photo_dates_across_dst(self):
+        zones = gpx.TimeZones([], timezone_name="Europe/Paris")
+        self.assertEqual(
+            zones.utc_timestamp(item("2026-01-15 12:00")),
+            ts("2026-01-15T11:00:00Z"),
+        )
+        self.assertEqual(
+            zones.utc_timestamp(item("2026-07-15 12:00")),
+            ts("2026-07-15T10:00:00Z"),
+        )
+        self.assertEqual(
+            zones.for_day("2026-03-29"),
+            60,
+            "The day's local-midnight offset is used while track bounds use the DST-aware zone",
+        )
+
+    def test_day_track_bounds_follow_a_23_hour_local_day(self):
+        points = [
+            ("2026-03-28T22:55:00Z", 9.0, 9.0),
+            ("2026-03-28T23:05:00Z", 0.0, 1.0),
+            ("2026-03-28T23:10:00Z", 0.0, 2.0),
+            ("2026-03-29T21:50:00Z", 1.0, 1.0),
+            ("2026-03-29T21:55:00Z", 1.0, 2.0),
+            ("2026-03-29T22:00:00Z", 2.0, 1.0),
+            ("2026-03-29T22:05:00Z", 2.0, 2.0),
+        ]
+        track = gpx.Track([[(ts(when), lat, lon) for when, lat, lon in points]])
+        day = SimpleNamespace(date_key="2026-03-29", is_unknown=False)
+        zones = gpx.TimeZones(
+            [item("2026-03-29 12:00", offset=120, src="exif")],
+            timezone_name="Europe/Paris",
+        )
+        gpx.attach_day_tracks([day], track, zones)
+        self.assertEqual(
+            day.track,
+            [[[0.0, 1.0], [0.0, 2.0]], [[1.0, 1.0], [1.0, 2.0]]],
+        )
+
 
 class OffsetMetadataTests(TempDirMixin, unittest.TestCase):
+    def test_video_utc_time_uses_named_zone_and_daylight_saving(self):
+        from types import SimpleNamespace
+
+        payload = {"format": {"tags": {"creation_time": "2026-07-15T10:00:00Z"}}}
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+        with mock.patch("tripsite.metadata.subprocess.run", return_value=result):
+            found = metadata.read_video_metadata(Path("video.mp4"), timezone_name="Europe/Paris")
+        self.assertEqual(found["dt"], datetime(2026, 7, 15, 12, 0))
+        self.assertEqual(found["utc_offset"], 120)
+
+    def test_video_metadata_cache_is_specific_to_named_zone(self):
+        found = {"dt": datetime(2026, 7, 15, 12, 0)}
+        cached = metadata.meta_to_json(found, timezone_name="Europe/Paris")
+        self.assertEqual(metadata.meta_from_json(cached, media_type="video",
+                                                 timezone_name="Europe/Paris"), found)
+        self.assertIsNone(metadata.meta_from_json(cached, media_type="video",
+                                                  timezone_name="Asia/Tokyo"))
+
     def test_exif_offset_and_gps_time_stamp(self):
         tmp = self.make_tmp()
         stated = metadata.read_image_metadata(make_jpeg(tmp / "a.jpg", "2026:05:01 10:00:00", offset="+09:00"))

@@ -101,7 +101,10 @@ python trip_gui.py
 # Or: python -m tripsite gui
 ```
 
-Add each trip's photo folder to the library. The folder list and GUI
+Use **Add folders** to select several trip photo folders at once. Select
+one or more trips and choose **Set time zone…** to save an IANA time zone
+for those folders (for example, `Europe/Paris`); the setting follows each
+folder and accounts for daylight-saving changes. The folder list and GUI
 settings are saved automatically and restored on the next launch:
 
 - macOS: `~/Library/Application Support/TripServer/settings.json`
@@ -111,8 +114,9 @@ settings are saved automatically and restored on the next launch:
 Use **Start server** to serve all listed trips, or **Generate site** to
 build them under the selected output folder. The Server tab includes
 `--editor-link-only`, read-only mode, LAN access, and request logging.
-Build and Advanced tabs expose the most-used media, date, GPS, map-cache,
-and host settings. Drag trips in the list to change their library order.
+Build and Advanced tabs expose media, date, GPS, map-cache, and host
+settings. Choose **Help** in the app for an end-user description of every
+setting. Drag trips in the list to change their library order.
 
 The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
 command-line tools. PySide6 is optional and is not installed for CLI-only
@@ -245,7 +249,7 @@ See [2c. Several trips](#2c-several-trips-a-library).
 | Keep a photo out of what others see | Open it and click **Hide**. It stays visible (dimmed) to you only, and isn't copied into a static site. |
 | Let family on my home Wi-Fi look | Start the server with `--lan`; it prints the address to give them ([2b](#2b-serve-it-live-trip_serverpy)). |
 | Edit from my phone or another computer | Open the editor link the server prints at startup on that device ([4](#4-editing-in-the-page-live-server)). |
-| Fix photos that landed on the wrong day or in "Unsorted" | See [Troubleshooting](#troubleshooting) (`--date-range`, `--tz-offset`). |
+| Fix photos that landed on the wrong day or in "Unsorted" | See [Troubleshooting](#troubleshooting) (`--date-range`, `--timezone`, `--tz-offset`). |
 | Use it without internet | Run `--fetch-offline-assets` once while online ([5](#5-working-without-internet)). |
 | Keep my route private | Leave the `.gpx` file out of the folder, or add `--no-gpx`. |
 
@@ -317,6 +321,10 @@ Options:
   build" below.
 - `--tz-offset`: fixed UTC offset in hours (e.g. `2` or `-5.5`) for video
   timestamps. See "Video timestamps" below.
+- `--timezone IANA_NAME`: named time zone, such as `Europe/Paris`, for
+  video timestamps and GPS-track matching. Unlike a fixed offset, it
+  follows daylight-saving changes. Use instead of (not together with)
+  `--tz-offset`. Photos' EXIF clock times are unchanged.
 - `--date-range START END`: the dates your files should fall between,
   e.g. `--date-range 2026-04-28 2026-05-10` (both days included). Files
   dated outside it go to "Unsorted". See "Dates that look wrong" below.
@@ -387,7 +395,7 @@ Options:
   trick where a web page you visit tries to read your local server
   through its own domain name. You only need this if you reach the
   computer through a custom local DNS name.
-- `--thumb-size`, `--tz-offset`, `--date-range`, `--no-date-check`,
+- `--thumb-size`, `--tz-offset`, `--timezone`, `--date-range`, `--no-date-check`,
   `--no-dedupe`, `--no-live-photos`, `--gpx`, `--no-gpx`, `--no-places`,
   `--fetch-offline-assets`: same as for `generate_site.py`.
 - `--large-thumb-size PIXELS`: the size of the larger thumbnails that are
@@ -413,6 +421,11 @@ Options:
 - `--verbose`: log every request. Normally only errors (other than 404)
   and requests slower than two seconds are printed.
 
+The GUI's **Help** window describes each field, its units, defaults and
+effect. Map tile, metadata index and allowed-host settings apply to the
+live server; the output folder and force-regeneration setting apply to
+static site generation.
+
 Apart from `trip_content.json` (and the tile folder or index cache, if you
 use them), the server writes nothing to disk, and it writes to the JSON
 file only when you save an edit in the page (plus, at startup, blank
@@ -432,14 +445,14 @@ file, one photos folder per line:
 # trips.txt
 /Volumes/Photos/2024 Japan
 ~/Pictures/Italy 2025          | italy
-/Volumes/NAS/Family/Iceland     | iceland | --tz-offset 0 --no-dedupe
+/Volumes/NAS/Family/Iceland     | iceland | --timezone Asia/Reykjavik --no-dedupe
 ```
 
 Each line is a photos folder, then optionally, after `|`, the name the
 trip gets in web addresses and as its folder (otherwise it's made from
 the folder's name: `2024 Japan` becomes `2024-japan`), then optionally,
 after another `|`, options for that trip only. Those can be `-c`,
-`--tz-offset`, `--date-range`, `--no-date-check`, `--no-dedupe`,
+`--tz-offset`, `--timezone`, `--date-range`, `--no-date-check`, `--no-dedupe`,
 `--no-live-photos`, `--gpx`, `--no-gpx` and `--no-places`; everything
 else comes from the command line. `-c` and `--date-range` only make sense
 for one trip, so with `--library` they're refused on the command line
@@ -447,6 +460,10 @@ and belong on a trip's line. Relative paths are relative to the list
 file: write the full path (starting with `/`, or a drive letter such as
 `C:\` on Windows) to point anywhere else. Quotes around a path are fine
 but not needed. Lines starting with `#` are comments.
+
+Use either `--timezone IANA_NAME` or `--tz-offset HOURS` on a trip line,
+not both. A trip's setting overrides the command-line default; the named
+time zone also accounts for daylight-saving changes.
 
 ```bash
 # every trip into its own folder under ~/TripSites, plus a page linking them
@@ -778,9 +795,11 @@ Matching needs the moment each photo was taken in UTC, but cameras
 record local clock time. The offset comes from the file where it's
 recorded (the EXIF offset most phones and newer cameras write, a phone's
 GPS time stamp, an iPhone video's local time). For a file that doesn't
-say, the offset most of that day's other files state is used, else
-`--tz-offset`, else the one most of the trip states. If none of these is
-known, the startup message says so: pass `--tz-offset`. A camera whose
+say, the offset most of that day's other files state is used, else the
+selected `--timezone` or `--tz-offset`, else the one most of the trip
+states. If none of these is known, the startup message says so: pass
+`--timezone` (recommended for trips with daylight-saving changes) or
+`--tz-offset`. A camera whose
 clock was simply set wrong will be placed wrongly; fix its clock (or the
 files' times) first.
 
@@ -1096,13 +1115,15 @@ so none of this applies there. The exceptions:
 - **Video timestamps.**
   - iPhone videos also record the local time where they were shot, and
     that's used as-is, just like a photo's EXIF time. No timezone
-    setting is needed for them.
+    setting is needed unless you choose a trip time zone.
   - Other videos only store `creation_time`, in UTC. By default it's
     converted using the timezone of the computer running the script,
     which is only right if that matches the trip's timezone.
-  - If a day's videos land on the wrong side of midnight, pass
-    `--tz-offset` with the trip's UTC offset. This then applies to
-    every video, iPhone ones included.
+  - To set the trip's time zone explicitly, use `--timezone Europe/Paris`
+    (or another IANA name). It applies daylight-saving rules and overrides
+    the recorded local time in iPhone video metadata too.
+  - Alternatively, use `--tz-offset` with the trip's fixed UTC offset.
+    This applies to every video, iPhone ones included.
   - Photos are unaffected, since camera EXIF times are already local.
 - **GPS.** For photos, the location comes from EXIF GPS data. For videos,
   it comes from the `location` / ISO-6709 tag (what iPhones write), when
@@ -1214,12 +1235,12 @@ so none of this applies there. The exceptions:
   message says how many were placed. Check that the track covers the
   time the photos were taken (a track that ends before you took them
   can't place them). If the message says their time zone is unknown,
-  pass `--tz-offset` with the trip's UTC offset in hours, e.g.
-  `--tz-offset 9` for Japan.
+  pass `--timezone Asia/Tokyo` (or `--tz-offset 9` for a fixed offset)
+  for Japan.
 - **Photos were placed at the wrong spot on the track.** Usually the
   camera's clock was off (set to home time, or not changed for daylight
   saving). Placing uses the time each photo was taken, so fix the camera
-  time (or `--tz-offset` for a whole trip) and build again.
+  time (or `--timezone` / `--tz-offset` for a whole trip) and build again.
 - **No place names appear, or an odd town is named.** Only photos with a
   location get one. The name comes from a list of every place with at
   least 1000 inhabitants, weighing distance against size, so in the

@@ -19,14 +19,31 @@ class GuiSettingsTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "config" / "settings.json"
             settings = default_settings()
-            settings["trips"] = ["/photos/Japan"]
+            settings["trips"] = [{"path": "/photos/Japan", "timezone": "Asia/Tokyo"}]
             settings["server"]["editor_link_only"] = True
             save_settings(settings, path)
 
             loaded = load_settings(path)
-            self.assertEqual(loaded["trips"], ["/photos/Japan"])
+            self.assertEqual(
+                loaded["trips"],
+                [{"path": "/photos/Japan", "timezone": "Asia/Tokyo"}],
+            )
             self.assertTrue(loaded["server"]["editor_link_only"])
             self.assertEqual(loaded["build"]["thumb_size"], 400)
+
+    def test_legacy_trip_paths_are_migrated_and_time_zones_are_validated(self):
+        settings = default_settings()
+        settings["trips"] = ["/photos/Italy"]
+        with tempfile.TemporaryDirectory() as tmp:
+            path = Path(tmp) / "settings.json"
+            save_settings(settings, path)
+            self.assertEqual(
+                load_settings(path)["trips"],
+                [{"path": "/photos/Italy", "timezone": ""}],
+            )
+            settings["trips"] = [{"path": "/photos/Italy", "timezone": "Not/AZone"}]
+            with self.assertRaisesRegex(SettingsError, "Unknown IANA time zone"):
+                save_settings(settings, path)
 
     def test_rejects_invalid_settings_version_and_shape(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -52,6 +69,32 @@ class GuiSettingsTests(unittest.TestCase):
             entries = read_trip_list(library)
             self.assertEqual(len(entries), 1)
             self.assertEqual(entries[0].path.resolve(), trip.resolve())
+
+    def test_writes_each_trip_time_zone_into_library_options(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            japan = Path(tmp) / "Japan Family Trip"
+            japan.mkdir()
+            france = Path(tmp) / "France"
+            france.mkdir()
+            library = write_library_file(
+                [
+                    {"path": str(japan), "timezone": "Asia/Tokyo"},
+                    {"path": str(france), "timezone": "Europe/Paris"},
+                ],
+                Path(tmp) / "gui-trip-library.txt",
+            )
+            entries = read_trip_list(library)
+            self.assertEqual(len(entries), 2)
+            self.assertEqual(entries[0].options, ["--timezone", "Asia/Tokyo"])
+            self.assertEqual(entries[1].options, ["--timezone", "Europe/Paris"])
+            args = __import__("argparse").Namespace(
+                input=None, content=None, tz_offset=2.0, timezone=None, no_dedupe=False,
+                no_live_photos=False, date_range=None, no_date_check=False, gpx=[],
+                no_gpx=False, no_places=False, thumb_size=400,
+            )
+            trip_args_out, _ = trip_args(args, entries[0], library)
+            self.assertEqual(trip_args_out.timezone, "Asia/Tokyo")
+            self.assertIsNone(trip_args_out.tz_offset)
 
     def test_library_path_delimiters_are_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -122,6 +165,17 @@ class GuiCommandTests(unittest.TestCase):
         self.assertEqual(
             read_trip_list(self.library)[0].options[-3:],
             ["--date-range", "2024-05-01", "2024-05-03"],
+        )
+
+    def test_date_range_appends_to_per_trip_timezone(self):
+        timezone_library = write_library_file(
+            [{"path": str(self.trip), "timezone": "Asia/Tokyo"}],
+            self.root / "timezone-library.txt",
+        )
+        build_command("python", timezone_library, str(self.root / "out"), self.settings)
+        self.assertEqual(
+            read_trip_list(timezone_library)[0].options,
+            ["--timezone", "Asia/Tokyo", "--date-range", "2024-05-01", "2024-05-03"],
         )
 
     def test_invalid_date_range_and_thumbnail_sizes_are_rejected(self):

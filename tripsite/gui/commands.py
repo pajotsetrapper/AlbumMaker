@@ -85,7 +85,15 @@ def _library_with_date_range(
     start, end = date_range
     lines = []
     for line in library_file.read_text(encoding="utf-8").splitlines():
-        lines.append(f"{line} | | --date-range {start} {end}")
+        parts = line.split("|")
+        option = f"--date-range {start} {end}"
+        if len(parts) == 1:
+            parts.extend(("", f" {option}"))
+        elif len(parts) == 3:
+            parts[2] += f" {option}"
+        else:
+            raise ValueError("The generated trip library file has an invalid line.")
+        lines.append(" | ".join(part.strip() for part in parts))
     library_file.write_text("\n".join(lines) + "\n", encoding="utf-8")
     return library_file
 
