@@ -1,20 +1,22 @@
-"""Working without internet: local copies of Leaflet and the fonts in a
-`vendor` folder (--fetch-offline-assets), pinned and checksum-verified."""
+"""Working without internet: checksum-verified local Leaflet and font assets."""
 
 from __future__ import annotations
 
 import base64
 import hashlib
 import io
+import os
 import re
 import sys
 import tarfile
+import tempfile
 import urllib.error
 import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
+from .app_paths import offline_assets_dir
 from .util import atomic_write_bytes, project_dir
 
 # --------------------------------------------------------------------------
@@ -24,22 +26,23 @@ from .util import atomic_write_bytes, project_dir
 # default all of that comes from the internet. To make the pages independent
 # of it, run this once while you're online:
 #
-#     python trip_server.py --fetch-offline-assets
+#     python album_server.py --fetch-offline-assets
 #
-# That saves Leaflet and the fonts in a `vendor` folder next to these scripts,
+# That saves Leaflet and the fonts in AlbumMaker's per-user data directory,
 # and from then on both scripts use those local copies. Map tiles can be
-# cached too (trip_server.py --tile-cache DIR), and wherever no tile is
+# cached too (album_server.py --tile-cache DIR), and wherever no tile is
 # available the maps show a rough outline of the continents instead of
 # nothing, so the points on them still make sense.
 # --------------------------------------------------------------------------
 
-VENDOR_DIR = project_dir() / "vendor"   # next to the scripts (or the .pyz)
+VENDOR_DIR = offline_assets_dir()
+LEGACY_VENDOR_DIR = project_dir() / "vendor"
 DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 _NPM_REGISTRY = "https://registry.npmjs.org"
 
 # Exact versions, each with the SHA-512 that npm publishes for it, so what
-# ends up in `vendor` is exactly what was reviewed: a download that doesn't
+# ends up in the offline-assets folder is exactly what was reviewed: a download that doesn't
 # match is refused.
 _VENDOR_PACKAGES = {
     "leaflet": ("leaflet", "1.9.4",
@@ -75,7 +78,24 @@ def vendor_ready(vendor_dir: Optional[Path] = None) -> bool:
     VERSIONS.txt is written last, so a download that was interrupted
     part-way never counts as ready."""
     d = Path(vendor_dir or VENDOR_DIR)
+    if vendor_dir is None and not d.exists() and _vendor_ready_at(LEGACY_VENDOR_DIR):
+        try:
+            import shutil
+            d.parent.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryDirectory(dir=d.parent, prefix=".offline-assets-") as tmp:
+                staged = Path(tmp) / d.name
+                shutil.copytree(LEGACY_VENDOR_DIR, staged)
+                os.replace(staged, d)
+        except OSError as exc:
+            raise OSError(
+                f"Could not migrate offline assets to {d}: {exc}"
+            ) from exc
     return all((d / f).is_file() for f in
+               ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
+
+
+def _vendor_ready_at(directory: Path) -> bool:
+    return all((directory / f).is_file() for f in
                ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
 
 
@@ -84,7 +104,7 @@ def _download_package(key: str, wanted: set) -> dict:
     checksum, and return {path inside the package: bytes} for the wanted files."""
     name, version, integrity = _VENDOR_PACKAGES[key]
     url = f"{_NPM_REGISTRY}/{name}/-/{name.split('/')[-1]}-{version}.tgz"
-    req = urllib.request.Request(url, headers={"User-Agent": "TripSite-offline-assets/1.0"})
+    req = urllib.request.Request(url, headers={"User-Agent": "AlbumMaker-offline-assets/1.0"})
     with urllib.request.urlopen(req, timeout=60) as resp:
         data = resp.read(60_000_000)
     digest = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode("ascii")
@@ -118,8 +138,7 @@ def _font_faces(css_text: str, slug: str, weight: int) -> tuple:
 
 
 def fetch_offline_assets(vendor_dir: Optional[Path] = None) -> int:
-    """Download Leaflet and the fonts into `vendor_dir` (default: `vendor`
-    next to these scripts). Returns a process exit code."""
+    """Download Leaflet and the fonts into the user data directory by default."""
     vendor_dir = Path(vendor_dir or VENDOR_DIR)
     files = {}   # path inside vendor -> bytes
     try:
@@ -172,7 +191,6 @@ def fetch_offline_assets(vendor_dir: Optional[Path] = None) -> int:
 
 def add_offline_args(parser):
     parser.add_argument("--fetch-offline-assets", action="store_true",
-                        help="Download Leaflet and the fonts into a 'vendor' folder next to these "
-                             "scripts (needs internet, once), then exit. Afterwards the pages load "
-                             "them from there instead of from the internet.")
-
+                        help="Download Leaflet and the fonts into AlbumMaker's user data folder "
+                             "(needs internet, once), then exit. Afterwards the pages load them "
+                             "from there instead of from the internet.")

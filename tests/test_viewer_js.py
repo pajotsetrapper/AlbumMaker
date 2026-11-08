@@ -15,7 +15,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, TripServer, install_app, make_gpx, make_jpeg,
+from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, AlbumMaker, install_app, make_gpx, make_jpeg,
                       make_video, run_script, standard_trip, write_json)
 
 JS_DIR = Path(__file__).resolve().parent / "js"
@@ -67,7 +67,7 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
         cls.app = install_app(cls.tmp / "app", with_vendor=vendor)
 
         write_json(cls.tmp / "content.json", INITIAL_CONTENT)
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp, "--tz-offset", "0").start()
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp, "--tz-offset", "0").start()
         cls.addClassCleanup(cls.server.stop)
 
         static_content = write_json(cls.tmp / "static-content.json", INITIAL_CONTENT)

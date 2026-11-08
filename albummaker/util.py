@@ -83,26 +83,26 @@ def script_json(obj) -> Markup:
 
 
 def _resource(*parts: str):
-    path = resources.files("tripsite")
+    path = resources.files("albummaker")
     for part in parts:      # one at a time: joinpath(a, b) needs Python 3.11 inside a zipapp
         path = path.joinpath(part)
     return path
 
 
 def read_resource(*parts: str) -> str:
-    """A text file shipped inside the tripsite package (static/, templates/)."""
+    """A text file shipped inside the albummaker package (static/, templates/)."""
     return _resource(*parts).read_text(encoding="utf-8")
 
 
 def read_resource_bytes(*parts: str) -> bytes:
-    """A binary file shipped inside the tripsite package (data/)."""
+    """A binary file shipped inside the albummaker package (data/)."""
     return _resource(*parts).read_bytes()
 
 
 def project_dir() -> Path:
-    """The folder holding the scripts (and the optional `vendor` folder). When
+    """The folder holding the scripts. When
     running from a zipapp, that is the folder the .pyz file is in."""
     here = Path(__file__).resolve().parent.parent
-    while not here.is_dir():          # .../tripsite.pyz/tripsite -> .../tripsite.pyz
+    while not here.is_dir():          # .../albummaker.pyz/albummaker -> .../albummaker.pyz
         here = here.parent
     return here

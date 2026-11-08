@@ -14,11 +14,11 @@ from types import SimpleNamespace
 from types import SimpleNamespace
 from unittest import mock
 
-from .helpers import (TempDirMixin, TripServer, install_app, make_gpx, make_jpeg, read_json, run_script,
+from .helpers import (TempDirMixin, AlbumMaker, install_app, make_gpx, make_jpeg, read_json, run_script,
                       slides_of, write_json)
 
-from tripsite import gpx, metadata, places, scan  # noqa: E402  (helpers puts the project on sys.path)
-from tripsite.model import DayGroup, MediaItem  # noqa: E402
+from albummaker import gpx, metadata, places, scan  # noqa: E402  (helpers puts the project on sys.path)
+from albummaker.model import DayGroup, MediaItem  # noqa: E402
 
 KYOTO_STATION = (34.9858, 135.7588)
 KINKAKUJI = (35.0394, 135.7292)
@@ -243,7 +243,7 @@ class OffsetMetadataTests(TempDirMixin, unittest.TestCase):
 
         payload = {"format": {"tags": {"creation_time": "2026-07-15T10:00:00Z"}}}
         result = SimpleNamespace(returncode=0, stdout=json.dumps(payload))
-        with mock.patch("tripsite.metadata.subprocess.run", return_value=result):
+        with mock.patch("albummaker.metadata.subprocess.run", return_value=result):
             found = metadata.read_video_metadata(Path("video.mp4"), timezone_name="Europe/Paris")
         self.assertEqual(found["dt"], datetime(2026, 7, 15, 12, 0))
         self.assertEqual(found["utc_offset"], 120)
@@ -504,7 +504,7 @@ class ServerLocationTests(TempDirMixin, unittest.TestCase):
         make_jpeg(photos / "camera_nara.jpg", "2026:05:01 14:00:00", color=(1, 1, 200))
         kyoto_track(photos)
         write_json(cls.tmp / "content.json", {})
-        cls.server = TripServer(app, photos, cls.tmp).start()
+        cls.server = AlbumMaker(app, photos, cls.tmp).start()
         cls.addClassCleanup(cls.server.stop)
 
     def test_the_live_server_shows_the_same(self):

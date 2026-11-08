@@ -28,7 +28,7 @@ function showToast(msg, isError){
   toastTimer = setTimeout(() => { el.style.display = 'none'; }, isError ? 5000 : 2200);
 }
 
-// Saves an edit through trip_server.py. Returns the parsed reply, or null
+// Saves an edit through album_server.py. Returns the parsed reply, or null
 // (after showing why) if it didn't work.
 async function apiPost(path, body){
   try {
@@ -373,7 +373,7 @@ let currentSlide = 0;
 let infoPanelOpen = false;
 let infoMap = null;
 let infoMarker = null;
-let EDITABLE = false;     // true only when trip_server.py says this viewer may edit
+let EDITABLE = false;     // true only when album_server.py says this viewer may edit
 let DAY_KEY = '';
 let FAV_ONLY = false;
 let lastFocus = null;
@@ -838,7 +838,7 @@ function closeInfoPanel(){
   scheduleAdvance();
 }
 
-// ---------- favorites filter, and editing (editing only when trip_server.py allows it) ----------
+// ---------- favorites filter, and editing (editing only when album_server.py allows it) ----------
 function updateFavUi(){
   const btn = document.getElementById('fav-filter');
   if(!btn) return;

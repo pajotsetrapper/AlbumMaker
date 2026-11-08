@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Rebuild tripsite/data/places.tsv.gz, the offline list of towns used for
+"""Rebuild albummaker/data/places.tsv.gz, the offline list of towns used for
 place names, from GeoNames (https://www.geonames.org/, CC BY 4.0):
 
     python tools/build_places.py
@@ -25,7 +25,7 @@ import zipfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
-TARGET = ROOT / "tripsite" / "data" / "places.tsv.gz"
+TARGET = ROOT / "albummaker" / "data" / "places.tsv.gz"
 SOURCE = "https://download.geonames.org/export/dump/"
 
 # GeoNames feature codes for real towns and villages. Left out: PPLX (a
@@ -36,7 +36,7 @@ KEEP = {"PPL", "PPLA", "PPLA2", "PPLA3", "PPLA4", "PPLA5", "PPLC", "PPLG", "PPLL
 
 
 def fetch(name: str) -> bytes:
-    req = urllib.request.Request(SOURCE + name, headers={"User-Agent": "TripSite-build-places/1.0"})
+    req = urllib.request.Request(SOURCE + name, headers={"User-Agent": "AlbumMaker-build-places/1.0"})
     with urllib.request.urlopen(req, timeout=120) as resp:
         return resp.read()
 

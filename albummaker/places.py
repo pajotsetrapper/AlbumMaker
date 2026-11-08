@@ -1,5 +1,5 @@
 """Place names without the internet: the nearest town to each photo, from a
-list of ~160,000 towns shipped in tripsite/data/places.tsv.gz (GeoNames,
+list of ~160,000 towns shipped in albummaker/data/places.tsv.gz (GeoNames,
 CC BY 4.0; rebuilt by tools/build_places.py).
 
 "Nearest" weighs distance against size: a photo in a city's outskirts is

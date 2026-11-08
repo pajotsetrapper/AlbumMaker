@@ -1,5 +1,5 @@
 """The pages: Jinja templates, CSS and JavaScript (real files in
-tripsite/templates and tripsite/static), and the data that fills them. Both
+albummaker/templates and albummaker/static), and the data that fills them. Both
 scripts render the same pages; a SiteUrls subclass decides where links point."""
 
 from __future__ import annotations
@@ -102,7 +102,7 @@ def get_templates_for_content(content: dict):
 
 class SiteUrls:
     """Where the pages link to. Each script subclasses this: generate_site
-    links to files by relative path, trip_server to its own routes.
+    links to files by relative path, album_server to its own routes.
     `from_index` is True for links on the homepage rather than a day page,
     which matters for relative paths."""
     footer = ""     # the line at the bottom of every page

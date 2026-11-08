@@ -1,5 +1,5 @@
 """Thumbnails, browser-safe display JPEGs and video preview frames. Both
-scripts use these: generate_site writes the bytes to files, trip_server
+scripts use these: generate_site writes the bytes to files, album_server
 sends (and briefly caches) them. Everything returns encoded bytes."""
 
 from __future__ import annotations

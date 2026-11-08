@@ -237,7 +237,7 @@ img,video{max-width:100%; display:block;}
 .fav-filter[hidden]{display:none;}
 .slideshow-caption .cap-text{font-family:var(--sans); font-size:.95rem; opacity:1; margin-bottom:.25rem; padding:0 3rem;}
 
-/* editing (only rendered for the person running trip_server.py) */
+/* editing (only rendered for the person running album_server.py) */
 .slideshow-edit{display:flex; gap:.6rem; align-items:center; padding:.2rem 1.4rem 1rem;}
 .slideshow-edit[hidden]{display:none;}
 .slideshow-edit input{flex:1; min-width:0; background:rgba(237,230,214,.08); border:1px solid rgba(237,230,214,.3); color:var(--cream); border-radius:6px; padding:.45rem .7rem; font-family:var(--sans); font-size:.9rem;}

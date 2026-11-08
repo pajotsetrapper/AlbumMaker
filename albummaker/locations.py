@@ -1,5 +1,5 @@
-"""Where things were: GPS tracks (tripsite.gpx) and place names
-(tripsite.places), applied the same way by both scripts."""
+"""Where things were: GPS tracks (albummaker.gpx) and place names
+(albummaker.places), applied the same way by both scripts."""
 
 from __future__ import annotations
 

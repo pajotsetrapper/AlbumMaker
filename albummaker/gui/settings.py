@@ -5,10 +5,10 @@ from __future__ import annotations
 import json
 import os
 import shlex
-import sys
 import tempfile
 from pathlib import Path
 from typing import Optional
+from ..app_paths import config_dir, legacy_settings_path, settings_path
 from ..timezones import get_timezone
 
 SETTINGS_VERSION = 1
@@ -18,25 +18,12 @@ class SettingsError(Exception):
     """Settings could not be loaded or saved."""
 
 
-def config_dir() -> Path:
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA")
-        return (Path(base) if base else Path.home() / "AppData" / "Roaming") / "TripServer"
-    if sys.platform == "darwin":
-        return Path.home() / "Library" / "Application Support" / "TripServer"
-    base = os.environ.get("XDG_CONFIG_HOME")
-    return (Path(base) if base else Path.home() / ".config") / "tripserver"
-
-
-def settings_path() -> Path:
-    return config_dir() / "settings.json"
-
-
 def default_settings() -> dict:
     return {
         "version": SETTINGS_VERSION,
         "trips": [],
-        "output_dir": str(Path.home() / "TripSites"),
+        "output_dir": str(Path.home() / "AlbumMakerSites"),
+        "appearance": {"theme": "light"},
         "server": {
             "port": 8000,
             "large_thumb_size": 2400,
@@ -82,6 +69,11 @@ def _merge_defaults(saved: object) -> dict:
     for key in ("trips", "output_dir"):
         if key in saved:
             merged[key] = saved[key]
+    if "appearance" in saved:
+        value = saved["appearance"]
+        if not isinstance(value, dict):
+            raise SettingsError("Settings section 'appearance' must be an object.")
+        merged["appearance"].update(value)
     for section in ("server", "build", "advanced"):
         if section in saved:
             value = saved[section]
@@ -108,6 +100,8 @@ def _merge_defaults(saved: object) -> dict:
     merged["trips"] = trips
     if not isinstance(merged["output_dir"], str):
         raise SettingsError("'output_dir' must be a folder path.")
+    if merged["appearance"]["theme"] not in ("light", "dark"):
+        raise SettingsError("'appearance.theme' must be 'light' or 'dark'.")
     for key in ("port", "large_thumb_size", "memory_cache_mb"):
         value = merged["server"][key]
         if not isinstance(value, int) or isinstance(value, bool):
@@ -156,6 +150,10 @@ def _merge_defaults(saved: object) -> dict:
 
 def load_settings(path: Optional[Path] = None) -> dict:
     path = Path(path or settings_path())
+    if path == settings_path() and not path.exists():
+        legacy_path = legacy_settings_path()
+        if legacy_path.is_file():
+            path = legacy_path
     if not path.exists():
         return default_settings()
     try:
@@ -188,7 +186,7 @@ def save_settings(settings: dict, path: Optional[Path] = None) -> None:
 
 
 def write_library_file(trips: list, path: Path) -> Path:
-    """Write a library list understood by tripsite.library.read_trip_list."""
+    """Write a library list understood by albummaker.library.read_trip_list."""
     if not trips:
         raise SettingsError("Add at least one trip folder before starting.")
     lines = []

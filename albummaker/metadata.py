@@ -248,7 +248,7 @@ def read_image_metadata(path: Path) -> dict:
                 # each time has its own offset tag (EXIF 2.31): DateTimeOriginal ->
                 # OffsetTimeOriginal, DateTimeDigitized -> OffsetTimeDigitized,
                 # DateTime -> OffsetTime. The offset places the photo on a GPX
-                # track (see tripsite.gpx), so it must belong to the time used.
+                # track (see albummaker.gpx), so it must belong to the time used.
                 for time_tag, offset_tag, where in ((36867, 36881, exif_ifd), (36868, 36882, exif_ifd),
                                                     (306, 36880, exif)):
                     dt_str = where.get(time_tag)
@@ -389,7 +389,7 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
                     parsed = parsed.astimezone().replace(tzinfo=None)
                 # the instant is exact, but the offset is only an assumption
                 # (a configured offset/zone, or this computer's zone): "utc", not a vote
-                # for the trip's timezone (see tripsite.gpx.TimeZones)
+                # for the trip's timezone (see albummaker.gpx.TimeZones)
                 meta["utc_offset"] = int(round((parsed - utc).total_seconds() / 60))
                 meta["utc_offset_src"] = "utc"
             meta["dt"] = parsed
@@ -509,7 +509,7 @@ def read_metadata(path: Path, media_type: str, tz_offset: Optional[float] = None
 
 
 class MetadataCache:
-    """A JSON file of {relative path: {size, mtime_ns, meta}} (trip_server
+    """A JSON file of {relative path: {size, mtime_ns, meta}} (album_server
     --index-cache). Only touched from the main thread."""
 
     def __init__(self, path: Optional[Path], tz_offset: Optional[float],

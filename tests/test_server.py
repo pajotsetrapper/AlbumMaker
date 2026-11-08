@@ -1,4 +1,4 @@
-"""trip_server.py running for real: pages, images, byte ranges, the Host check,
+"""album_server.py running for real: pages, images, byte ranges, the Host check,
 hot-reloading of trip_content.json, and the date check."""
 import json
 import re
@@ -10,7 +10,7 @@ from pathlib import Path
 from PIL import Image
 import io
 
-from .helpers import (TempDirMixin, TripServer, day_nav_args, install_app, item_ids, make_jpeg, make_video,
+from .helpers import (TempDirMixin, AlbumMaker, day_nav_args, install_app, item_ids, make_jpeg, make_video,
                       needs_ffmpeg, read_json, run_script, size_toggle, slide_for, slides_of, standard_trip, tc,
                       write_json)
 
@@ -26,7 +26,7 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.photos / "Caf\u00e9 \u2603.jpg", "2026:05:02 14:00:00", color=(4, 5, 6))
         shutil.copy(cls.photos / "a1.jpg", cls.photos / "copy_of_a1.jpg")
         write_json(cls.tmp / "content.json", {"title": "Belgium 2026", "days": {"2026-05-01": {"title": "Canals"}}})
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp).start()
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp).start()
         cls.addClassCleanup(cls.server.stop)
         cls.ids1 = item_ids(cls.server, "2026-05-01")      # a1, a2, a3 in time order
 
@@ -63,7 +63,7 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         self.assertNotIn("copy_of_a1.jpg", names)
 
     def test_the_footer_does_not_claim_nothing_is_written_to_disk(self):
-        self.assertIn("Served live by trip_server.py", self.server.text("/"))
+        self.assertIn("Served live by album_server.py", self.server.text("/"))
         self.assertNotIn("nothing written", self.server.text("/"))
 
     def test_the_startup_message_explains_editing_and_offline_options(self):
@@ -199,7 +199,7 @@ class ServerHotReloadTests(TempDirMixin, unittest.TestCase):
         cls.app = install_app(cls.tmp / "app")
         cls.photos = cls.tmp / "photos"
         standard_trip(cls.photos)
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp).start()
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp).start()
         cls.addClassCleanup(cls.server.stop)
 
     def test_edits_made_in_a_text_editor_show_up_on_refresh(self):
@@ -238,7 +238,7 @@ class ServerDateCheckTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.photos / "reset.jpg", "2000:01:01 00:00:07", color=(2, 2, 2))
 
     def test_wrong_dates_go_to_unsorted_with_an_explanation(self):
-        server = TripServer(self.app, self.photos, self.tmp / "w1").start()
+        server = AlbumMaker(self.app, self.photos, self.tmp / "w1").start()
         self.addCleanup(server.stop)
         self.assertEqual(server.get("/day/1904-01-01")[0], 404)
         self.assertEqual(server.get("/day/2000-01-01")[0], 404)
@@ -247,15 +247,15 @@ class ServerDateCheckTests(TempDirMixin, unittest.TestCase):
         self.assertIn("Date check: 2 file(s)", server.log())
 
     def test_the_check_can_be_disabled_and_ranged(self):
-        off = TripServer(self.app, self.photos, self.tmp / "w2", "--no-date-check").start()
+        off = AlbumMaker(self.app, self.photos, self.tmp / "w2", "--no-date-check").start()
         self.addCleanup(off.stop)
         self.assertEqual(off.get("/day/1904-01-01")[0], 200)
-        ranged = TripServer(self.app, self.photos, self.tmp / "w3", "--date-range", "1900-01-01", "2030-01-01").start()
+        ranged = AlbumMaker(self.app, self.photos, self.tmp / "w3", "--date-range", "1900-01-01", "2030-01-01").start()
         self.addCleanup(ranged.stop)
         self.assertEqual(ranged.get("/day/2000-01-01")[0], 200)
 
     def test_a_bad_range_is_rejected_before_the_server_starts(self):
-        r = run_script(self.app, "trip_server.py", "-i", self.photos, "--date-range", "2026-05-10", "2026-05-01")
+        r = run_script(self.app, "album_server.py", "-i", self.photos, "--date-range", "2026-05-10", "2026-05-01")
         self.assertEqual(r.returncode, 2)
 
 
@@ -270,7 +270,7 @@ class ServerVideoTests(TempDirMixin, unittest.TestCase):
         make_video(cls.photos / "clip.mp4", "2026-05-02T12:00:00Z", seconds=6)
         make_jpeg(cls.photos / "live.jpg", "2026:05:01 14:00:00", color=(70, 70, 70))
         make_video(cls.photos / "live.mov", "2026-05-01T14:00:00Z", seconds=2)
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp, "--tz-offset", "0").start()
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp, "--tz-offset", "0").start()
         cls.addClassCleanup(cls.server.stop)
 
     def id_of(self, day, filename):
@@ -313,24 +313,24 @@ class ServerStartupTests(TempDirMixin, unittest.TestCase):
     def test_a_broken_content_file_stops_the_server_with_a_clear_message(self):
         bad = self.tmp / "bad.json"
         bad.write_text('{"title": }')
-        r = run_script(self.app, "trip_server.py", "-i", self.photos, "-c", bad, "--port", "0", timeout=30)
+        r = run_script(self.app, "album_server.py", "-i", self.photos, "-c", bad, "--port", "0", timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("bad.json", r.stdout + r.stderr)
         self.assertEqual(bad.read_text(), '{"title": }')
 
     def test_a_missing_photos_folder_is_a_clear_error(self):
-        r = run_script(self.app, "trip_server.py", "-i", self.tmp / "nope", timeout=30)
+        r = run_script(self.app, "album_server.py", "-i", self.tmp / "nope", timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertNotIn("Traceback", r.stderr)
 
     def test_the_lan_option_warns_that_there_is_no_login(self):
-        server = TripServer(self.app, self.photos, self.tmp / "lan", "--lan").start()
+        server = AlbumMaker(self.app, self.photos, self.tmp / "lan", "--lan").start()
         self.addCleanup(server.stop)
         self.assertEqual(server.get("/")[0], 200)
         self.assertRegex(server.log().lower(), r"network|lan")
 
     def test_a_custom_host_name_can_be_allowed(self):
-        server = TripServer(self.app, self.photos, self.tmp / "host", "--allow-host", "trip.home").start()
+        server = AlbumMaker(self.app, self.photos, self.tmp / "host", "--allow-host", "trip.home").start()
         self.addCleanup(server.stop)
         self.assertEqual(server.get("/", {"Host": "trip.home"})[0], 200)
         self.assertEqual(server.get("/", {"Host": "other.home"})[0], 403)
