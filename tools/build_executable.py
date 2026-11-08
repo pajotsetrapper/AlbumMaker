@@ -16,6 +16,11 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = ROOT / "dist" / "executable"
 SOURCE_URL = "https://github.com/zackees/ffmpeg_bins"
+GPL_LICENSE_URLS = {
+    "2": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt",
+    "3": "https://www.gnu.org/licenses/gpl-3.0.txt",
+}
+LGPL_V3_LICENSE_URL = "https://www.gnu.org/licenses/lgpl-3.0.txt"
 
 
 def _run(
@@ -71,19 +76,18 @@ def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
         raise RuntimeError("The bundled FFmpeg version could not be determined.")
     ffmpeg_version = version_match.group(1)
     source_tag = f"n{ffmpeg_version}"
-    gpl_file = f"COPYING.GPLv{gpl_version}"
-    gpl_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/{gpl_file}"
-    with urllib.request.urlopen(gpl_url, timeout=60) as response:
-        gpl_license = response.read().decode("utf-8")
+    gpl_license = _download_license_text(
+        GPL_LICENSE_URLS[gpl_version], f"GNU GPL version {gpl_version}"
+    )
     if gpl_version == "2":
         gpl_v2_license = gpl_license
     else:
-        gpl_v2_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/COPYING.GPLv2"
-        with urllib.request.urlopen(gpl_v2_url, timeout=60) as response:
-            gpl_v2_license = response.read().decode("utf-8")
-    lgpl_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/COPYING.LGPLv3"
-    with urllib.request.urlopen(lgpl_url, timeout=60) as response:
-        lgpl_v3_license = response.read().decode("utf-8")
+        gpl_v2_license = _download_license_text(
+            GPL_LICENSE_URLS["2"], "GNU GPL version 2"
+        )
+    lgpl_v3_license = _download_license_text(
+        LGPL_V3_LICENSE_URL, "GNU LGPL version 3"
+    )
     python_notices = _python_package_notices()
     return (
         "AlbumMaker includes FFmpeg and ffprobe binaries provided by static-ffmpeg 3.0.\n"
@@ -101,6 +105,16 @@ def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
         "GNU LGPL version 3 license text (relevant to bundled Qt and HEIF libraries):\n"
         f"{lgpl_v3_license}\n"
     )
+
+
+def _download_license_text(url: str, license_name: str) -> str:
+    try:
+        with urllib.request.urlopen(url, timeout=60) as response:
+            return response.read().decode("utf-8")
+    except (OSError, UnicodeError) as exc:
+        raise RuntimeError(
+            f"Could not retrieve {license_name} text from {url}: {exc}"
+        ) from exc
 
 
 def _python_package_notices() -> str:
