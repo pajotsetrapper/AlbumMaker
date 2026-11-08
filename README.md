@@ -34,7 +34,8 @@ sections after it are the full reference.
 [How your photos are handled](#how-your-photos-are-handled) ·
 [Notes & limitations](#notes--limitations) ·
 [Troubleshooting](#troubleshooting) ·
-[Running the tests](#running-the-tests)
+[Running the tests](#running-the-tests) ·
+[Customizing the look](#customizing-the-look)
 
 ## Quick start
 
@@ -73,7 +74,7 @@ in the page:
 |---|---|---|
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
-| Disk space | Thumbnails plus a copy of every photo and video | Nothing, except `trip_content.json` (and the map tiles, if you turn on the tile cache) |
+| Disk space | A site folder with thumbnails, copies of visible media and browser-ready conversions where needed | No generated site; optionally `trip_content.json`, metadata and map-tile caches |
 | Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site | The same, and map tiles you have already viewed can be kept in a local cache |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
 | Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server, or any browser with the editor link), or edit the file and refresh |
@@ -239,11 +240,13 @@ soft-looking images when a small thumbnail is enlarged. The server creates
 these previews on demand; they cost more processing and memory than normal
 thumbnails. For generated sites the larger thumbnails are off by default;
 2400 pixels is also a good setting when you want them.
-**Automatic** in a trip's time-zone dropdown is not a location guess: photo
-EXIF times stay as recorded. For videos, the shared default UTC offset is used
-if set; otherwise iPhone local times are kept as recorded and other UTC times
-are converted to the computer's local time zone. The shared **Default video
-UTC offset** is in **Options → General** and applies to both workflows.
+**Automatic** in a trip's time-zone dropdown is not a location guess. Photo
+capture dates remain as recorded in EXIF; a selected time zone can still
+affect matching photos to a GPX track. For videos, the shared default UTC
+offset is used if set; otherwise iPhone local times are kept as recorded and
+other UTC times are converted to the computer's local time zone. The shared
+**Default video UTC offset** is in **Options → General** and applies to both
+workflows.
 
 When running from source, the GUI needs Python 3.9 or newer and the same
 `ffmpeg` setup as the command-line tools. PySide6 is optional and is not
@@ -446,11 +449,12 @@ Options:
   that haven't changed. Normally not needed; see "Re-running the static
   build" below.
 - `--tz-offset`: fixed UTC offset in hours (e.g. `2` or `-5.5`) for video
-  timestamps. See "Video timestamps" below.
+  timestamps and GPS-track matching. See "Video timestamps" and "GPS
+  tracks" below.
 - `--timezone IANA_NAME`: named time zone, such as `Europe/Paris`, for
   video timestamps and GPS-track matching. Unlike a fixed offset, it
   follows daylight-saving changes. Use instead of (not together with)
-  `--tz-offset`. Photos' EXIF clock times are unchanged.
+  `--tz-offset`. It does not change photo capture dates read from EXIF.
 - `--date-range START END`: the dates your files should fall between,
   e.g. `--date-range 2026-04-28 2026-05-10` (both days included). Files
   dated outside it go to "Unsorted". See "Dates that look wrong" below.
@@ -542,17 +546,18 @@ Options:
   their total size, so a few huge converted HEICs can't push the server
   into gigabytes.
 - `--index-cache PATH`: keep each file's metadata (dates, GPS, camera
-  details) for reuse at the next start. For one trip, PATH is the JSON
-  cache file; with `--library`, PATH is a folder containing a separate
-  cache file for each trip. Off by default. Without it, metadata is still
-  read in parallel.
+  details) for reuse at the next start. The cache stores metadata, not
+  photo or video files; unchanged files are identified by their size and
+  modification time. For one trip, PATH is the JSON cache file; with
+  `--library`, PATH is a folder containing a separate cache file for each
+  trip. Off by default. Without it, metadata is still read in parallel.
 - `--verbose`: log every request. Normally only errors (other than 404)
   and requests slower than two seconds are printed.
 
 The GUI's **Help** window describes each field, its units, defaults and
-effect. Map tile, metadata cache and allowed-host settings apply to the
+effect. Map-tile, metadata-cache and allowed-host settings apply to the
 live server; the output folder and force-regeneration setting apply to
-static site generation.
+static-site generation.
 
 Apart from `trip_content.json` (and the tile folder or index cache, if you
 use them), the server writes nothing to disk, and it writes to the JSON
@@ -1099,11 +1104,13 @@ Things to know:
 
 ## How your photos are handled
 
-**Your originals are never modified.** Neither script ever changes,
-moves or renames your photos and videos. The only file either script
-creates in your photos folder is `trip_content.json` (unless you pass
-`-c` to put it elsewhere). The live server later updates it when you save
-an edit in the page.
+**Your originals are never modified.** Neither script changes, moves or
+renames your photos and videos. The scripts may create or update
+`trip_content.json` in the photos folder (unless you pass `-c` to put it
+elsewhere). The live server also updates it when you save an edit in the
+page. A static build writes its generated site to the output folder you
+choose; optional metadata and map-tile caches are written to their
+configured locations.
 
 **Full-screen viewing uses the real files.** For jpg, png, webp and bmp,
 the slideshow shows your actual file, with no resizing or recompression.
@@ -1260,7 +1267,8 @@ so none of this applies there. The exceptions:
     the recorded local time in iPhone video metadata too.
   - Alternatively, use `--tz-offset` with the trip's fixed UTC offset.
     This applies to every video, iPhone ones included.
-  - Photos are unaffected, since camera EXIF times are already local.
+  - Neither setting changes photo capture dates read from EXIF. A time
+    zone can, however, affect matching a photo to a GPX track.
 - **GPS.** For photos, the location comes from EXIF GPS data. For videos,
   it comes from the `location` / ISO-6709 tag (what iPhones write), when
   present. Coordinates that can't be real (out of range, or exactly
@@ -1405,8 +1413,9 @@ AlbumMaker user data. From the project folder:
 python -m unittest discover -s tests -t .
 ```
 
-`pytest tests` works too, if you prefer it. That's about 430 tests and
-takes roughly 45 seconds without the browser tests below. To run one file or one test, name it:
+`pytest tests` works too, if you prefer it. The suite's size and runtime
+vary with optional dependencies and enabled browser tests. To run one
+file or one test, name it:
 
 ```bash
 python -m unittest tests.test_editing
@@ -1425,7 +1434,7 @@ requirements are missing:
   autoplay, the day pages' arrow and Esc keys, the size controls, the
   sharper thumbnails, and the maps with the real Leaflet library, run in
   jsdom, a browser without a screen) need Node.js 18 or newer and a
-  one-time `npm install` in `tests/js`. They add about a minute and a half.
+  one-time `npm install` in `tests/js`.
 - **A check of the real downloads**: set `TRIP_TEST_NETWORK=1` to also
   download the real packages for `--fetch-offline-assets` and verify them
   against their pinned checksums. It's off by default so the suite never
