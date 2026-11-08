@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -63,6 +64,7 @@ THEME_STYLES = {
         QPlainTextEdit, QTextBrowser { background: #ffffff; border: 1px solid #dce4ef; border-radius: 12px; }
         QTabWidget::pane { background: #ffffff; border: 1px solid #dce4ef; border-radius: 10px; }
         QFrame#header { background: transparent; border: 0; }
+        QFrame#serverLinks { background: #e8f4f1; border: 1px solid #cfe5df; border-radius: 10px; }
         QFrame#stepCard { border-radius: 14px; }
         QFrame#workflowChoice { background: #f8faff; border: 1px solid #e1e8f3; border-radius: 10px; }
         QGroupBox { margin-top: 12px; padding: 14px 12px 10px; font-weight: 600; }
@@ -74,7 +76,15 @@ THEME_STYLES = {
         QPushButton#primary { color: #ffffff; background: #315fce; border-color: #315fce;
             font-weight: 650; padding: 11px 20px; }
         QPushButton#primary:hover { background: #254da9; }
-        QPushButton#stop { color: #a63333; }
+        QPushButton#stop { color: #ffffff; background: #a63333; border-color: #a63333;
+            font-weight: 650; }
+        QPushButton#stop:hover { background: #872929; }
+        QPushButton#serverLink { color: #ffffff; background: #237b68; border-color: #237b68;
+            font-weight: 650; }
+        QPushButton#serverLink:hover { background: #1b6657; }
+        QPushButton#editorLink { color: #ffffff; background: #53627a; border-color: #53627a;
+            font-weight: 650; }
+        QPushButton#editorLink:hover { background: #3e4c62; }
         QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #ffffff;
             border: 1px solid #cfd9e7; border-radius: 7px; padding: 7px;
             selection-background-color: #315fce; }
@@ -104,6 +114,7 @@ THEME_STYLES = {
         QWidget#scrollPage { background: transparent; }
         QScrollArea { background: transparent; border: 0; }
         QFrame#header { background: transparent; border: 0; }
+        QFrame#serverLinks { background: #202f32; border: 1px solid #34534e; border-radius: 10px; }
         QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit, QTextBrowser {
             background: #202633; border: 1px solid #343e4f; border-radius: 12px; }
         QTabWidget::pane { background: #202633; border: 1px solid #343e4f; border-radius: 10px; }
@@ -118,7 +129,15 @@ THEME_STYLES = {
         QPushButton#primary { color: #ffffff; background: #4a78dc; border-color: #4a78dc;
             font-weight: 650; padding: 11px 20px; }
         QPushButton#primary:hover { background: #5b88ec; }
-        QPushButton#stop { color: #ff9a9a; }
+        QPushButton#stop { color: #ffffff; background: #a8444b; border-color: #a8444b;
+            font-weight: 650; }
+        QPushButton#stop:hover { background: #913941; }
+        QPushButton#serverLink { color: #ffffff; background: #287c6c; border-color: #287c6c;
+            font-weight: 650; }
+        QPushButton#serverLink:hover { background: #32917e; }
+        QPushButton#editorLink { color: #ffffff; background: #46556e; border-color: #46556e;
+            font-weight: 650; }
+        QPushButton#editorLink:hover { background: #566783; }
         QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #1b222e;
             border: 1px solid #3a4659; border-radius: 7px; padding: 7px;
             selection-background-color: #4a78dc; }
@@ -244,8 +263,10 @@ is ignored when enabled.</li>
 are found automatically. These paths are ignored when GPS tracks are disabled.</li>
 </ul>
 <h3>Activity</h3>
-<p>Open <b>Show activity</b> to see progress, errors, server requests, and the local server URL.
-<b>Stop</b> appears only while a task is running.</p>
+<p>Open <b>Show activity</b> to see progress, errors, and server requests. When the live server is
+ready, the main window shows an <b>Open trip site</b> button and, when editing is enabled, a private
+editing-link button. Do not share that link: it grants editing access. The Run button changes to
+<b>Stop server</b> while it runs.</p>
 <h3>Additional live server settings</h3>
 <ul>
 <li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
@@ -305,6 +326,9 @@ class MainWindow(QMainWindow):
         self._offline_asset_error = ""
         self._pending_server_start = False
         self._server_ready = False
+        self._server_url = ""
+        self._editor_url = ""
+        self._stopping = False
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
@@ -350,6 +374,28 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
 
+        self.server_links = QFrame()
+        self.server_links.setObjectName("serverLinks")
+        links_layout = QHBoxLayout(self.server_links)
+        links_layout.setContentsMargins(12, 8, 12, 8)
+        links_layout.addWidget(_label("Live server is ready", "status"))
+        links_layout.addStretch(1)
+        self.site_link_button = QPushButton("Open trip site")
+        self.site_link_button.setObjectName("serverLink")
+        self.site_link_button.setToolTip("Open the running trip site in your web browser.")
+        self.site_link_button.clicked.connect(lambda: self._open_server_link(self._server_url))
+        links_layout.addWidget(self.site_link_button)
+        self.editor_link_button = QPushButton("Open editing link (private)")
+        self.editor_link_button.setObjectName("editorLink")
+        self.editor_link_button.setToolTip(
+            "Open the private editing link. Do not share it; it grants editing access."
+        )
+        self.editor_link_button.clicked.connect(lambda: self._open_server_link(self._editor_url))
+        self.editor_link_button.setVisible(False)
+        links_layout.addWidget(self.editor_link_button)
+        self.server_links.setVisible(False)
+        outer.addWidget(self.server_links)
+
         outer.addWidget(self._build_library_panel(), 1)
         outer.addWidget(self._build_workflow_panel())
         outer.addWidget(self._build_run_panel())
@@ -372,15 +418,6 @@ class MainWindow(QMainWindow):
         self.log_view.setFont(QFont("monospace", 10))
         self.log_view.setMaximumHeight(150)
         activity_layout.addWidget(self.log_view)
-        self.server_url = _label("", "muted")
-        self.server_url.setTextFormat(Qt.TextFormat.RichText)
-        self.server_url.setOpenExternalLinks(False)
-        self.server_url.linkActivated.connect(
-            lambda url: QDesktopServices.openUrl(QUrl(url))
-        )
-        self.server_url.setToolTip("Opens the running trip site in your web browser.")
-        self.server_url.setVisible(False)
-        activity_layout.addWidget(self.server_url)
         self.activity_box.setVisible(False)
         outer.addWidget(self.activity_box)
         scroll = QScrollArea()
@@ -394,8 +431,7 @@ class MainWindow(QMainWindow):
         for button in self.findChildren(QAbstractButton):
             if not button.toolTip():
                 button.setToolTip(button.text().replace("&", "") or "Activate this control.")
-        self.stop_button.clicked.connect(self._stop_process)
-        self.run_button.clicked.connect(self._run_selected_workflow)
+        self.run_button.clicked.connect(self._handle_run_button)
         self.offline_button.clicked.connect(self._fetch_offline_assets)
         self.index_cache.textChanged.connect(self._update_server_setup)
         self.tile_cache.textChanged.connect(self._update_server_setup)
@@ -421,7 +457,7 @@ class MainWindow(QMainWindow):
         header = self.trip_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
-        self.trip_table.setColumnWidth(1, 240)
+        self.trip_table.setColumnWidth(1, 300)
         self.trip_table.setMinimumHeight(155)
         self.trip_table.setSizePolicy(
             QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
@@ -507,12 +543,7 @@ class MainWindow(QMainWindow):
         self.run_button = QPushButton("Start live server")
         self.run_button.setObjectName("primary")
         self.run_button.setMinimumHeight(42)
-        self.stop_button = QPushButton("Stop")
-        self.stop_button.setToolTip("Stop the running server or site-generation task.")
-        self.stop_button.setObjectName("stop")
-        self.stop_button.setVisible(False)
         row.addWidget(self.run_button)
-        row.addWidget(self.stop_button)
         row.addStretch(1)
         self.workflow_status = _label("Add a trip folder to get started.", "muted")
         row.addWidget(self.workflow_status, 1)
@@ -963,15 +994,38 @@ class MainWindow(QMainWindow):
             self._offline_asset_error = str(exc)
             return False
 
+    def _open_server_link(self, url: str) -> None:
+        if url and not QDesktopServices.openUrl(QUrl(url)):
+            self._append_log(f"Could not open this link in a browser: {url}")
+            self.status_label.setText("Could not open browser link")
+
+    def _set_run_button(self, text: str, mode: str, tooltip: str) -> None:
+        changed_style = self.run_button.objectName() != mode
+        self.run_button.setText(text)
+        self.run_button.setToolTip(tooltip)
+        if changed_style:
+            self.run_button.setObjectName(mode)
+            self.run_button.style().unpolish(self.run_button)
+            self.run_button.style().polish(self.run_button)
+
     def _update_workflow(self, *_args) -> None:
         is_site = self.site_radio.isChecked()
         self.output_row.setVisible(is_site)
-        self.run_button.setText("Create static site" if is_site else "Start live server")
 
         running = bool(
             self._process and self._process.state() != QProcess.ProcessState.NotRunning
         )
         if running:
+            action = "Stop server" if self._process_kind == "server" else "Stop task"
+            if self._stopping:
+                self._set_run_button("Stopping…", "stop", "The running process is stopping.")
+                self.run_button.setEnabled(False)
+            else:
+                self._set_run_button(
+                    action, "stop", "Stop the live server." if self._process_kind == "server"
+                    else "Stop the running task."
+                )
+                self.run_button.setEnabled(True)
             if self._process_kind == "server":
                 status = (
                     "The live server is running."
@@ -981,9 +1035,14 @@ class MainWindow(QMainWindow):
             else:
                 status = f"{self._process_kind.capitalize()} is in progress."
             self.workflow_status.setText(status)
-            self.run_button.setEnabled(False)
             return
 
+        self._set_run_button(
+            "Create static site" if is_site else "Start live server",
+            "primary",
+            "Create the static site in the selected output folder."
+            if is_site else "Start the live trip server."
+        )
         has_trips = self.trip_table.rowCount() > 0
         if not has_trips:
             self.workflow_status.setText("Add a trip folder to get started.")
@@ -1143,8 +1202,13 @@ class MainWindow(QMainWindow):
         process.finished.connect(self._on_finished)
         self._process = process
         self._process_kind = kind
+        self._stopping = False
         self._server_ready = False
-        self.server_url.hide()
+        self._server_url = ""
+        self._editor_url = ""
+        self.site_link_button.hide()
+        self.editor_link_button.hide()
+        self.server_links.hide()
         self._log_remainder = ""
         self._append_log(f"Starting {kind}: {self._display_command(arguments)}")
         self.status_label.setText(f"Starting {kind}…")
@@ -1191,6 +1255,12 @@ class MainWindow(QMainWindow):
         else:
             self._start_server()
 
+    def _handle_run_button(self) -> None:
+        if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
+            self._stop_process()
+        else:
+            self._run_selected_workflow()
+
     def _fetch_offline_assets(self) -> None:
         self._launch("offline assets", offline_assets_command(sys.executable))
 
@@ -1205,15 +1275,21 @@ class MainWindow(QMainWindow):
                 message = line.rstrip("\r\n")
                 self._append_log(message)
                 expected_url = f"http://127.0.0.1:{self.port.value()}/"
+                editor_match = re.search(
+                    r"Editor link \(keep it private; it changes every start\):\s*(https?://\S+)",
+                    message,
+                )
+                if self._process_kind == "server" and editor_match:
+                    self._editor_url = editor_match.group(1)
                 if (
                     self._process_kind == "server"
                     and message.strip() == f"Serving at {expected_url}"
                 ):
                     self._server_ready = True
-                    self.server_url.setText(
-                        f'<a href="{expected_url}">Open live trip site in your browser</a>'
-                    )
-                    self.server_url.show()
+                    self._server_url = expected_url
+                    self.site_link_button.show()
+                    self.editor_link_button.setVisible(bool(self._editor_url))
+                    self.server_links.show()
                     self.status_label.setText("Server running")
                     self._update_workflow()
             else:
@@ -1237,8 +1313,13 @@ class MainWindow(QMainWindow):
             message = self._process.errorString() if self._process else "Could not start the process."
             self._append_log(f"Error: {message}")
             self.status_label.setText("Could not start")
-            self.server_url.hide()
+            self.server_links.hide()
+            self.site_link_button.hide()
+            self.editor_link_button.hide()
             self._server_ready = False
+            self._server_url = ""
+            self._editor_url = ""
+            self._stopping = False
             if self._process_kind == "offline assets":
                 self._pending_server_start = False
             self._cleanup_process()
@@ -1250,16 +1331,29 @@ class MainWindow(QMainWindow):
             self._append_log(self._log_remainder)
             self._log_remainder = ""
         kind = self._process_kind
-        resume_server = kind == "offline assets" and self._pending_server_start
-        if resume_server:
-            self._pending_server_start = False
-        label = "Server stopped" if kind == "server" and exit_code == 0 else (
-            "Completed" if exit_code == 0 else f"Failed (exit code {exit_code})"
+        user_stopped = self._stopping
+        resume_server = (
+            kind == "offline assets" and self._pending_server_start and not user_stopped
         )
+        if kind == "offline assets":
+            self._pending_server_start = False
+        if kind == "server":
+            label = "Server stopped" if user_stopped or exit_code == 0 else (
+                "Server exited unexpectedly; check Activity for details."
+            )
+        elif user_stopped:
+            label = "Task stopped"
+        else:
+            label = "Completed" if exit_code == 0 else "Task failed; check Activity for details."
         self.status_label.setText(label)
         if kind == "server":
-            self.server_url.hide()
+            self.server_links.hide()
+            self.site_link_button.hide()
+            self.editor_link_button.hide()
             self._server_ready = False
+            self._server_url = ""
+            self._editor_url = ""
+        self._stopping = False
         if kind == "offline assets":
             self._update_server_setup()
         self._append_log(f"{kind.capitalize()} finished with exit code {exit_code}.")
@@ -1286,6 +1380,7 @@ class MainWindow(QMainWindow):
 
     def _stop_process(self) -> None:
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
+            self._stopping = True
             self.status_label.setText("Stopping…")
             self._append_log("Requesting process shutdown…")
             self._process.terminate()
@@ -1300,8 +1395,6 @@ class MainWindow(QMainWindow):
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
         self.offline_button.setEnabled(not running)
-        self.stop_button.setVisible(running)
-        self.stop_button.setEnabled(running)
         if not running:
             self._update_server_setup()
         self._update_workflow()

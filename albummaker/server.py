@@ -1347,10 +1347,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--memory-cache-mb", type=int, default=512, metavar="MB",
                         help="Memory for thumbnails and converted photos kept between requests "
                              "(default 512).")
-    parser.add_argument("--index-cache", type=Path, metavar="FILE",
-                        help="Keep the photos' metadata in this file, so the next start only reads "
-                             "new or changed files. Off by default. With --library, a folder holding "
-                             "one such file per trip.")
+    parser.add_argument("--index-cache", type=Path, metavar="PATH",
+                        help="Keep the photos' metadata for reuse on the next start. For one trip, "
+                             "PATH is a cache file; with --library, it is a folder holding one "
+                             "cache file per trip.")
     parser.add_argument("--verbose", action="store_true",
                         help="Log every request (normally only errors and slow requests are shown).")
     return parser
