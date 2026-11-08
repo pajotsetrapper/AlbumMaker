@@ -77,7 +77,7 @@ in the page:
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
 | Disk space | A site folder with thumbnails, copies of visible media and browser-ready conversions where needed | No generated site; optionally `trip_content.json`, metadata and map-tile caches |
-| Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site | The same, and map tiles you have already viewed can be kept in a local cache |
+| Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site. Maps need the site to be served over http(s), not opened from disk (see [Viewing a static site](#viewing-a-static-site-maps-need-a-web-server)) | The same, and map tiles you have already viewed can be kept in a local cache |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
 | Editing titles, descriptions, captions, favorites, hidden photos, covers | Edit `trip_content.json`, then re-run the script | In the page itself (from the computer running the server, or any browser with the editor link), or edit the file and refresh |
 | Cost | A build step | A little CPU on first view of each day |
@@ -352,10 +352,12 @@ Stop the server (Ctrl+C), then build a standalone version:
 python generate_site.py -i "/path/to/Japan 2024" -o "/path/to/Japan 2024 site"
 ```
 
-Open `index.html` in the new folder to check it. That folder is the whole
-site: copy it to a USB stick, put it in a shared cloud folder, or upload
-it to any web host. No Python is needed to view it, and photos you hid
-are not in it at all. Run the same command again after adding photos or
+That folder is the whole site: copy it to a USB stick, put it in a shared
+cloud folder, or upload it to any web host. No Python is needed to view it,
+and photos you hid are not in it at all. One catch: the maps only load when
+the site is opened through a web server (an `http://` or `https://` address),
+not by double-clicking `index.html`. See
+[Viewing a static site: maps need a web server](#viewing-a-static-site-maps-need-a-web-server). Run the same command again after adding photos or
 changing notes; only what changed is redone.
 
 To make it work without internet (apart from the map tiles), run
@@ -494,6 +496,36 @@ the build entirely, including their files. See "Hidden photos" below.
 If offline assets are present in AlbumMaker's user data folder, they are
 copied into the site (`assets/vendor`), so it doesn't need internet for the
 map library and fonts.
+
+### Viewing a static site: maps need a web server
+
+Static sites load their map tiles directly from OpenStreetMap
+(`https://tile.openstreetmap.org/`). OpenStreetMap's
+[tile usage policy](https://operations.osmfoundation.org/policies/tiles/)
+requires a `Referer` header on tile requests and blocks requests without one
+(the response carries `X-Blocked: No referer sent. Access denied.`).
+
+Browsers send **no** `Referer` for a page opened straight from disk
+(`file://`), for example by double-clicking `index.html` or opening the site
+from a USB stick. In that case the map tiles show up as "Access blocked"
+images (or you only see the rough land outline). Photos, videos and the rest
+of the site still work.
+
+To get working maps:
+
+- **Publish the folder** on any web host (GitHub Pages, Netlify, your own
+  server) so it is opened through an `https://` address. Make sure the host
+  does not send `Referrer-Policy: no-referrer`.
+- **Or test locally** by running `python -m http.server` inside the site
+  folder and opening `http://localhost:8000/`. OpenStreetMap may still reject
+  `localhost` referrers, so treat this as a test only.
+- **Or use the live server** (next section), which fetches and caches tiles
+  itself and does not have this limitation. Its `--tile-url` option can point
+  at another tile provider.
+
+Static sites currently always use OpenStreetMap tiles. OpenStreetMap's policy
+also expects light traffic: a heavily visited site should use a commercial
+tile provider instead.
 
 ## 2b. Serve it live: `album_server.py`
 

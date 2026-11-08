@@ -189,8 +189,27 @@ deletes photos or generated files.</li>
 <li><b>Live server:</b> scans your trips and opens the site in a browser. The server stays running
 until you stop it. Required setup is in Options → Live server.</li>
 <li><b>Static site:</b> creates a standalone copy you can share. Pick its output folder in the main
-window; it does not require the live-server setup.</li>
+window; it does not require the live-server setup. Its maps need the site to be served over
+http(s); see the note below.</li>
 </ul>
+<h3>Viewing a static site: maps need a web server</h3>
+<p>Static sites load map tiles straight from OpenStreetMap. OpenStreetMap refuses tile requests that
+carry no <code>Referer</code> header (its tile usage policy), and a browser sends none for a page opened
+directly from disk (<code>file://</code>, for example by double-clicking <code>index.html</code>, or from a USB
+drive). In that case the maps show "Access blocked" tiles or only the rough outline, while photos
+and everything else still work. To get working maps:</p>
+<ul>
+<li><b>Publish the folder</b> on any web host (GitHub Pages, Netlify, your own server), so it is
+opened through an <code>https://</code> address. Do not make the host send a
+<code>Referrer-Policy: no-referrer</code> header.</li>
+<li><b>Or test locally</b> by running <code>python -m http.server</code> inside the site folder and opening
+<code>http://localhost:8000/</code>. OpenStreetMap may still reject <code>localhost</code>, so this is
+only for testing.</li>
+<li><b>Or use the live server</b>, which fetches and caches tiles itself, so it does not have this
+limitation.</li>
+</ul>
+<p>OpenStreetMap's policy also expects light traffic. A heavily visited site should use a commercial
+tile provider instead.</p>
 <h3>Options → Live server</h3>
 <p>These settings only affect the live server. It requires the metadata cache folder and map tile
 cache folder, which are created if needed. Missing offline assets are downloaded automatically when
@@ -274,7 +293,8 @@ editing-link button. Do not share that link: it grants editing access. The Run b
 <h3>Additional live server settings</h3>
 <ul>
 <li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
-<code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap.</li>
+<code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap. Static sites
+always use OpenStreetMap and must be served over http(s) for the maps to load.</li>
 <li><b>Allowed host names:</b> for the live server, additional host names the server may answer to, one per line.
 Blank by default; use only for a trusted custom local DNS name.</li>
 </ul>
@@ -531,6 +551,21 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(browse_output)
         layout.addWidget(self.output_row)
         self.output_row.setVisible(False)
+
+        self.site_map_note = _label(
+            "Note: the maps in a static site only work when the site is opened through a web server "
+            "(http:// or https://). OpenStreetMap blocks map tiles when the page is opened directly "
+            "from disk (file://), such as by double-clicking index.html. Publish the folder to a web "
+            "host, or see Help for how to test locally.",
+            "muted",
+        )
+        self.site_map_note.setWordWrap(True)
+        self.site_map_note.setToolTip(
+            "Browsers send no Referer header for file:// pages, and OpenStreetMap's tile servers "
+            "refuse requests without one."
+        )
+        layout.addWidget(self.site_map_note)
+        self.site_map_note.setVisible(False)
 
         self.live_radio.toggled.connect(self._update_workflow)
         self.site_radio.toggled.connect(self._update_workflow)
@@ -1030,6 +1065,7 @@ class MainWindow(QMainWindow):
     def _update_workflow(self, *_args) -> None:
         is_site = self.site_radio.isChecked()
         self.output_row.setVisible(is_site)
+        self.site_map_note.setVisible(is_site)
 
         running = bool(
             self._process and self._process.state() != QProcess.ProcessState.NotRunning
