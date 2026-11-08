@@ -145,6 +145,27 @@ background command runner, and bundled FFmpeg tools. To build for another
 operating system or architecture, run the same command on a native machine or
 use the GitHub Actions workflow described below.
 
+### Version number
+
+The version is defined once, as `__version__` in `albummaker/__init__.py`.
+It is shown in the desktop app (window title, header, and the Help window,
+which also lists Python, PySide6 and the platform for bug reports), printed
+at the start of the server and the site builder, and available as
+`--version` on every entry point:
+
+```bash
+python album_server.py --version
+python generate_site.py --version
+python album_gui.py --version
+python -m albummaker --version
+```
+
+Generated pages say which version made them, and a static site's build
+record (`app_version`) stores it. To release: change `__version__`, commit,
+then tag that commit with the same number (`v2.1.0` for `2.1.0`). In CI,
+`python tools/check_version.py "$GITHUB_REF_NAME"` fails the build when the
+tag and `__version__` differ.
+
 ### Build or publish all platform versions
 
 Push the source changes to GitHub, then either:

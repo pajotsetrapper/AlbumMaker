@@ -39,6 +39,8 @@ from urllib.parse import parse_qs, quote, unquote, urlencode, urlparse, urlsplit
 
 from markupsafe import Markup
 
+from . import __version__
+
 from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, default_content, hidden_rels, is_hidden,
@@ -605,7 +607,7 @@ class LiveUrls(SiteUrls):
     """The server's own routes. Media URLs carry a ?v= version token (see
     file_version). One instance per page render, so each file is only
     stat()ed once per page."""
-    footer = Markup("Served live by album_server.py")
+    footer = Markup(f"Served live by album_server.py, version {__version__}")
     edit_hint = ", then refresh this page."
 
     def __init__(self, app: App):
@@ -1297,6 +1299,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description="Serve your trip photos/videos as a live website, generated on the fly."
     )
+    parser.add_argument("--version", action="version", version=f"AlbumMaker {__version__}")
     parser.add_argument("-i", "--input", type=Path, default=None,
                         help="Folder with your photos/videos (default: current folder)")
     parser.add_argument("--library", type=Path, metavar="LIST",
@@ -1368,6 +1371,7 @@ def main(argv=None):
         sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     args = parser.parse_args(argv)
+    print(f"AlbumMaker {__version__} (live server)")
     if args.tz_offset is not None and args.timezone:
         parser.error("--tz-offset and --timezone cannot be used together")
     date_range = resolve_date_range(args, parser)

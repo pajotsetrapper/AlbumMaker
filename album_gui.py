@@ -4,6 +4,11 @@
 import subprocess
 import sys
 
+if sys.argv[1:] == ["--version"]:      # works even where PySide6 is not installed
+    from albummaker import __version__
+    print(f"AlbumMaker {__version__}")
+    raise SystemExit(0)
+
 try:
     from albummaker.gui.app import MainWindow, main
 except ModuleNotFoundError as exc:

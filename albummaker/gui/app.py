@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
+import platform
 import re
 import subprocess
 import sys
 from datetime import datetime
+from html import escape as _escape_html
 from pathlib import Path
 from typing import Optional
 
@@ -45,6 +47,7 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 
+from .. import __version__
 from .commands import build_command, offline_assets_command, server_command
 from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
                        prepare_tile_cache, save_settings, settings_path, write_library_file)
@@ -356,6 +359,17 @@ def _label(text: str, object_name: Optional[str] = None) -> QLabel:
     return label
 
 
+def _about_text() -> str:
+    """One line naming the app version and what it runs on (handy in bug reports)."""
+    try:
+        import PySide6
+        qt = f"PySide6 {PySide6.__version__}"
+    except Exception:  # pragma: no cover
+        qt = "PySide6"
+    return (f"AlbumMaker {__version__} \u00b7 Python {platform.python_version()} \u00b7 "
+            f"{qt} \u00b7 {platform.platform()}")
+
+
 def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
     box = QGroupBox(title)
     form = QFormLayout(box)
@@ -406,7 +420,7 @@ class MainWindow(QMainWindow):
         self._save_timer.setInterval(500)
         self._save_timer.timeout.connect(self._save_from_ui)
 
-        self.setWindowTitle("AlbumMaker")
+        self.setWindowTitle(f"AlbumMaker {__version__}")
         self.setWindowIcon(_application_icon())
         self.setMinimumSize(680, 580)
         self.resize(920, 820)
@@ -432,6 +446,9 @@ class MainWindow(QMainWindow):
         title.setFont(QFont(title.font().family(), 21, QFont.Weight.Bold))
         title_block.addWidget(title)
         title_block.addWidget(_label("A simple way to turn your trips into a photo site.", "muted"))
+        version_label = _label(f"Version {__version__}", "muted")
+        version_label.setToolTip(_about_text())
+        title_block.addWidget(version_label)
         header_layout.addLayout(title_block)
         header_layout.addStretch(1)
         self.options_button = QPushButton("Options")
@@ -1263,6 +1280,7 @@ class MainWindow(QMainWindow):
             f".muted {{ color: {muted}; }}"
             "</style></head><body>"
             + HELP_HTML
+            + f'<p class="muted"><small>{_escape_html(_about_text())}</small></p>'
             + "</body></html>"
         )
         content.setOpenExternalLinks(True)
@@ -1564,6 +1582,9 @@ class MainWindow(QMainWindow):
 
 
 def main() -> int:
+    if "--version" in sys.argv[1:]:
+        print(f"AlbumMaker {__version__}")
+        return 0
     app = QApplication(sys.argv)
     app.setApplicationName("AlbumMaker")
     app.setOrganizationName("AlbumMaker")
