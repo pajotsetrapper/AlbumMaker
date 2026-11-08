@@ -128,6 +128,56 @@ python -m pip install -r requirements-packaging.txt
 python tools/build_executable.py
 ```
 
+The app is written to `dist/executable/`. The builder smoke-tests the GUI,
+background command runner, and bundled FFmpeg tools. To build for another
+operating system or architecture, run the same command on a native machine or
+use the GitHub Actions workflow described below.
+
+### Build or publish all platform versions
+
+Push the source changes to GitHub, then either:
+
+1. Open **Actions → Build desktop executables → Run workflow** to build the
+   current branch, or
+2. Push a version tag (for example, `v1.2.0`) to start the same builds for
+   that revision:
+
+   ```bash
+   git tag v1.2.0
+   git push origin v1.2.0
+   ```
+
+The workflow builds each platform on its own native runner and uploads one
+artifact per platform. Download the artifacts from the completed workflow run;
+they are kept for 30 days. A tag starts builds but does not create a GitHub
+Release automatically.
+
+### Update dependencies for a new build
+
+The executable bundles the dependencies from all three requirements files:
+
+- `requirements.txt`: shared application libraries.
+- `requirements-gui.txt`: PySide6 and time-zone data for the desktop GUI.
+- `requirements-packaging.txt`: includes the two files above, plus PyInstaller
+  and the FFmpeg/ffprobe binary provider.
+
+When changing an application dependency, update its existing requirements
+file. To refresh the packaging tools or FFmpeg binaries, edit the PyInstaller
+range or `static-ffmpeg` version in `requirements-packaging.txt` first. The
+FFmpeg build must enable GPL codecs without non-free codecs; the build script
+checks this and generates the matching license notice. Then test the updated
+dependencies and produce a native build:
+
+```bash
+python -m pip install --upgrade -r requirements-packaging.txt
+python -m unittest
+python tools/build_executable.py
+```
+
+For repeatable CI builds, use the same Python version as the workflow (3.11)
+and keep the dependency versions or ranges in the requirements files under
+review. Re-run the workflow after pushing the dependency changes.
+
 The app guides you through three steps: add trip folders, choose a workflow,
 and run it. Use **Add folders** to select several photo folders at once.
 Choose each trip's IANA time zone directly in the **Time zone** column (for
