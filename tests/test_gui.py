@@ -14,7 +14,7 @@ from albummaker.gui.settings import (
     settings_path,
     write_library_file,
 )
-from albummaker.app_paths import config_dir, legacy_settings_path, offline_assets_dir
+from albummaker.app_paths import config_dir, offline_assets_dir
 from albummaker.library import read_trip_list, trip_args
 from albummaker.timezones import timezone_choices
 
@@ -102,10 +102,6 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertEqual(
                 config_dir(), Path("/home/example/Library/Application Support/AlbumMaker")
             )
-            self.assertEqual(
-                legacy_settings_path(),
-                Path("/home/example/Library/Application Support/TripServer/settings.json"),
-            )
 
         with mock.patch("albummaker.app_paths.sys.platform", "win32"), mock.patch.dict(
             "os.environ",
@@ -113,10 +109,6 @@ class GuiSettingsTests(unittest.TestCase):
             clear=False,
         ):
             self.assertEqual(config_dir(), Path("/Users/example/AppData/Roaming/AlbumMaker"))
-            self.assertEqual(
-                legacy_settings_path(),
-                Path("/Users/example/AppData/Roaming/TripServer/settings.json"),
-            )
 
         with mock.patch("albummaker.app_paths.sys.platform", "linux"), mock.patch.dict(
             "os.environ",
@@ -124,24 +116,10 @@ class GuiSettingsTests(unittest.TestCase):
             clear=False,
         ):
             self.assertEqual(config_dir(), Path("/home/example/.config/albummaker"))
-            self.assertEqual(
-                legacy_settings_path(), Path("/home/example/.config/tripserver/settings.json")
-            )
 
-    def test_settings_load_from_legacy_tripserver_directory(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            new_settings = Path(tmp) / "AlbumMaker" / "settings.json"
-            old_settings = Path(tmp) / "TripServer" / "settings.json"
-            old_settings.parent.mkdir()
-            old_settings.write_text('{"version": 1, "output_dir": "/old/output"}', encoding="utf-8")
-            with mock.patch("albummaker.gui.settings.settings_path", return_value=new_settings), mock.patch(
-                "albummaker.gui.settings.legacy_settings_path", return_value=old_settings
-            ):
-                self.assertEqual(load_settings()["output_dir"], "/old/output")
-
-    def test_legacy_trip_paths_are_migrated_and_time_zones_are_validated(self):
+    def test_trip_paths_are_saved_and_time_zones_are_validated(self):
         settings = default_settings()
-        settings["trips"] = ["/photos/Italy"]
+        settings["trips"] = [{"path": "/photos/Italy", "timezone": ""}]
         with tempfile.TemporaryDirectory() as tmp:
             path = Path(tmp) / "settings.json"
             save_settings(settings, path)

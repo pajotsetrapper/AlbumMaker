@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Optional
 
 from .app_paths import offline_assets_dir
-from .util import atomic_write_bytes, project_dir
+from .util import atomic_write_bytes
 
 # --------------------------------------------------------------------------
 # Working without internet
@@ -36,7 +36,6 @@ from .util import atomic_write_bytes, project_dir
 # --------------------------------------------------------------------------
 
 VENDOR_DIR = offline_assets_dir()
-LEGACY_VENDOR_DIR = project_dir() / "vendor"
 DEFAULT_TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
 
 _NPM_REGISTRY = "https://registry.npmjs.org"
@@ -78,24 +77,7 @@ def vendor_ready(vendor_dir: Optional[Path] = None) -> bool:
     VERSIONS.txt is written last, so a download that was interrupted
     part-way never counts as ready."""
     d = Path(vendor_dir or VENDOR_DIR)
-    if vendor_dir is None and not d.exists() and _vendor_ready_at(LEGACY_VENDOR_DIR):
-        try:
-            import shutil
-            d.parent.mkdir(parents=True, exist_ok=True)
-            with tempfile.TemporaryDirectory(dir=d.parent, prefix=".offline-assets-") as tmp:
-                staged = Path(tmp) / d.name
-                shutil.copytree(LEGACY_VENDOR_DIR, staged)
-                os.replace(staged, d)
-        except OSError as exc:
-            raise OSError(
-                f"Could not migrate offline assets to {d}: {exc}"
-            ) from exc
     return all((d / f).is_file() for f in
-               ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
-
-
-def _vendor_ready_at(directory: Path) -> bool:
-    return all((directory / f).is_file() for f in
                ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
 
 

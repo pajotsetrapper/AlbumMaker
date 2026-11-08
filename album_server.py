@@ -20,7 +20,7 @@ except ModuleNotFoundError as e:
         raise
     sys.exit("The albummaker folder is missing: keep it next to this script.")
 
-# keep `import trip_server; trip_server.RequestHandler` etc. working
+# keep `import album_server; album_server.RequestHandler` etc. working
 globals().update({k: v for k, v in vars(_impl).items() if not k.startswith("__")})
 
 if __name__ == "__main__":

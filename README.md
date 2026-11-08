@@ -140,9 +140,8 @@ files can reuse these results instead of being scanned again. It does not
 store photo or video copies. The tile cache keeps map tiles after they are
 viewed, so they do not need to be downloaded again and remain available
 offline. The offline map library and fonts are stored in the `offline-assets`
-subfolder beside `settings.json`; an existing project-level `vendor` folder is
-copied there automatically the first time it is needed. Static-site generation
-bundles these assets when available, but does not require the live-server setup.
+subfolder beside `settings.json`. Static-site generation bundles these assets
+when available, but does not require the live-server setup.
 
 The GUI's live-server high-resolution thumbnail defaults to **2400 pixels**
 (longest side), a sensible balance for Full HD and 4K displays. Only larger
@@ -304,8 +303,7 @@ and the `albummaker` folder, which holds the code both scripts share (and
 the page templates, CSS and JavaScript as ordinary files). Neither script
 runs without it. Offline map assets are saved in the platform-specific
 AlbumMaker configuration directory beside `settings.json`; see "Working
-without internet". The older `trip_server.py`, `trip_gui.py`, `trip_common.py`
-and `tripsite` names remain as compatibility entry points.
+without internet".
 
 **Prefer a single file?** `python tools/build_zipapp.py` packs everything
 into `dist/albummaker.pyz`, which you can copy anywhere and run with
@@ -732,9 +730,6 @@ use those local copies automatically. The configuration directory is:
 - macOS: `~/Library/Application Support/AlbumMaker/`
 - Windows: `%APPDATA%\AlbumMaker\`
 - Linux: `$XDG_CONFIG_HOME/albummaker/`, or `~/.config/albummaker/`
-
-An existing complete `vendor` folder beside the scripts is copied to this
-location the first time AlbumMaker checks for offline assets.
 
 - The files come from the npm registry, in exact pinned versions, and
   each download is checked against its published SHA-512 checksum. One
@@ -1324,8 +1319,7 @@ python -m unittest tests.test_review_fixes
 ```
 
 Tests that patch module-level names should patch them in the `albummaker`
-module that uses them (for example `albummaker.offline._NPM_REGISTRY`), not
-in `album_common`, which only re-exports them.
+module that uses them (for example `albummaker.offline._NPM_REGISTRY`).
 
 Some parts are optional, and are skipped with a note when their
 requirements are missing:
