@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, QUrl
-from PySide6.QtGui import QDesktopServices, QFont, QDoubleValidator, QIcon, QPixmap
+from PySide6.QtGui import QColor, QDesktopServices, QFont, QDoubleValidator, QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -53,6 +53,34 @@ from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
 
 PROJECT_ROOT = project_dir()
+
+def _dark_palette() -> QPalette:
+    """Palette for the dark theme, so widgets the stylesheet does not cover
+    (e.g. the Qt file dialog's views and checkboxes) are dark too."""
+    palette = QPalette()
+    window, base, alt = QColor("#171b24"), QColor("#1b222e"), QColor("#202633")
+    text, muted, accent = QColor("#e6eaf2"), QColor("#788296"), QColor("#354c73")
+    for role, color in (
+        (QPalette.ColorRole.Window, window),
+        (QPalette.ColorRole.WindowText, text),
+        (QPalette.ColorRole.Base, base),
+        (QPalette.ColorRole.AlternateBase, alt),
+        (QPalette.ColorRole.Text, text),
+        (QPalette.ColorRole.Button, QColor("#252e3d")),
+        (QPalette.ColorRole.ButtonText, text),
+        (QPalette.ColorRole.ToolTipBase, alt),
+        (QPalette.ColorRole.ToolTipText, text),
+        (QPalette.ColorRole.Highlight, accent),
+        (QPalette.ColorRole.HighlightedText, QColor("#ffffff")),
+        (QPalette.ColorRole.PlaceholderText, muted),
+        (QPalette.ColorRole.Link, QColor("#a9c2ff")),
+    ):
+        palette.setColor(role, color)
+    for role in (QPalette.ColorRole.Text, QPalette.ColorRole.WindowText,
+                 QPalette.ColorRole.ButtonText):
+        palette.setColor(QPalette.ColorGroup.Disabled, role, muted)
+    return palette
+
 
 THEME_STYLES = {
     "light": """
@@ -116,6 +144,26 @@ THEME_STYLES = {
         QScrollArea { background: transparent; border: 0; }
         QFrame#header { background: transparent; border: 0; }
         QFrame#serverLinks { background: #202f32; border: 1px solid #34534e; border-radius: 10px; }
+        QAbstractItemView { background: #1b222e; alternate-background-color: #202633;
+            color: #e6eaf2; border: 1px solid #343e4f; outline: 0;
+            selection-background-color: #354c73; selection-color: #ffffff; }
+        QAbstractItemView::item:hover { background: #2a3447; }
+        QAbstractItemView::item:selected { background: #354c73; color: #ffffff; }
+        QAbstractItemView::item:disabled { color: #788296; }
+        QComboBox QAbstractItemView { border: 1px solid #3a4659; }
+        QToolButton { background: #252e3d; color: #e6eaf2; border: 1px solid #3a4659;
+            border-radius: 6px; padding: 4px; }
+        QToolButton:hover { background: #303d51; border-color: #637fa8; }
+        QToolButton:pressed, QToolButton:checked { background: #354c73; }
+        QToolButton:disabled { color: #788296; background: #202633; }
+        QSplitter::handle { background: #343e4f; }
+        QMenu { background: #202633; color: #e6eaf2; border: 1px solid #3a4659; padding: 4px; }
+        QMenu::item { padding: 6px 22px; border-radius: 4px; }
+        QMenu::item:selected { background: #354c73; color: #ffffff; }
+        QMenu::item:disabled { color: #788296; }
+        QMenu::separator { height: 1px; background: #343e4f; margin: 4px 6px; }
+        QToolTip { background: #202633; color: #e6eaf2; border: 1px solid #3a4659; }
+        QFileDialog QLabel { background: transparent; }
         QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit, QTextBrowser {
             background: #202633; border: 1px solid #343e4f; border-radius: 12px; }
         QTabWidget::pane { background: #202633; border: 1px solid #343e4f; border-radius: 10px; }
@@ -1038,6 +1086,11 @@ class MainWindow(QMainWindow):
         theme = self.theme_combo.currentData() or "light"
         application = QApplication.instance()
         if application is not None:
+            if not hasattr(self, "_default_palette"):
+                self._default_palette = QPalette(application.palette())
+            application.setPalette(
+                _dark_palette() if theme == "dark" else self._default_palette
+            )
             application.setStyleSheet(THEME_STYLES[theme])
 
     def _offline_assets_ready(self) -> bool:
