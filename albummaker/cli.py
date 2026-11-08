@@ -1,4 +1,4 @@
-"""Command-line pieces shared by generate_site.py and trip_server.py."""
+"""Command-line pieces shared by generate_site.py and album_server.py."""
 
 from __future__ import annotations
 

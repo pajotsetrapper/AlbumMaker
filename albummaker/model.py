@@ -56,16 +56,16 @@ class MediaItem:
     # relative paths: a caption or "hidden" flag on any of them applies here too
     duplicates: list = field(default_factory=list)
     aliases: list = field(default_factory=list)
-    # stable identifier used in URLs and #p=... links. trip_server: a short
+    # stable identifier used in URLs and #p=... links. album_server: a short
     # hash of `rel`; generate_site: the display file's name
     key: str = ""
     outputs: Optional[StaticOutputs] = None      # generate_site only
     # minutes east of UTC of `dt`, and where that came from: "exif", "gps",
     # "apple" (the file says so) or "utc" (a video's exact UTC time converted
-    # with an assumed offset). None: unknown. See tripsite.gpx.
+    # with an assumed offset). None: unknown. See albummaker.gpx.
     utc_offset: Optional[int] = None
     utc_offset_src: str = ""
-    place: str = ""               # nearest town, e.g. "Kyoto" (see tripsite.places)
+    place: str = ""               # nearest town, e.g. "Kyoto" (see albummaker.places)
 
     @property
     def has_gps(self) -> bool:
@@ -89,7 +89,7 @@ class DayGroup:
     date_obj: Optional[datetime]        # None for the unknown-date bucket
     is_unknown: bool = False
     items: list = field(default_factory=list)
-    # the day's part of a GPX track (see tripsite.gpx.attach_day_tracks): for the
+    # the day's part of a GPX track (see albummaker.gpx.attach_day_tracks): for the
     # day map ([[[lat, lon], ...], ...], one list per stretch), a coarser copy for
     # the overview map, and its length (measured before simplifying for the maps)
     track: list = field(default_factory=list)
@@ -116,7 +116,7 @@ class DayGroup:
 
     @property
     def places(self) -> list:
-        """The day's main towns, in visiting order (see tripsite.places)."""
+        """The day's main towns, in visiting order (see albummaker.places)."""
         return [] if self.is_unknown else day_places(self.items)
 
 

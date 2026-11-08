@@ -9,7 +9,7 @@ Each line is a photos folder, then optionally (after "|") the name the
 trip gets in URLs and in the output folder, and options for that trip only.
 Relative paths are relative to the list file. Both scripts read it
 (--library): generate_site.py builds every trip into its own folder under
--o plus a library page; trip_server.py serves them all.
+-o plus a library page; album_server.py serves them all.
 """
 
 from __future__ import annotations

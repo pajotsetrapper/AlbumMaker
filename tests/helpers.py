@@ -27,9 +27,9 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import trip_common as tc  # noqa: E402  (needs ROOT on sys.path first)
+import album_common as tc  # noqa: E402  (needs ROOT on sys.path first)
 
-SCRIPTS = ("trip_common.py", "trip_server.py", "generate_site.py")
+SCRIPTS = ("album_common.py", "album_server.py", "generate_site.py")
 HAVE_FFMPEG = shutil.which("ffmpeg") is not None
 needs_ffmpeg = unittest.skipUnless(HAVE_FFMPEG, "ffmpeg is not installed")
 
@@ -106,18 +106,18 @@ def standard_trip(photos: Path) -> dict:
 
 
 def install_app(dest: Path, with_vendor: Path | None = None) -> Path:
-    """Copy the three scripts and the tripsite package into `dest` (the way a
-    user keeps them: together in one folder) so a test can run them,
-    optionally with a vendor folder beside them, without touching the
-    project's own vendor folder."""
+    """Copy the launchers and package into an isolated test installation."""
     dest = Path(dest)
     dest.mkdir(parents=True, exist_ok=True)
     for name in SCRIPTS:
         shutil.copy2(ROOT / name, dest / name)
-    shutil.copytree(ROOT / "tripsite", dest / "tripsite",
+    shutil.copytree(ROOT / "albummaker", dest / "albummaker",
                     ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     if with_vendor is not None:
-        shutil.copytree(with_vendor, dest / "vendor")
+        shutil.copytree(
+            with_vendor,
+            dest / ".albummaker-data" / "offline-assets",
+        )
     return dest
 
 
@@ -134,7 +134,7 @@ class TempDirMixin:
     """A fresh temporary folder per test class, removed afterwards."""
     @classmethod
     def make_tmp(cls) -> Path:
-        d = Path(tempfile.mkdtemp(prefix="tripsite-test-"))
+        d = Path(tempfile.mkdtemp(prefix="albummaker-test-"))
         cls.addClassCleanup(shutil.rmtree, d, True)
         return d
 
@@ -151,10 +151,12 @@ class QuietHTTPServer(socketserver.ThreadingMixIn, http.server.HTTPServer):
         pass
 
 
-def local_env() -> dict:
+def local_env(config_dir: Path | None = None) -> dict:
     """The environment for a child process, with local addresses exempt from any proxy."""
     env = dict(os.environ)
     env["no_proxy"] = env["NO_PROXY"] = "127.0.0.1,localhost"
+    if config_dir is not None:
+        env["ALBUMMAKER_CONFIG_DIR"] = str(config_dir)
     return env
 
 
@@ -168,13 +170,14 @@ def run_script(app: Path, name: str, *args, cwd: Path | None = None,
                timeout: int = 180) -> subprocess.CompletedProcess:
     """Run one of the scripts as a user would, from a copy in `app`."""
     return subprocess.run([sys.executable, str(Path(app) / name), *map(str, args)],
-                          cwd=str(cwd or app), capture_output=True, text=True, timeout=timeout)
+                          cwd=str(cwd or app), capture_output=True, text=True, timeout=timeout,
+                          env=local_env(Path(app) / ".albummaker-data"))
 
 
-class TripServer:
-    """trip_server.py running for real on a free port.
+class AlbumMaker:
+    """album_server.py running for real on a free port.
 
-        server = TripServer(app, photos, work, "--read-only")
+        server = AlbumMaker(app, photos, work, "--read-only")
         server.start()          # waits until it answers
         server.get("/")         # -> (status, headers, body)
         server.stop()
@@ -195,8 +198,9 @@ class TripServer:
             # photos=None: no -i/-c (e.g. --library in `extra`)
             trip = [] if self.photos is None else ["-i", str(self.photos), "-c", str(self.content)]
             self.proc = subprocess.Popen(
-                [sys.executable, str(self.app / "trip_server.py"), *trip, "--port", str(self.port), *self.extra],
-                cwd=str(self.work), stdout=log, stderr=subprocess.STDOUT, text=True, env=local_env())
+                [sys.executable, str(self.app / "album_server.py"), *trip, "--port", str(self.port), *self.extra],
+                cwd=str(self.work), stdout=log, stderr=subprocess.STDOUT, text=True,
+                env=local_env(self.app / ".albummaker-data"))
         deadline = time.time() + timeout
         while time.time() < deadline:
             if self.proc.poll() is not None:
@@ -254,7 +258,7 @@ class TripServer:
             return status, None
 
 
-def item_ids(server: TripServer, day: str) -> list:
+def item_ids(server: AlbumMaker, day: str) -> list:
     """The URL keys a day page uses for its photos, in page order."""
     import re
     html = server.text(f"/day/{day}")

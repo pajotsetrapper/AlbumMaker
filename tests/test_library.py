@@ -14,11 +14,11 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from .helpers import (TempDirMixin, TripServer, install_app, make_jpeg, read_json, run_script, slides_of,
+from .helpers import (TempDirMixin, AlbumMaker, install_app, make_jpeg, read_json, run_script, slides_of,
                       standard_trip, write_json)
 
-from tripsite import build, content as content_mod, library, server  # noqa: E402
-from tripsite.model import DayGroup, MediaItem  # noqa: E402
+from albummaker import build, content as content_mod, library, server  # noqa: E402
+from albummaker.model import DayGroup, MediaItem  # noqa: E402
 
 
 def trip_list(path: Path, text: str) -> Path:
@@ -341,7 +341,7 @@ class ServerLibraryTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.tmp / "Japan" / "secret.jpg", "2026:06:10 10:00:00", (35.0, 135.7), color=(9, 9, 9))
         write_json(cls.tmp / "Japan" / "trip_content.json", {"title": "Kansai", "photos": {"secret.jpg": {"hidden": True}}})
         trips = trip_list(cls.tmp / "trips.txt", "Belgium\nJapan | japan\n/Volumes/NotPluggedIn/Iceland\n")
-        cls.server = TripServer(app, None, cls.tmp, "--library", trips).start()
+        cls.server = AlbumMaker(app, None, cls.tmp, "--library", trips).start()
         cls.addClassCleanup(cls.server.stop)
 
     def test_the_library_page_links_every_trip_that_loaded(self):
@@ -429,7 +429,7 @@ class ServerLibraryStartupTests(TempDirMixin, unittest.TestCase):
         (tmp / "index.json").write_text("{}")
         for extra, needle in ((["-c", "x.json"], "that trip's line"), (["--index-cache", str(tmp / "index.json")],
                                                                       "is a folder")):
-            r = subprocess.run([sys.executable, str(app / "trip_server.py"), "--library", str(trips), *extra],
+            r = subprocess.run([sys.executable, str(app / "album_server.py"), "--library", str(trips), *extra],
                                capture_output=True, text=True, timeout=60)
             self.assertEqual(r.returncode, 2, extra)
             self.assertIn(needle, r.stderr)
@@ -438,7 +438,7 @@ class ServerLibraryStartupTests(TempDirMixin, unittest.TestCase):
         tmp = self.make_tmp()
         app = install_app(tmp / "app")
         trips = trip_list(tmp / "trips.txt", "/Volumes/NotPluggedIn/A\n")
-        r = subprocess.run([sys.executable, str(app / "trip_server.py"), "--library", str(trips), "--port", "0"],
+        r = subprocess.run([sys.executable, str(app / "album_server.py"), "--library", str(trips), "--port", "0"],
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 1)
         self.assertIn("None of the trips could be loaded", r.stderr)

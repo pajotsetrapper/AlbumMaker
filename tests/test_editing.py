@@ -6,7 +6,7 @@ import threading
 import unittest
 from pathlib import Path
 
-from .helpers import (TempDirMixin, TripServer, install_app, item_ids, make_jpeg, read_json, slides_of,
+from .helpers import (TempDirMixin, AlbumMaker, install_app, item_ids, make_jpeg, read_json, slides_of,
                       standard_trip, tc, write_json)
 
 A1 = "a1.jpg"
@@ -25,7 +25,7 @@ class EditingTestCase(TempDirMixin, unittest.TestCase):
         standard_trip(cls.photos)
         make_jpeg(cls.photos / "nodate.jpg", None, color=(1, 2, 3))          # gives the Unsorted day something to hold
         write_json(cls.tmp / "content.json", {})
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp, *cls.server_args).start()
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp, *cls.server_args).start()
         cls.addClassCleanup(cls.server.stop)
         cls._resets = 0
 
@@ -329,7 +329,7 @@ class ReadOnlyServerTests(EditingTestCase):
         # a URL key is a hash of the file's path, so anyone who can guess the
         # path can compute the key: being hidden must be enforced on every fetch
         from types import SimpleNamespace
-        from tripsite.server import assign_keys
+        from albummaker.server import assign_keys
         names = ("a1.jpg", "a2.jpg", "b1.jpg", "b2.jpg", "nodate.jpg", A3)
         items = [SimpleNamespace(rel=n) for n in names]
         assign_keys(items)
@@ -352,7 +352,7 @@ class LanModeEditingTests(TempDirMixin, unittest.TestCase):
         tmp = self.make_tmp()
         app = install_app(tmp / "app")
         standard_trip(tmp / "photos")
-        server = TripServer(app, tmp / "photos", tmp, "--lan").start()
+        server = AlbumMaker(app, tmp / "photos", tmp, "--lan").start()
         self.addCleanup(server.stop)
         status, _ = server.post_json("/api/photo", {"rel": A1, "favorite": True})
         self.assertEqual(status, 200)

@@ -12,6 +12,7 @@ from PySide6.QtGui import QFont, QDoubleValidator
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QButtonGroup,
     QCheckBox,
     QDialog,
     QDialogButtonBox,
@@ -28,10 +29,9 @@ from PySide6.QtWidgets import (
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
+    QRadioButton,
     QScrollArea,
-    QSizePolicy,
     QSpinBox,
-    QSplitter,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -45,55 +45,84 @@ from .commands import build_command, offline_assets_command, server_command
 from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
                        prepare_tile_cache, save_settings, settings_path, write_library_file)
 from ..timezones import timezone_choices
-from ..offline import vendor_ready
+from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir
 
 PROJECT_ROOT = project_dir()
 
-APP_STYLE = """
-QMainWindow, QWidget { background: #f4f6f9; color: #172033; font-size: 13px; }
-QFrame#header, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit {
-    background: #ffffff; border: 1px solid #dfe4ec; border-radius: 9px;
+THEME_STYLES = {
+    "light": """
+        QWidget { background: #f3f6fb; color: #17243b; font-size: 13px; }
+        QFrame#header, QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane,
+        QPlainTextEdit { background: #ffffff; border: 1px solid #dce4ef; border-radius: 12px; }
+        QFrame#header { border: 0; }
+        QFrame#stepCard { border-radius: 14px; }
+        QFrame#workflowChoice { background: #f8faff; border: 1px solid #e1e8f3; border-radius: 10px; }
+        QGroupBox { margin-top: 12px; padding: 14px 12px 10px; font-weight: 600; }
+        QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+        QPushButton { background: #ffffff; border: 1px solid #d5deeb; border-radius: 8px;
+            padding: 9px 14px; min-height: 18px; }
+        QPushButton:hover { background: #edf3fd; border-color: #9bb6df; }
+        QPushButton:disabled { color: #8a96a8; background: #edf0f5; }
+        QPushButton#primary { color: #ffffff; background: #315fce; border-color: #315fce;
+            font-weight: 650; padding: 11px 20px; }
+        QPushButton#primary:hover { background: #254da9; }
+        QPushButton#stop { color: #a63333; }
+        QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #ffffff;
+            border: 1px solid #cfd9e7; border-radius: 7px; padding: 7px;
+            selection-background-color: #315fce; }
+        QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: #537ddd; }
+        QTableWidget { gridline-color: #e6ebf2; alternate-background-color: #f7f9fc; }
+        QTableWidget::item:selected { background: #e7eefc; color: #173c88; }
+        QTabBar::tab { background: #e9eef6; border-top-left-radius: 7px;
+            border-top-right-radius: 7px; padding: 9px 14px; margin-right: 3px; }
+        QTabBar::tab:selected { background: #ffffff; color: #234da8; font-weight: 600; }
+        QRadioButton { spacing: 9px; }
+        QCheckBox { spacing: 8px; }
+        QLabel#muted { color: #66748a; }
+        QLabel#status { color: #315fce; font-weight: 600; }
+        QLabel#stepNumber { color: #315fce; font-size: 12px; font-weight: 700; }
+    """,
+    "dark": """
+        QWidget { background: #171b24; color: #e6eaf2; font-size: 13px; }
+        QFrame#header { background: transparent; border: 0; }
+        QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit {
+            background: #202633; border: 1px solid #343e4f; border-radius: 12px; }
+        QFrame#stepCard { border-radius: 14px; }
+        QFrame#workflowChoice { background: #242c39; border: 1px solid #3a4659; border-radius: 10px; }
+        QGroupBox { margin-top: 12px; padding: 14px 12px 10px; font-weight: 600; }
+        QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
+        QPushButton { background: #252e3d; border: 1px solid #3a4659; border-radius: 8px;
+            padding: 9px 14px; min-height: 18px; }
+        QPushButton:hover { background: #303d51; border-color: #637fa8; }
+        QPushButton:disabled { color: #788296; background: #202633; }
+        QPushButton#primary { color: #ffffff; background: #4a78dc; border-color: #4a78dc;
+            font-weight: 650; padding: 11px 20px; }
+        QPushButton#primary:hover { background: #5b88ec; }
+        QPushButton#stop { color: #ff9a9a; }
+        QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #1b222e;
+            border: 1px solid #3a4659; border-radius: 7px; padding: 7px;
+            selection-background-color: #4a78dc; }
+        QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: #7699e2; }
+        QTableWidget { gridline-color: #343e4f; alternate-background-color: #242c39; }
+        QTableWidget::item:selected { background: #354c73; color: #ffffff; }
+        QTabBar::tab { background: #252e3d; border-top-left-radius: 7px;
+            border-top-right-radius: 7px; padding: 9px 14px; margin-right: 3px; }
+        QTabBar::tab:selected { background: #202633; color: #a9c2ff; font-weight: 600; }
+        QRadioButton { spacing: 9px; }
+        QCheckBox { spacing: 8px; }
+        QLabel#muted { color: #a2adbf; }
+        QLabel#status { color: #a9c2ff; font-weight: 600; }
+        QLabel#stepNumber { color: #a9c2ff; font-size: 12px; font-weight: 700; }
+    """,
 }
-QFrame#header { border: 0; }
-QGroupBox { margin-top: 12px; padding: 14px 12px 10px 12px; font-weight: 600; }
-QGroupBox::title { subcontrol-origin: margin; left: 12px; padding: 0 5px; }
-QPushButton {
-    background: #ffffff; border: 1px solid #d5dce7; border-radius: 7px;
-    padding: 8px 13px; min-height: 18px;
-}
-QPushButton:hover { background: #edf2fb; border-color: #9eb4da; }
-QPushButton:disabled { color: #8992a2; background: #f1f3f6; }
-QPushButton#primary { color: #ffffff; background: #315fce; border-color: #315fce; font-weight: 600; }
-QPushButton#primary:hover { background: #254da9; }
-QPushButton#stop { color: #a63333; }
-QLineEdit, QSpinBox, QPlainTextEdit {
-    background: #ffffff; border: 1px solid #cfd7e3; border-radius: 6px; padding: 7px;
-    selection-background-color: #315fce;
-}
-QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus { border-color: #537ddd; }
-QTableWidget { gridline-color: #e6eaf0; }
-QTableWidget::item:selected { background: #e7eefc; color: #173c88; }
-QComboBox {
-    background: #ffffff; border: 1px solid #cfd7e3; border-radius: 6px;
-    padding: 5px 7px; selection-background-color: #315fce;
-}
-QTabBar::tab {
-    background: #e9edf3; border-top-left-radius: 7px; border-top-right-radius: 7px;
-    padding: 9px 14px; margin-right: 3px;
-}
-QTabBar::tab:selected { background: #ffffff; color: #234da8; font-weight: 600; }
-QCheckBox { spacing: 8px; }
-QLabel#muted { color: #657187; }
-QLabel#status { color: #315fce; font-weight: 600; }
-"""
 
 HELP_HTML = """
-<h2>TripServer help</h2>
-<p>Start by adding your photo folders to the trip library. Then choose one of the two workflows:
-<b>Run a Live Server</b> to browse and edit in your browser, or <b>Create a Site</b> to make a
-folder you can share. Each screen contains only the settings for that workflow. Settings are
-saved automatically on this computer.</p>
+<h2>AlbumMaker help</h2>
+<p>Follow the three steps in the main window: add trip folders, choose whether to run a live server
+or create a static site, then start. Your choices are saved automatically. Most people can use the
+defaults; less common settings are under <b>Options</b>. General options apply to both workflows;
+Live server and Static site options apply only to their named workflow.</p>
 <h3>Trip library</h3>
 <ul>
 <li><b>Add folders:</b> choose multiple trip folders in the folder picker.
@@ -103,30 +132,37 @@ Existing entries are skipped.</li>
 <b>Automatic</b> does not guess the trip's location. Photo EXIF times stay as recorded. For videos,
 the shared Default video UTC offset is used if set; otherwise iPhone local timestamps are kept as
 recorded and other UTC capture times use this computer's time zone. Choose a named zone when you
-want a consistent trip-local time, especially for video. For GPS-track matching, TripServer uses
+want a consistent trip-local time, especially for video. For GPS-track matching, AlbumMaker uses
 offsets recorded in the files first, then the same day's media, then the trip zone or default
 offset, and finally the trip's overall media offsets when available.</li>
-<li><b>Default video UTC offset:</b> optional fallback for trips set to Automatic, shared by live
-server and site generation. Enter hours east of UTC (for example, <code>2</code> or <code>-5.5</code>).
-Leave blank to use the automatic video handling described above.</li>
 <li><b>Remove:</b> removes selected folders from the library; it never
 deletes photos or generated files.</li>
-<li><b>Folder order:</b> select one trip and use <b>Move up</b> or <b>Move down</b> to change its order.</li>
 </ul>
-<h3>Run a Live Server</h3>
-<p>The live server scans your folders, then hosts a site in your browser. All three setup items at
-the top of this screen are required:</p>
+<h3>Choose a workflow</h3>
+<ul>
+<li><b>Live server:</b> scans your trips and opens the site in a browser. The server stays running
+until you stop it. Required setup is in Options → Live server.</li>
+<li><b>Static site:</b> creates a standalone copy you can share. Pick its output folder in the main
+window; it does not require the live-server setup.</li>
+</ul>
+<h3>Options → Live server</h3>
+<p>These settings only affect the live server. It requires the metadata cache folder, map tile cache
+folder, and downloaded offline assets. The two cache folders are created if needed. Offline assets
+are stored in <code>offline-assets</code> beside AlbumMaker's settings file.</p>
 <ul>
 <li><b>Metadata cache folder:</b> required. Stores a small JSON index per trip with each media
 file's size and modification time plus metadata read from it, including capture date, GPS
 coordinates, dimensions, camera details and video information. On a later server start, unchanged
 files can reuse these results instead of being read again. It does not store photo or video copies.
-The default is TripServer's application-support folder.</li>
+By default this is a <code>metadata-cache</code> folder next to AlbumMaker's settings file.</li>
 <li><b>Offline assets:</b> required in this app before starting the server. Downloads local copies
 of the map library and fonts once, so those interface assets are served locally. Map backgrounds
-(tiles) are separate: they come from the configured map provider unless you use a tile cache.</li>
+(tiles) are separate: they come from the configured map provider unless you use a tile cache.
+If these assets are available, static-site generation also bundles them into the site; they are
+not a static-site prerequisite.</li>
 <li><b>Map tile cache folder:</b> required. Stores map tiles as they are viewed, preventing repeat
-downloads and allowing previously viewed map areas to work offline. The folder is created if needed.</li>
+downloads and allowing previously viewed map areas to work offline. By default this is a
+<code>tile-cache</code> folder next to AlbumMaker's settings file.</li>
 </ul>
 <p>Other live server settings:</p>
 <ul>
@@ -147,10 +183,9 @@ private editor link printed in the activity log. Off by default; useful behind a
 <li><b>Show every request:</b> adds all HTTP requests to the activity log; otherwise errors
 and slow requests are shown. On by default in the desktop app.</li>
 </ul>
-<h3>Create a Site</h3>
+<h3>Options → Static site</h3>
+<p>These settings only affect static-site generation.</p>
 <ul>
-<li><b>Output folder:</b> where the generated, shareable website is written.</li>
-<li><b>Thumbnail size:</b> maximum thumbnail dimension in pixels (16–4096; default 400).</li>
 <li><b>High-resolution thumbnail:</b> optional larger version for large gallery tiles and trip cards on
 high-pixel-density screens, so small thumbnails do not look soft when enlarged. It is measured by its
 longest side in pixels. 2400 pixels is a good choice for Full HD and 4K displays; Off is the default for
@@ -158,35 +193,38 @@ generated sites, and any enabled value must be larger than the normal thumbnail 
 increase build time and site size.</li>
 <li><b>Parallel workers:</b> number of files processed simultaneously. Automatic uses
 available CPU cores and is the default.</li>
-<li><b>Optional date range:</b> include the start and end dates (YYYY-MM-DD) for every trip;
-both dates are required, and the end must be on or after the start. Files outside this inclusive range are put
-under Unsorted. Leave both blank (the default) to use date checks.</li>
-<li><b>Keep exact duplicate files:</b> includes byte-identical copies that are otherwise skipped. Off by default.</li>
-<li><b>Show Live Photo video clips separately:</b> lists paired clips as individual videos
-instead of attaching them to their photos. Off by default.</li>
-<li><b>Trust all captured dates:</b> skips suspicious-date checks. The optional date range
-is ignored when enabled. Off by default.</li>
-<li><b>Ignore GPS tracks:</b> disables GPX track matching and route drawing. Off by default.</li>
-<li><b>Hide offline place names:</b> omits nearest-town names. Off by default.</li>
 <li><b>Regenerate all media:</b> rebuilds every thumbnail and media copy instead of reusing
 unchanged generated files. Off by default.</li>
-<li><b>GPX paths:</b> optional .gpx files or folders, one per line. Tracks inside each trip
-folder are found automatically. No extra paths are used by default. These paths are ignored
-when GPS tracks are disabled.</li>
 </ul>
+<h3>Options → General</h3>
+<ul>
+<li><b>Appearance:</b> choose the light or dark color theme.</li>
+<li><b>Default video UTC offset:</b> optional fixed fallback for videos in trips set to Automatic,
+shared by the live server and static sites. Enter hours east of UTC, such as <code>2</code> or
+<code>-5.5</code>. Leave blank to use automatic handling.</li>
+<li><b>Thumbnail size:</b> base thumbnail dimension in pixels (16–4096; default 400), used by both workflows.</li>
+<li><b>Optional date range:</b> include the start and end dates (YYYY-MM-DD) for every trip;
+both dates are required, and the end must be on or after the start. Files outside this inclusive range are put
+under Unsorted. Leave both blank to use date checks.</li>
+<li><b>Keep exact duplicate files:</b> includes byte-identical copies that are otherwise skipped.</li>
+<li><b>Show Live Photo video clips separately:</b> lists paired clips as individual videos
+instead of attaching them to their photos.</li>
+<li><b>Trust all captured dates:</b> skips suspicious-date checks; the optional date range
+is ignored when enabled.</li>
+<li><b>Ignore GPS tracks:</b> disables GPX track matching and route drawing.</li>
+<li><b>Hide offline place names:</b> omits nearest-town names.</li>
+<li><b>GPX paths:</b> optional .gpx files or folders, one per line. Tracks inside each trip folder
+are found automatically. These paths are ignored when GPS tracks are disabled.</li>
+</ul>
+<h3>Activity</h3>
+<p>Open <b>Show activity</b> to see progress, errors, server requests, and the local server URL.
+<b>Stop</b> appears only while a task is running.</p>
 <h3>Additional live server settings</h3>
 <ul>
 <li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
 <code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap.</li>
 <li><b>Allowed host names:</b> for the live server, additional host names the server may answer to, one per line.
 Blank by default; use only for a trusted custom local DNS name.</li>
-</ul>
-<h3>Actions and activity</h3>
-<ul>
-<li><b>Start server:</b> starts the live site for all listed trips after required server setup is complete.</li>
-<li><b>Create site:</b> creates a static copy in the chosen output folder.</li>
-<li><b>Stop current task:</b> appears while a server, site generation, or offline-assets download is running.
-Progress and errors appear in Activity.</li>
 </ul>
 """
 
@@ -229,37 +267,41 @@ class MainWindow(QMainWindow):
         self._process: Optional[QProcess] = None
         self._process_kind = ""
         self._log_remainder = ""
+        self._offline_asset_error = ""
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
         self._save_timer.timeout.connect(self._save_from_ui)
 
-        self.setWindowTitle("TripServer")
+        self.setWindowTitle("AlbumMaker")
         self.setMinimumSize(780, 620)
-        self.resize(1120, 800)
-        self.setStyleSheet(APP_STYLE)
+        self.resize(920, 820)
         self._build_ui()
         self._load_ui()
         self._connect_persistence()
+        self._apply_theme()
         self._update_actions()
 
     def _build_ui(self) -> None:
         root = QWidget()
         outer = QVBoxLayout(root)
-        outer.setContentsMargins(18, 14, 18, 14)
-        outer.setSpacing(12)
+        outer.setContentsMargins(28, 22, 28, 22)
+        outer.setSpacing(14)
 
         header = QFrame()
         header.setObjectName("header")
         header_layout = QHBoxLayout(header)
-        header_layout.setContentsMargins(3, 0, 3, 0)
+        header_layout.setContentsMargins(0, 0, 0, 4)
         title_block = QVBoxLayout()
-        title = _label("TripServer")
+        title = _label("AlbumMaker")
         title.setFont(QFont(title.font().family(), 21, QFont.Weight.Bold))
         title_block.addWidget(title)
-        title_block.addWidget(_label("Add your trips, then choose how you want to use them.", "muted"))
+        title_block.addWidget(_label("A simple way to turn your trips into a photo site.", "muted"))
         header_layout.addLayout(title_block)
         header_layout.addStretch(1)
+        self.options_button = QPushButton("Options")
+        self.options_button.clicked.connect(lambda: self.options_dialog.exec())
+        header_layout.addWidget(self.options_button)
         help_button = QPushButton("Help")
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
@@ -267,22 +309,17 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
 
-        self.stop_button = QPushButton("Stop current task")
-        self.stop_button.setObjectName("stop")
-        self.stop_button.setVisible(False)
-        outer.addWidget(self.stop_button, alignment=Qt.AlignmentFlag.AlignRight)
+        outer.addWidget(self._build_library_panel())
+        outer.addWidget(self._build_workflow_panel())
+        outer.addWidget(self._build_run_panel())
 
-        panes = QSplitter(Qt.Orientation.Horizontal)
-        panes.setChildrenCollapsible(False)
-        panes.addWidget(self._build_library_panel())
-        panes.addWidget(self._build_settings_panel())
-        panes.setStretchFactor(0, 1)
-        panes.setStretchFactor(1, 3)
-        panes.setSizes([310, 750])
-
-        activity_box = QGroupBox("Activity & requests")
-        activity_layout = QVBoxLayout(activity_box)
-        activity_layout.setContentsMargins(10, 10, 10, 10)
+        self.activity_toggle = QPushButton("Show activity")
+        self.activity_toggle.setCheckable(True)
+        self.activity_toggle.toggled.connect(self._toggle_activity)
+        outer.addWidget(self.activity_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
+        self.activity_box = QGroupBox("Activity")
+        activity_layout = QVBoxLayout(self.activity_box)
+        activity_layout.setContentsMargins(12, 12, 12, 12)
         self.log_view = QPlainTextEdit()
         self.log_view.setReadOnly(True)
         self.log_view.setMaximumBlockCount(3000)
@@ -290,39 +327,38 @@ class MainWindow(QMainWindow):
             "Server requests, build progress and errors will appear here."
         )
         self.log_view.setFont(QFont("monospace", 10))
+        self.log_view.setMaximumHeight(150)
         activity_layout.addWidget(self.log_view)
         self.server_url = _label("Server URL: not running", "muted")
         activity_layout.addWidget(self.server_url)
+        self.activity_box.setVisible(False)
+        outer.addWidget(self.activity_box)
+        outer.addStretch(1)
+        scroll = QScrollArea()
+        scroll.setWidgetResizable(True)
+        scroll.setFrameShape(QFrame.Shape.NoFrame)
+        scroll.setWidget(root)
+        self.setCentralWidget(scroll)
 
-        vertical = QSplitter(Qt.Orientation.Vertical)
-        vertical.setChildrenCollapsible(False)
-        vertical.addWidget(panes)
-        vertical.addWidget(activity_box)
-        vertical.setStretchFactor(0, 3)
-        vertical.setStretchFactor(1, 2)
-        vertical.setSizes([500, 250])
-        outer.addWidget(vertical, 1)
-        self.setCentralWidget(root)
-
-        self.start_button.clicked.connect(self._start_server)
+        self._build_options_dialog()
         self.stop_button.clicked.connect(self._stop_process)
-        self.build_button.clicked.connect(self._build_site)
+        self.run_button.clicked.connect(self._run_selected_workflow)
         self.offline_button.clicked.connect(self._fetch_offline_assets)
         self.index_cache.textChanged.connect(self._update_server_setup)
         self.tile_cache.textChanged.connect(self._update_server_setup)
 
     def _build_library_panel(self) -> QWidget:
-        panel = QWidget()
+        panel = QFrame()
+        panel.setObjectName("stepCard")
         layout = QVBoxLayout(panel)
-        layout.setContentsMargins(0, 0, 8, 0)
-        layout.setSpacing(9)
-        layout.addWidget(_label("Trip library"))
-        layout.addWidget(_label("Add folders in bulk and choose a time zone for each trip.",
-                                "muted"))
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        layout.addWidget(_label("STEP 1  ·  Choose your trip folders", "stepNumber"))
+        layout.addWidget(_label("Add one or more photo folders. You can set a time zone for each trip.", "muted"))
         self.trip_table = QTableWidget(0, 2)
         self.trip_table.setHorizontalHeaderLabels(["Trip folder", "Time zone"])
         self.trip_table.setToolTip(
-            "Select rows to remove trips. Choose a time zone directly from its dropdown."
+            "Each row is one trip. Select its time zone in the second column."
         )
         self.trip_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.trip_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
@@ -331,62 +367,196 @@ class MainWindow(QMainWindow):
         self.trip_table.verticalHeader().setVisible(False)
         header = self.trip_table.horizontalHeader()
         header.setSectionResizeMode(0, QHeaderView.ResizeMode.Stretch)
-        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Stretch)
-        self.trip_table.setSizePolicy(QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding)
-        layout.addWidget(self.trip_table, 1)
-
-        video_time_box, video_time_form = _group("Automatic video times")
-        self.tz_offset = QLineEdit()
-        self.tz_offset.setPlaceholderText("Use computer time zone")
-        self.tz_offset.setValidator(QDoubleValidator(-24.0, 24.0, 2, self.tz_offset))
-        self.tz_offset.setToolTip(
-            "Optional fixed UTC offset in hours for videos when a trip uses Automatic. "
-            "This applies to both the live server and generated sites."
-        )
-        video_time_form.addRow("Default video UTC offset", self.tz_offset)
-        layout.addWidget(video_time_box)
+        header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
+        self.trip_table.setColumnWidth(1, 240)
+        self.trip_table.setMinimumHeight(155)
+        self.trip_table.setMaximumHeight(230)
+        layout.addWidget(self.trip_table)
 
         buttons = QHBoxLayout()
         self.add_trip_button = QPushButton("Add folders")
         self.remove_trip_button = QPushButton("Remove")
+        self.trip_count = _label("0 folders", "muted")
         buttons.addWidget(self.add_trip_button)
         buttons.addWidget(self.remove_trip_button)
+        buttons.addStretch(1)
+        buttons.addWidget(self.trip_count)
         layout.addLayout(buttons)
-        order_buttons = QHBoxLayout()
-        self.move_trip_up_button = QPushButton("Move up")
-        self.move_trip_down_button = QPushButton("Move down")
-        order_buttons.addWidget(self.move_trip_up_button)
-        order_buttons.addWidget(self.move_trip_down_button)
-        layout.addLayout(order_buttons)
-        self.trip_count = _label("0 folders", "muted")
-        layout.addWidget(self.trip_count)
 
         self.add_trip_button.clicked.connect(self._add_trip)
         self.remove_trip_button.clicked.connect(self._remove_trips)
-        self.move_trip_up_button.clicked.connect(lambda: self._move_selected_trip(-1))
-        self.move_trip_down_button.clicked.connect(lambda: self._move_selected_trip(1))
         self.trip_table.itemSelectionChanged.connect(self._update_trip_selection)
         return panel
 
-    def _build_settings_panel(self) -> QTabWidget:
-        self.workflow_tabs = QTabWidget()
-        self.workflow_tabs.setDocumentMode(True)
-        self.workflow_tabs.addTab(self._server_tab(), "Run a Live Server")
-        self.workflow_tabs.addTab(self._build_tab(), "Create a Site")
-        return self.workflow_tabs
+    def _build_workflow_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("stepCard")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        layout.addWidget(_label("STEP 2  ·  Choose what to do", "stepNumber"))
+
+        choices = QHBoxLayout()
+        choices.setSpacing(12)
+        self.workflow_group = QButtonGroup(self)
+        self.live_radio = QRadioButton("Run a live server")
+        self.live_radio.setToolTip("Open and browse your trips in a web browser on this computer.")
+        self.site_radio = QRadioButton("Create a static site")
+        self.site_radio.setToolTip("Create a standalone website folder that you can share or copy.")
+        for radio, title, description in (
+            (self.live_radio, "Live server", "Browse your trips now; keep AlbumMaker running."),
+            (self.site_radio, "Static site", "Create a folder you can share or publish."),
+        ):
+            card = QFrame()
+            card.setObjectName("workflowChoice")
+            card_layout = QVBoxLayout(card)
+            card_layout.setContentsMargins(14, 12, 14, 12)
+            radio.setText(title)
+            self.workflow_group.addButton(radio)
+            card_layout.addWidget(radio)
+            card_layout.addWidget(_label(description, "muted"))
+            choices.addWidget(card, 1)
+        self.live_radio.setChecked(True)
+        layout.addLayout(choices)
+
+        self.output_row = QWidget()
+        output_layout = QHBoxLayout(self.output_row)
+        output_layout.setContentsMargins(0, 0, 0, 0)
+        self.output_dir = QLineEdit()
+        self.output_dir.setToolTip("Folder where the static site will be created.")
+        output_layout.addWidget(_label("Save site to"))
+        output_layout.addWidget(self.output_dir, 1)
+        browse_output = QPushButton("Browse…")
+        browse_output.clicked.connect(self._browse_output)
+        output_layout.addWidget(browse_output)
+        layout.addWidget(self.output_row)
+        self.output_row.setVisible(False)
+
+        self.live_radio.toggled.connect(self._update_workflow)
+        self.site_radio.toggled.connect(self._update_workflow)
+        return panel
+
+    def _build_run_panel(self) -> QWidget:
+        panel = QFrame()
+        panel.setObjectName("stepCard")
+        layout = QVBoxLayout(panel)
+        layout.setContentsMargins(18, 16, 18, 16)
+        layout.setSpacing(10)
+        layout.addWidget(_label("STEP 3  ·  Run", "stepNumber"))
+        row = QHBoxLayout()
+        self.run_button = QPushButton("Start live server")
+        self.run_button.setObjectName("primary")
+        self.run_button.setMinimumHeight(42)
+        self.stop_button = QPushButton("Stop")
+        self.stop_button.setObjectName("stop")
+        self.stop_button.setVisible(False)
+        row.addWidget(self.run_button)
+        row.addWidget(self.stop_button)
+        row.addStretch(1)
+        self.workflow_status = _label("Add a trip folder to get started.", "muted")
+        row.addWidget(self.workflow_status, 1)
+        layout.addLayout(row)
+        return panel
+
+    def _build_options_dialog(self) -> None:
+        self.options_dialog = QDialog(self)
+        self.options_dialog.setWindowTitle("AlbumMaker options")
+        self.options_dialog.resize(760, 700)
+        layout = QVBoxLayout(self.options_dialog)
+        intro = _label("Optional settings. Most people can use the defaults.", "muted")
+        layout.addWidget(intro)
+        self.options_tabs = QTabWidget()
+        self.options_tabs.setDocumentMode(True)
+        self.options_tabs.addTab(self._general_tab(), "General")
+        self.options_tabs.addTab(self._server_tab(), "Live server")
+        self.options_tabs.addTab(self._build_tab(), "Static site")
+        layout.addWidget(self.options_tabs, 1)
+        buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.rejected.connect(self.options_dialog.reject)
+        buttons.accepted.connect(self.options_dialog.accept)
+        layout.addWidget(buttons)
+
+    def _general_tab(self) -> QWidget:
+        appearance_box, appearance_form = _group("Appearance")
+        self.theme_combo = QComboBox()
+        self.theme_combo.addItem("Light", "light")
+        self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.currentIndexChanged.connect(self._apply_theme)
+        self.theme_combo.currentIndexChanged.connect(self._schedule_save)
+        appearance_form.addRow("Color theme", self.theme_combo)
+
+        time_box, time_form = _group("Video time handling")
+        self.tz_offset = QLineEdit()
+        self.tz_offset.setPlaceholderText("Use automatic handling")
+        self.tz_offset.setValidator(QDoubleValidator(-24.0, 24.0, 2, self.tz_offset))
+        self.tz_offset.setToolTip(
+            "Optional fixed UTC offset in hours for videos in trips set to Automatic. "
+            "This applies to live server and static-site generation."
+        )
+        time_form.addRow("Default video UTC offset", self.tz_offset)
+        time_help = _label(
+            "Enter hours east of UTC (for example 2 or -5.5). A time zone set on a trip takes precedence.",
+            "muted",
+        )
+        time_help.setWordWrap(True)
+        time_form.addRow("", time_help)
+
+        media_box, media_form = _group("Shared trip processing")
+        self.thumb_size = QSpinBox()
+        self.thumb_size.setRange(16, 4096)
+        self.thumb_size.setSuffix(" px")
+        self.thumb_size.setToolTip(
+            "Base thumbnail size used by both the live server and static sites."
+        )
+        media_form.addRow("Thumbnail size", self.thumb_size)
+        self.date_start = QLineEdit()
+        self.date_start.setPlaceholderText("YYYY-MM-DD")
+        self.date_end = QLineEdit()
+        self.date_end.setPlaceholderText("YYYY-MM-DD")
+        date_row = QWidget()
+        dates = QHBoxLayout(date_row)
+        dates.setContentsMargins(0, 0, 0, 0)
+        dates.addWidget(self.date_start)
+        dates.addWidget(_label("to", "muted"))
+        dates.addWidget(self.date_end)
+        media_form.addRow("Optional date range", date_row)
+
+        behavior_box, behavior_form = _group("Shared import behavior")
+        self.no_dedupe = QCheckBox("Keep exact duplicate files")
+        behavior_form.addRow("", self.no_dedupe)
+        self.no_live_photos = QCheckBox("Show Live Photo video clips separately")
+        behavior_form.addRow("", self.no_live_photos)
+        self.no_date_check = QCheckBox("Trust all captured dates")
+        self.no_date_check.setToolTip(
+            "Skip suspicious-date checks. The optional date range is ignored while this is enabled."
+        )
+        behavior_form.addRow("", self.no_date_check)
+        self.no_gpx = QCheckBox("Ignore GPS tracks")
+        behavior_form.addRow("", self.no_gpx)
+        self.no_places = QCheckBox("Hide offline place names")
+        behavior_form.addRow("", self.no_places)
+
+        gpx_box, gpx_form = _group("Additional GPS tracks")
+        self.gpx_files = QPlainTextEdit()
+        self.gpx_files.setPlaceholderText("Optional: one .gpx file or folder path per line")
+        self.gpx_files.setToolTip("These tracks are used by both workflows and ignored if GPS tracks are disabled.")
+        self.gpx_files.setMaximumHeight(90)
+        gpx_form.addRow("GPX paths", self.gpx_files)
+        return _scroll_page(appearance_box, time_box, media_box, behavior_box, gpx_box)
 
     def _server_tab(self) -> QWidget:
         setup_box = QGroupBox("One-time server setup")
         setup_layout = QVBoxLayout(setup_box)
         setup_intro = _label(
-            "All three items are required before the live server can start. The folders are created if needed.",
+            "All three items are required for the live server. Static sites can use offline assets when available, "
+            "but do not require these server setup steps. Cache folders are created if needed.",
             "muted",
         )
         setup_intro.setWordWrap(True)
         setup_layout.addWidget(setup_intro)
         cache_form = QFormLayout()
         self.index_cache = QLineEdit()
-        self.index_cache.setPlaceholderText("Choose where TripServer should store the metadata index")
+        self.index_cache.setPlaceholderText("Choose where AlbumMaker should store the metadata index")
         cache_form.addRow("Metadata cache folder", self._path_field(self.index_cache, directory=True))
         self.tile_cache = QLineEdit()
         self.tile_cache.setPlaceholderText("Choose where viewed map tiles should be saved")
@@ -408,6 +578,11 @@ class MainWindow(QMainWindow):
         self.offline_button = QPushButton("Download offline assets")
         offline_row.addWidget(self.offline_button)
         setup_layout.addLayout(offline_row)
+        self.offline_location = _label(
+            f"Offline map assets are stored in {VENDOR_DIR}.", "muted"
+        )
+        self.offline_location.setWordWrap(True)
+        setup_layout.addWidget(self.offline_location)
         self.server_setup_status = _label("", "muted")
         self.server_setup_status.setWordWrap(True)
         setup_layout.addWidget(self.server_setup_status)
@@ -458,39 +633,10 @@ class MainWindow(QMainWindow):
         self.allow_hosts.setMaximumHeight(65)
         maps_form.addRow("Extra allowed host names", self.allow_hosts)
 
-        self.start_button = QPushButton("Start live server")
-        self.start_button.setObjectName("primary")
-        self.start_button.setMinimumHeight(38)
-        action_row = QHBoxLayout()
-        action_row.addWidget(self.start_button)
-        action_row.addStretch(1)
-        action_box = QWidget()
-        action_box.setLayout(action_row)
-        return _scroll_page(setup_box, server_box, maps_box, network_note, action_box)
+        return _scroll_page(setup_box, server_box, maps_box, network_note)
 
     def _build_tab(self) -> QWidget:
-        output_box, output_form = _group("Where should the site go?")
-        self.output_dir = QLineEdit()
-        output_row = QWidget()
-        output_layout = QHBoxLayout(output_row)
-        output_layout.setContentsMargins(0, 0, 0, 0)
-        output_layout.addWidget(self.output_dir, 1)
-        browse_output = QPushButton("Choose folder…")
-        browse_output.clicked.connect(self._browse_output)
-        output_layout.addWidget(browse_output)
-        output_form.addRow("Site folder", output_row)
-        output_help = _label(
-            "TripServer creates a shareable website here. Your original photos stay in their folders.",
-            "muted",
-        )
-        output_help.setWordWrap(True)
-        output_form.addRow("", output_help)
-
-        media_box, media_form = _group("Media & dates")
-        self.thumb_size = QSpinBox()
-        self.thumb_size.setRange(16, 4096)
-        self.thumb_size.setSuffix(" px")
-        media_form.addRow("Thumbnail size", self.thumb_size)
+        media_box, media_form = _group("Static site media")
         self.large_thumb_size = QSpinBox()
         self.large_thumb_size.setRange(0, 4096)
         self.large_thumb_size.setSpecialValueText("Off")
@@ -504,46 +650,12 @@ class MainWindow(QMainWindow):
         self.workers.setSpecialValueText("Automatic")
         self.workers.setToolTip("Number of files processed in parallel. Automatic uses available CPU cores.")
         media_form.addRow("Parallel workers", self.workers)
-
-        self.date_start = QLineEdit()
-        self.date_start.setPlaceholderText("YYYY-MM-DD")
-        self.date_end = QLineEdit()
-        self.date_end.setPlaceholderText("YYYY-MM-DD")
-        date_row = QWidget()
-        dates = QHBoxLayout(date_row)
-        dates.setContentsMargins(0, 0, 0, 0)
-        dates.addWidget(self.date_start)
-        dates.addWidget(_label("to", "muted"))
-        dates.addWidget(self.date_end)
-        media_form.addRow("Optional date range", date_row)
-
-        behavior_box, behavior_form = _group("Import behavior")
-        self.no_dedupe = QCheckBox("Keep exact duplicate files")
-        behavior_form.addRow("", self.no_dedupe)
-        self.no_live_photos = QCheckBox("Show Live Photo video clips separately")
-        behavior_form.addRow("", self.no_live_photos)
-        self.no_date_check = QCheckBox("Trust all captured dates")
-        self.no_date_check.setToolTip(
-            "Skip suspicious-date checks. The optional date range is ignored while this is enabled."
-        )
-        behavior_form.addRow("", self.no_date_check)
-        self.no_gpx = QCheckBox("Ignore GPS tracks")
-        behavior_form.addRow("", self.no_gpx)
-        self.no_places = QCheckBox("Hide offline place names")
-        behavior_form.addRow("", self.no_places)
         self.force = QCheckBox("Regenerate all static site media")
-        behavior_form.addRow("", self.force)
-
-        gpx_box, gpx_form = _group("Additional GPS tracks")
-        self.gpx_files = QPlainTextEdit()
-        self.gpx_files.setPlaceholderText("Optional: one .gpx file or folder path per line")
-        self.gpx_files.setToolTip("These additional tracks are ignored when 'Ignore GPS tracks' is enabled.")
-        self.gpx_files.setMaximumHeight(90)
-        gpx_form.addRow("GPX paths", self.gpx_files)
-        self.build_button = QPushButton("Create site")
-        self.build_button.setObjectName("primary")
-        self.build_button.setMinimumHeight(38)
-        return _scroll_page(output_box, media_box, behavior_box, gpx_box, self.build_button)
+        self.force.setToolTip(
+            "Rebuild all generated thumbnails and media copies instead of reusing unchanged output."
+        )
+        media_form.addRow("", self.force)
+        return _scroll_page(media_box)
 
     def _path_field(self, line_edit: QLineEdit, directory: bool) -> QWidget:
         row = QWidget()
@@ -562,6 +674,9 @@ class MainWindow(QMainWindow):
         for trip in self.settings["trips"]:
             self._add_trip_item(trip["path"], trip["timezone"])
         self.output_dir.setText(self.settings["output_dir"])
+        self.theme_combo.setCurrentIndex(
+            max(0, self.theme_combo.findData(self.settings["appearance"]["theme"]))
+        )
         server = self.settings["server"]
         self.port.setValue(int(server["port"]))
         self.memory_cache.setValue(int(server["memory_cache_mb"]))
@@ -599,6 +714,7 @@ class MainWindow(QMainWindow):
         self.gpx_files.setEnabled(not self.no_gpx.isChecked())
         self._update_trip_count()
         self._update_server_setup()
+        self._update_workflow()
 
     def _connect_persistence(self) -> None:
         for widget in (
@@ -606,6 +722,7 @@ class MainWindow(QMainWindow):
             self.tile_cache, self.tile_url, self.index_cache,
         ):
             widget.textChanged.connect(self._schedule_save)
+        self.output_dir.textChanged.connect(self._update_workflow)
         for widget in (
             self.port, self.memory_cache, self.server_large_thumb_size,
             self.thumb_size, self.large_thumb_size, self.workers,
@@ -733,34 +850,71 @@ class MainWindow(QMainWindow):
         self._update_trip_count()
         self._schedule_save()
 
-    def _move_selected_trip(self, direction: int) -> None:
-        selected = self.trip_table.selectionModel().selectedRows()
-        if len(selected) != 1:
-            return
-        row = selected[0].row()
-        destination = row + direction
-        if not 0 <= destination < self.trip_table.rowCount():
-            return
-        trip = self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)
-        timezone_name = self.trip_table.cellWidget(row, 1).currentData() or ""
-        self.trip_table.removeRow(row)
-        self._insert_trip_item(destination, trip, timezone_name)
-        self.trip_table.selectRow(destination)
-        self._schedule_save()
-
     def _update_trip_selection(self) -> None:
-        selected = self.trip_table.selectionModel().selectedRows()
-        can_move = len(selected) == 1
-        row = selected[0].row() if can_move else -1
-        self.move_trip_up_button.setEnabled(can_move and row > 0)
-        self.move_trip_down_button.setEnabled(
-            can_move and row < self.trip_table.rowCount() - 1
-        )
+        self.remove_trip_button.setEnabled(bool(self.trip_table.selectionModel().selectedRows()))
 
     def _update_trip_count(self) -> None:
         count = self.trip_table.rowCount()
         self.trip_count.setText(f"{count} folder" + ("" if count == 1 else "s"))
         self._update_trip_selection()
+        self._update_workflow()
+
+    def _toggle_activity(self, visible: bool) -> None:
+        self.activity_box.setVisible(visible)
+        self.activity_toggle.setText("Hide activity" if visible else "Show activity")
+
+    def _apply_theme(self, *_args) -> None:
+        if not hasattr(self, "theme_combo"):
+            return
+        theme = self.theme_combo.currentData() or "light"
+        application = QApplication.instance()
+        if application is not None:
+            application.setStyleSheet(THEME_STYLES[theme])
+
+    def _offline_assets_ready(self) -> bool:
+        self._offline_asset_error = ""
+        try:
+            return vendor_ready()
+        except OSError as exc:
+            self._offline_asset_error = str(exc)
+            return False
+
+    def _update_workflow(self, *_args) -> None:
+        is_site = self.site_radio.isChecked()
+        self.output_row.setVisible(is_site)
+        self.run_button.setText("Create static site" if is_site else "Start live server")
+
+        running = bool(
+            self._process and self._process.state() != QProcess.ProcessState.NotRunning
+        )
+        if running:
+            self.workflow_status.setText(
+                "The live server is running." if self._process_kind == "server"
+                else f"{self._process_kind.capitalize()} is in progress."
+            )
+            self.run_button.setEnabled(False)
+            return
+
+        has_trips = self.trip_table.rowCount() > 0
+        if not has_trips:
+            self.workflow_status.setText("Add a trip folder to get started.")
+            self.run_button.setEnabled(False)
+            return
+
+        if is_site:
+            ready = bool(self.output_dir.text().strip())
+            self.workflow_status.setText(
+                "Ready to create your site." if ready else "Choose where to save your site."
+            )
+        else:
+            ready = self._offline_assets_ready() and bool(self.index_cache.text().strip()) and bool(
+                self.tile_cache.text().strip()
+            )
+            self.workflow_status.setText(
+                "Live server setup is ready." if ready
+                else (self._offline_asset_error or "Complete the required setup in Options → Live server.")
+            )
+        self.run_button.setEnabled(ready)
 
     def _browse_output(self) -> None:
         selected = QFileDialog.getExistingDirectory(
@@ -782,6 +936,7 @@ class MainWindow(QMainWindow):
     def _settings_from_ui(self) -> dict:
         settings = {
             "version": self.settings["version"],
+            "appearance": {"theme": self.theme_combo.currentData()},
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
@@ -827,7 +982,7 @@ class MainWindow(QMainWindow):
 
     def _show_help(self) -> None:
         dialog = QDialog(self)
-        dialog.setWindowTitle("TripServer help")
+        dialog.setWindowTitle("AlbumMaker help")
         dialog.resize(720, 700)
         layout = QVBoxLayout(dialog)
         content = QTextBrowser()
@@ -864,6 +1019,7 @@ class MainWindow(QMainWindow):
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
             QMessageBox.warning(self, "A task is already running", "Stop the current task before starting another.")
             return
+        self.activity_toggle.setChecked(True)
         process = QProcess(self)
         process.setWorkingDirectory(str(PROJECT_ROOT))
         environment = QProcessEnvironment.systemEnvironment()
@@ -887,10 +1043,11 @@ class MainWindow(QMainWindow):
         return " ".join(f'"{arg}"' if " " in arg else arg for arg in arguments)
 
     def _start_server(self) -> None:
-        if not vendor_ready():
+        if not self._offline_assets_ready():
             QMessageBox.warning(
-                self, "Offline assets are required",
-                "Download the offline assets in the Live Server setup before starting the server.",
+                self, "Cannot prepare offline assets",
+                self._offline_asset_error
+                or "Download offline assets in Options → Live server before starting the server.",
             )
             self._update_server_setup()
             return
@@ -918,6 +1075,12 @@ class MainWindow(QMainWindow):
             QMessageBox.warning(self, "Cannot generate site", str(exc))
             return
         self._launch("build", arguments)
+
+    def _run_selected_workflow(self) -> None:
+        if self.site_radio.isChecked():
+            self._build_site()
+        else:
+            self._start_server()
 
     def _fetch_offline_assets(self) -> None:
         self._launch("offline assets", offline_assets_command(sys.executable))
@@ -997,27 +1160,24 @@ class MainWindow(QMainWindow):
 
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
-        self.start_button.setEnabled(
-            not running
-            and vendor_ready()
-            and bool(self.index_cache.text().strip())
-            and bool(self.tile_cache.text().strip())
-        )
-        self.build_button.setEnabled(not running)
         self.offline_button.setEnabled(not running)
         self.stop_button.setVisible(running)
         self.stop_button.setEnabled(running)
         if not running:
             self._update_server_setup()
+        self._update_workflow()
 
     def _update_server_setup(self, *_args) -> None:
-        assets_ready = vendor_ready()
+        assets_ready = self._offline_assets_ready()
         cache_configured = bool(self.index_cache.text().strip())
         tile_cache_configured = bool(self.tile_cache.text().strip())
         self.offline_status.setText(
-            "Offline assets are ready."
+            f"Offline assets are ready in {VENDOR_DIR}."
             if assets_ready
-            else "Offline assets are missing. Download them before starting the live server."
+            else (
+                self._offline_asset_error
+                or f"Offline assets are missing from {VENDOR_DIR}. Download them before starting the live server."
+            )
         )
         self.offline_button.setText(
             "Refresh offline assets" if assets_ready else "Download offline assets"
@@ -1028,7 +1188,9 @@ class MainWindow(QMainWindow):
         if not tile_cache_configured:
             requirements.append("choose a map tile cache folder")
         if not assets_ready:
-            requirements.append("download the offline assets")
+            requirements.append(
+                self._offline_asset_error or "download the offline assets"
+            )
         if requirements:
             self.server_setup_status.setText(
                 "To start the live server, " + " and ".join(requirements) + "."
@@ -1037,10 +1199,7 @@ class MainWindow(QMainWindow):
             self.server_setup_status.setText(
                 "Server setup is complete. The cache folders will be created if needed."
             )
-        running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
-        self.start_button.setEnabled(
-            not running and cache_configured and tile_cache_configured and assets_ready
-        )
+        self._update_workflow()
 
     def closeEvent(self, event) -> None:
         self._save_timer.stop()
@@ -1064,12 +1223,12 @@ class MainWindow(QMainWindow):
 
 def main() -> int:
     app = QApplication(sys.argv)
-    app.setApplicationName("TripServer")
-    app.setOrganizationName("TripServer")
+    app.setApplicationName("AlbumMaker")
+    app.setOrganizationName("AlbumMaker")
     try:
         settings = load_settings()
     except SettingsError as exc:
-        QMessageBox.critical(None, "TripServer settings error", str(exc))
+        QMessageBox.critical(None, "AlbumMaker settings error", str(exc))
         return 1
     window = MainWindow(settings)
     window.show()

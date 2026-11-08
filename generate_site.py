@@ -5,18 +5,18 @@ photos and videos.
 
     python generate_site.py -i /path/to/photos -o /path/to/site_output
 
-The code lives in the tripsite package next to this file (tripsite/build.py).
+The code lives in the albummaker package next to this file (albummaker/build.py).
 See README.md for the full walkthrough.
 """
 
 import sys
 
 try:
-    import tripsite.build as _impl
+    import albummaker.build as _impl
 except ModuleNotFoundError as e:
-    if not (e.name or "").startswith("tripsite"):
+    if not (e.name or "").startswith("albummaker"):
         raise
-    sys.exit("The tripsite folder is missing: keep it next to this script.")
+    sys.exit("The albummaker folder is missing: keep it next to this script.")
 
 # keep `import generate_site; generate_site.scan_media(...)` working
 globals().update({k: v for k, v in vars(_impl).items() if not k.startswith("__")})

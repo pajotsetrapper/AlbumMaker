@@ -1,10 +1,10 @@
 """
-trip_server: serve your trip photos/videos as a live website, generated on
+album_server: serve your trip photos/videos as a live website, generated on
 the fly. No thumbnails, no converted copies and no HTML files on disk:
 everything is computed in memory, per request, and kept only in a small,
 size-limited in-memory cache.
 
-    python trip_server.py -i /path/to/photos
+    python album_server.py -i /path/to/photos
 
 All of the server's state lives in one App object (server.app), not in
 module globals, so several servers can run side by side (tests do).
@@ -286,7 +286,7 @@ class Renderer:
 # --------------------------------------------------------------------------
 
 TILE_MAX_AGE = 7 * 24 * 3600            # older cached tiles are refreshed when possible
-TILE_UA = "TripSite/1.0 (personal photo trip viewer with a local tile cache)"
+TILE_UA = "AlbumMaker/1.0 (personal photo trip viewer with a local tile cache)"
 TILE_ROUTE = re.compile(r"^/tiles/(\d{1,2})/(\d{1,8})/(\d{1,8})\.png$")
 
 
@@ -603,7 +603,7 @@ class LiveUrls(SiteUrls):
     """The server's own routes. Media URLs carry a ?v= version token (see
     file_version). One instance per page render, so each file is only
     stat()ed once per page."""
-    footer = Markup("Served live by trip_server.py")
+    footer = Markup("Served live by album_server.py")
     edit_hint = ", then refresh this page."
 
     def __init__(self, app: App):
@@ -674,7 +674,7 @@ class TripHTTPServer(ThreadingHTTPServer):
 
 
 class RequestHandler(BaseHTTPRequestHandler):
-    server_version = "TripServer/2.0"
+    server_version = "AlbumMaker/2.0"
     protocol_version = "HTTP/1.1"
     # Without a timeout, an idle keep-alive connection (or a client that
     # never finishes its request) holds a thread forever. This applies to
@@ -1450,7 +1450,7 @@ def main(argv=None):
         print(f"Maps and fonts: using the local copies in {VENDOR_DIR} (no internet needed for them).")
     else:
         print("Maps and fonts load from the internet. To make them work offline, run once while "
-              "online:  python trip_server.py --fetch-offline-assets")
+              "online:  python album_server.py --fetch-offline-assets")
     if tiles is not None:
         cached = sum(1 for _ in args.tile_cache.rglob("*.png"))
         print(f"Map tiles are cached in {args.tile_cache} ({cached} so far); browse the maps while online "

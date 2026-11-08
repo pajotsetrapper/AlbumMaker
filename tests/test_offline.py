@@ -11,6 +11,7 @@ import socketserver
 import subprocess
 import sys
 import tarfile
+import tempfile
 import threading
 import time
 import unittest
@@ -19,9 +20,9 @@ from unittest import mock
 
 from PIL import Image
 
-from tripsite import offline
+from albummaker import offline
 
-from .helpers import (QuietHTTPServer, TempDirMixin, TripServer, free_port, install_app, local_env, make_fake_vendor,
+from .helpers import (QuietHTTPServer, TempDirMixin, AlbumMaker, free_port, install_app, local_env, make_fake_vendor,
                       standard_trip, tc)
 
 NO_PROXY = {"no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
@@ -144,7 +145,7 @@ class RegistryTestCase(TempDirMixin, unittest.TestCase):
     def fetch(self, vendor, packages=None, **patches):
         packages = packages or synthetic_packages(self.registry)
         out, err = io.StringIO(), io.StringIO()
-        # patch the module that does the work: trip_common only re-exports its names
+        # Patch the module that does the work; album_common only re-exports its names.
         with mock.patch.object(offline, "_VENDOR_PACKAGES", packages), \
              mock.patch.object(offline, "_NPM_REGISTRY", self.registry.url), \
              mock.patch.multiple(offline, **patches) if patches else mock.patch.dict(os.environ, {}), \
@@ -258,15 +259,15 @@ class FetchOfflineAssetsTests(RegistryTestCase):
     def test_the_command_line_flag_works_without_an_input_folder_and_fails_cleanly_offline(self):
         app = install_app(self.tmp / "app")
         dead_proxy = f"http://127.0.0.1:{free_port()}"
-        env = {**local_env(), "https_proxy": dead_proxy, "HTTPS_PROXY": dead_proxy,
+        env = {**local_env(app / ".albummaker-data"), "https_proxy": dead_proxy, "HTTPS_PROXY": dead_proxy,
                "no_proxy": "", "NO_PROXY": ""}
-        for script in ("generate_site.py", "trip_server.py"):
+        for script in ("generate_site.py", "album_server.py"):
             with self.subTest(script=script):
                 r = subprocess.run([sys.executable, str(app / script), "--fetch-offline-assets"],
                                    capture_output=True, text=True, env=env, cwd=str(self.tmp), timeout=60)
                 self.assertEqual(r.returncode, 1, r.stdout + r.stderr)
                 self.assertIn("Could not download", r.stderr)
-                self.assertFalse((app / "vendor").exists())
+                self.assertFalse((app / ".albummaker-data" / "offline-assets").exists())
 
 
 @unittest.skipUnless(os.environ.get("TRIP_TEST_NETWORK") == "1",
@@ -307,6 +308,22 @@ class FontFaceParsingTests(unittest.TestCase):
         self.assertFalse(tc.vendor_ready(tmp / "does-not-exist"))
 
 
+    def test_existing_project_vendor_folder_is_migrated_to_user_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            legacy = make_fake_vendor(root / "vendor")
+            target = root / "AlbumMaker" / "offline-assets"
+            with mock.patch.object(offline, "LEGACY_VENDOR_DIR", legacy), mock.patch.object(
+                offline, "VENDOR_DIR", target
+            ):
+                self.assertTrue(offline.vendor_ready())
+            self.assertTrue((target / "VERSIONS.txt").is_file())
+            self.assertEqual(
+                (target / "leaflet" / "leaflet.js").read_bytes(),
+                (legacy / "leaflet" / "leaflet.js").read_bytes(),
+            )
+
+
 class VendorServingTests(TempDirMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -316,8 +333,8 @@ class VendorServingTests(TempDirMixin, unittest.TestCase):
         cls.vendor = make_fake_vendor(cls.tmp / "v")
         cls.app_with = install_app(cls.tmp / "with", with_vendor=cls.vendor)
         cls.app_without = install_app(cls.tmp / "without")
-        cls.server = TripServer(cls.app_with, cls.photos, cls.tmp / "w1").start()
-        cls.bare = TripServer(cls.app_without, cls.photos, cls.tmp / "w2").start()
+        cls.server = AlbumMaker(cls.app_with, cls.photos, cls.tmp / "w1").start()
+        cls.bare = AlbumMaker(cls.app_without, cls.photos, cls.tmp / "w2").start()
         cls.addClassCleanup(cls.server.stop)
         cls.addClassCleanup(cls.bare.stop)
 
@@ -346,9 +363,9 @@ class VendorServingTests(TempDirMixin, unittest.TestCase):
                 self.assertEqual(self.server.get(base + ref)[0], 200, ref)
 
     def test_nothing_outside_the_vendor_folder_can_be_read(self):
-        attacks = ["/vendor/../trip_common.py", "/vendor/%2e%2e/trip_common.py", "/vendor/%252e%252e/trip_common.py",
-                   "/vendor/leaflet/../../trip_common.py", "/vendor/..%2ftrip_common.py", "/vendor/%2e%2e%2ftrip_server.py",
-                   "/vendor/leaflet/", "/vendor/", "/vendor", "/vendor/leaflet/leaflet.js/..", "/vendor/fonts/..\\..\\trip_common.py",
+        attacks = ["/vendor/../album_common.py", "/vendor/%2e%2e/album_common.py", "/vendor/%252e%252e/album_common.py",
+                   "/vendor/leaflet/../../album_common.py", "/vendor/..%2falbum_common.py", "/vendor/%2e%2e%2falbum_server.py",
+                   "/vendor/leaflet/", "/vendor/", "/vendor", "/vendor/leaflet/leaflet.js/..", "/vendor/fonts/..\\..\\album_common.py",
                    "/vendor//etc/passwd", "/vendor/leaflet/nonexistent.js", "/vendor/%00", "/vendor/./leaflet/leaflet.js"]
         for attack in attacks:
             with self.subTest(attack=attack):
@@ -431,7 +448,7 @@ class TileCacheTestCase(TempDirMixin, unittest.TestCase):
         cls.upstream = FakeTileProvider()
         cls.upstream.mode = cls.mode
         cls.addClassCleanup(cls.upstream.stop)
-        cls.server = TripServer(cls.app, cls.photos, cls.tmp, "--tile-cache", cls.cache,
+        cls.server = AlbumMaker(cls.app, cls.photos, cls.tmp, "--tile-cache", cls.cache,
                                 "--tile-url", cls.upstream.template).start()
         cls.addClassCleanup(cls.server.stop)
 
@@ -451,7 +468,7 @@ class TileCacheTests(TileCacheTestCase):
 
     def test_the_provider_is_told_who_is_asking(self):
         self.tile(2, 1, 1)
-        self.assertTrue(all(a.startswith("TripSite/") for a in self.upstream.agents))
+        self.assertTrue(all(a.startswith("AlbumMaker/") for a in self.upstream.agents))
 
     def test_simultaneous_requests_for_one_new_tile_download_it_once(self):
         results = []
@@ -553,17 +570,17 @@ class TileConfigurationTests(TempDirMixin, unittest.TestCase):
         standard_trip(cls.photos)
 
     def run_server_cli(self, *args):
-        return subprocess.run([sys.executable, str(self.app / "trip_server.py"), "-i", str(self.photos), *map(str, args)],
+        return subprocess.run([sys.executable, str(self.app / "album_server.py"), "-i", str(self.photos), *map(str, args)],
                               capture_output=True, text=True, timeout=30, cwd=str(self.tmp), env=local_env())
 
     def test_default_maps_use_openstreetmap_directly_and_the_tile_route_is_closed(self):
-        server = TripServer(self.app, self.photos, self.tmp / "d").start()
+        server = AlbumMaker(self.app, self.photos, self.tmp / "d").start()
         self.addCleanup(server.stop)
         self.assertIn('window.TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"', server.text("/day/2026-05-01"))
         self.assertEqual(server.get("/tiles/3/4/2.png")[0], 404)
 
     def test_a_custom_provider_without_a_cache_is_used_directly_by_the_pages(self):
-        server = TripServer(self.app, self.photos, self.tmp / "c", "--tile-url", "https://tiles.example.com/{z}/{x}/{y}.png").start()
+        server = AlbumMaker(self.app, self.photos, self.tmp / "c", "--tile-url", "https://tiles.example.com/{z}/{x}/{y}.png").start()
         self.addCleanup(server.stop)
         self.assertIn('window.TILE_URL = "https://tiles.example.com/{z}/{x}/{y}.png"', server.text("/day/2026-05-01"))
         self.assertEqual(server.get("/tiles/3/4/2.png")[0], 404)

@@ -1,4 +1,4 @@
-# Trip Site
+# AlbumMaker
 
 Turns a folder of trip photos and videos into a website. It has one
 chapter per day, a route map per day, an overview map and title on the
@@ -24,7 +24,7 @@ sections after it are the full reference.
 [Step by step](#step-by-step) ·
 [1. Install](#1-install) ·
 [2a. Static site](#2a-build-a-static-site-generate_sitepy) ·
-[2b. Live server](#2b-serve-it-live-trip_serverpy) ·
+[2b. Live server](#2b-serve-it-live-album_serverpy) ·
 [2c. Several trips](#2c-several-trips-a-library) ·
 [3. Titles and notes](#3-titles-descriptions-and-photo-notes-trip_contentjson) ·
 [4. Editing in the page](#4-editing-in-the-page-live-server) ·
@@ -42,21 +42,21 @@ sections after it are the full reference.
 pip install -r requirements.txt
 
 # Live and editable (open http://127.0.0.1:8000/):
-python trip_server.py -i /path/to/your/photos
+python album_server.py -i /path/to/your/photos
 
 # Or build a standalone folder you can copy anywhere:
 python generate_site.py -i /path/to/your/photos -o site
 
 # Optional, once, while online: so the pages work without internet
 # (see "Working without internet"):
-python trip_server.py --fetch-offline-assets
+python album_server.py --fetch-offline-assets
 
 # Several trips at once, one page linking them (see "Several trips"):
-python generate_site.py --library trips.txt -o ~/TripSites
+python generate_site.py --library trips.txt -o ~/AlbumMakerSites
 
 # Optional desktop app (Mac, Windows, Linux):
 python -m pip install -r requirements-gui.txt
-python trip_gui.py
+python album_gui.py
 ```
 
 A `.gpx` track in the photos folder is picked up by itself (see "GPS
@@ -69,7 +69,7 @@ There are two scripts. Both produce the same site with the same look and
 features; they differ in how it's delivered, and in whether you can edit
 in the page:
 
-| | `generate_site.py` | `trip_server.py` |
+| | `generate_site.py` | `album_server.py` |
 |---|---|---|
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
 | Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
@@ -97,38 +97,52 @@ then launch it from the project folder:
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install -r requirements-gui.txt
-python trip_gui.py
-# Or: python -m tripsite gui
+python album_gui.py
+# Or: python -m albummaker gui
 ```
 
-Use **Add folders** to select several trip photo folders at once. Select
-one or more trips and choose **Set time zone…** to save an IANA time zone
-for those folders (for example, `Europe/Paris`); the setting follows each
-folder and accounts for daylight-saving changes. The folder list and GUI
-settings are saved automatically and restored on the next launch:
+The app guides you through three steps: add trip folders, choose a workflow,
+and run it. Use **Add folders** to select several photo folders at once.
+Choose each trip's IANA time zone directly in the **Time zone** column (for
+example, `Europe/Paris`); the setting follows that folder and accounts for
+daylight-saving changes. **Automatic** does not infer a trip's location.
+The folder list and GUI settings are saved automatically and restored on the
+next launch:
 
-- macOS: `~/Library/Application Support/TripServer/settings.json`
-- Windows: `%APPDATA%\TripServer\settings.json`
-- Linux: `$XDG_CONFIG_HOME/tripserver/settings.json`, or `~/.config/tripserver/settings.json`
+- macOS: `~/Library/Application Support/AlbumMaker/settings.json`
+- Windows: `%APPDATA%\AlbumMaker\settings.json`
+- Linux: `$XDG_CONFIG_HOME/albummaker/settings.json`, or `~/.config/albummaker/settings.json`
 
-The app separates the two tasks into **Run a Live Server** and **Create a
-Site**. The live server shares an editable (or read-only) site from your
-computer; the site generator writes a copy to the output folder you choose.
-The live-server screen groups its own settings together, and the site screen
-contains only options for the generated site. Choose **Help** for plain-language
-descriptions of each setting. Select one trip and use **Move up** or **Move
-down** to change its order.
+Choose **Run a live server** to browse the trips in a browser while the app
+is running, or **Create a static site** to write a standalone website to the
+output folder you choose. Server setup is separate from site generation.
+**Options** contains less frequently used settings. **General** holds appearance
+and shared trip-processing options; **Live server** and **Static site** contain
+options that affect only that workflow. Choose **Help** for plain-language
+descriptions of the controls. The trip list follows the order in which folders
+were added; use **Remove** and add folders again if you need to change it.
+Choose the light or dark appearance in **Options → General**.
 
 Before starting the live server in the app, set up the **Metadata cache
-folder**, the **Map tile cache folder**, and the **Offline assets**. Both cache
-folders are created if needed and must be writable. By default they are under
-TripServer's application-support folder. The metadata cache keeps a JSON index
-per trip of media file sizes, modification times, and extracted metadata, so
-unchanged files do not need to be scanned again on later starts; it does not
-store media copies. The tile cache keeps map tiles after they are viewed, so
-they don't need to be downloaded again and remain available offline. Offline
-assets are the local map interface library and fonts. These setup requirements
-apply to the GUI live server, not to static site generation.
+folder**, the **Map tile cache folder**, and the **Offline assets** in
+**Options → Live server**. Both cache folders are created if needed and must
+be writable. Their defaults are `metadata-cache` and `tile-cache` folders
+inside the same application configuration directory as `settings.json`:
+
+- macOS: `~/Library/Application Support/AlbumMaker/`
+- Windows: `%APPDATA%\AlbumMaker\`
+- Linux: `$XDG_CONFIG_HOME/albummaker/`, or `~/.config/albummaker/`
+
+The metadata cache keeps a JSON index per trip with media-file sizes,
+modification times, and extracted metadata (such as capture time, GPS,
+dimensions, and camera/video details). On later server starts, unchanged
+files can reuse these results instead of being scanned again. It does not
+store photo or video copies. The tile cache keeps map tiles after they are
+viewed, so they do not need to be downloaded again and remain available
+offline. The offline map library and fonts are stored in the `offline-assets`
+subfolder beside `settings.json`; an existing project-level `vendor` folder is
+copied there automatically the first time it is needed. Static-site generation
+bundles these assets when available, but does not require the live-server setup.
 
 The GUI's live-server high-resolution thumbnail defaults to **2400 pixels**
 (longest side), a sensible balance for Full HD and 4K displays. Only larger
@@ -141,7 +155,7 @@ thumbnails. For generated sites the larger thumbnails are off by default;
 EXIF times stay as recorded. For videos, the shared default UTC offset is used
 if set; otherwise iPhone local times are kept as recorded and other UTC times
 are converted to the computer's local time zone. The shared **Default video
-UTC offset** control is below the trip library and applies to both workflows.
+UTC offset** is in **Options → General** and applies to both workflows.
 
 The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
 command-line tools. PySide6 is optional and is not installed for CLI-only
@@ -175,7 +189,7 @@ the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
    and install what they need:
 
    ```bash
-   cd "/path/to/TripServer"
+   cd "/path/to/AlbumMaker"
    python -m pip install -r requirements.txt
    ```
 
@@ -197,7 +211,7 @@ and place names](#6-gps-tracks-and-place-names).
 ### 3. Look at it
 
 ```bash
-python trip_server.py -i "/path/to/Japan 2024"
+python album_server.py -i "/path/to/Japan 2024"
 ```
 
 Open <http://127.0.0.1:8000/> in your browser. You see the trip's
@@ -261,7 +275,7 @@ Then build them all, with a page linking them:
 python generate_site.py --library trips.txt -o "/path/to/All trips"
 ```
 
-or look at them all live with `python trip_server.py --library trips.txt`.
+or look at them all live with `python album_server.py --library trips.txt`.
 See [2c. Several trips](#2c-several-trips-a-library).
 
 ### Common tasks
@@ -271,7 +285,7 @@ See [2c. Several trips](#2c-several-trips-a-library).
 | Add photos I copied later | Put them in the folder. Restart the server, or run `generate_site.py` again (only the new ones are processed). |
 | See my camera's photos on the map | Add a `.gpx` track of the trip to the folder ([6](#6-gps-tracks-and-place-names)). |
 | Keep a photo out of what others see | Open it and click **Hide**. It stays visible (dimmed) to you only, and isn't copied into a static site. |
-| Let family on my home Wi-Fi look | Start the server with `--lan`; it prints the address to give them ([2b](#2b-serve-it-live-trip_serverpy)). |
+| Let family on my home Wi-Fi look | Start the server with `--lan`; it prints the address to give them ([2b](#2b-serve-it-live-album_serverpy)). |
 | Edit from my phone or another computer | Open the editor link the server prints at startup on that device ([4](#4-editing-in-the-page-live-server)). |
 | Fix photos that landed on the wrong day or in "Unsorted" | See [Troubleshooting](#troubleshooting) (`--date-range`, `--timezone`, `--tz-offset`). |
 | Use it without internet | Run `--fetch-offline-assets` once while online ([5](#5-working-without-internet)). |
@@ -285,19 +299,19 @@ You need Python 3.9+, plus:
 pip install -r requirements.txt
 ```
 
-Keep these together in one folder: `generate_site.py`, `trip_server.py`
-and the `tripsite` folder, which holds the code both scripts share (and
+Keep these together in one folder: `generate_site.py`, `album_server.py`
+and the `albummaker` folder, which holds the code both scripts share (and
 the page templates, CSS and JavaScript as ordinary files). Neither script
-runs without it. `trip_common.py` is only there so older code that
-imports it keeps working. Optionally, a `vendor` folder next to them holds
-local copies of the map library and fonts; see "Working without
-internet".
+runs without it. Offline map assets are saved in the platform-specific
+AlbumMaker configuration directory beside `settings.json`; see "Working
+without internet". The older `trip_server.py`, `trip_gui.py`, `trip_common.py`
+and `tripsite` names remain as compatibility entry points.
 
 **Prefer a single file?** `python tools/build_zipapp.py` packs everything
-into `dist/tripsite.pyz`, which you can copy anywhere and run with
-`python tripsite.pyz serve -i photos` or `python tripsite.pyz build -i
-photos -o site`. The requirements still need to be installed, and a
-`vendor` folder is looked for next to the `.pyz`.
+into `dist/albummaker.pyz`, which you can copy anywhere and run with
+`python albummaker.pyz serve -i photos` or `python albummaker.pyz build -i
+photos -o site`. The requirements still need to be installed; offline assets
+are read from the platform-specific AlbumMaker configuration directory.
 
 You also need **ffmpeg** installed and on your PATH. It's used to read
 video metadata and grab a thumbnail frame from each video:
@@ -368,20 +382,20 @@ Options:
 - `--no-gpx`: ignore GPS tracks, including those in the photos folder.
 - `--no-places`: don't show place names.
 - `--fetch-offline-assets`: download the map library and fonts into a
-  `vendor` folder (needs internet, once), then exit. See "Working
-  without internet".
+  per-user `offline-assets` folder (needs internet, once), then exit. See
+  "Working without internet".
 
 Photos you've marked **hidden** in `trip_content.json` are left out of
 the build entirely, including their files. See "Hidden photos" below.
 
-If a `vendor` folder is present, it is copied into the site
-(`assets/vendor`), so the site doesn't need the internet for its map
-library and fonts.
+If offline assets are present in AlbumMaker's user data folder, they are
+copied into the site (`assets/vendor`), so it doesn't need internet for the
+map library and fonts.
 
-## 2b. Serve it live: `trip_server.py`
+## 2b. Serve it live: `album_server.py`
 
 ```bash
-python trip_server.py -i /path/to/your/photos
+python album_server.py -i /path/to/your/photos
 ```
 
 Then open the URL it prints, by default **http://127.0.0.1:8000/**. Stop
@@ -490,11 +504,11 @@ not both. A trip's setting overrides the command-line default; the named
 time zone also accounts for daylight-saving changes.
 
 ```bash
-# every trip into its own folder under ~/TripSites, plus a page linking them
-python generate_site.py --library trips.txt -o ~/TripSites
+# every trip into its own folder under ~/AlbumMakerSites, plus a page linking them
+python generate_site.py --library trips.txt -o ~/AlbumMakerSites
 
 # or serve them all: the list at http://127.0.0.1:8000/, each trip under /<name>/
-python trip_server.py --library trips.txt
+python album_server.py --library trips.txt
 ```
 
 The library page shows a card per trip (cover, dates, main towns, days,
@@ -707,19 +721,26 @@ helps on its own.
 Run this once, while you're online:
 
 ```bash
-python trip_server.py --fetch-offline-assets
+python album_server.py --fetch-offline-assets
 ```
 
 (`generate_site.py --fetch-offline-assets` does the same thing.) It saves
-Leaflet and the three fonts, about 0.5 MB in 28 files, into a `vendor`
-folder next to the scripts, and from then on both scripts use those local
-copies automatically. Details:
+Leaflet and the three fonts, about 0.5 MB in 28 files, into the
+`offline-assets` folder beside `settings.json`, and from then on both scripts
+use those local copies automatically. The configuration directory is:
+
+- macOS: `~/Library/Application Support/AlbumMaker/`
+- Windows: `%APPDATA%\AlbumMaker\`
+- Linux: `$XDG_CONFIG_HOME/albummaker/`, or `~/.config/albummaker/`
+
+An existing complete `vendor` folder beside the scripts is copied to this
+location the first time AlbumMaker checks for offline assets.
 
 - The files come from the npm registry, in exact pinned versions, and
   each download is checked against its published SHA-512 checksum. One
   that doesn't match is refused.
 - If anything fails (no connection, a bad checksum, a full disk), it says
-  so and your existing `vendor` folder is left as it was. A half-finished
+  so and your existing `offline-assets` folder is left as it was. A half-finished
   download is never used.
 - The live server picks the folder up when it starts; it prints whether
   it found it. The static build copies it into the site
@@ -727,19 +748,19 @@ copies automatically. Details:
   computer or a USB drive.
 - Licenses: Leaflet is BSD-2-Clause and the fonts (Fraunces, IBM Plex
   Sans, IBM Plex Mono) are under the SIL Open Font License. The licenses
-  are saved in `vendor/licenses`, and the static build copies them along.
-- The place names (`tripsite/data/places.tsv.gz`) are from
+  are saved in `offline-assets/licenses`, and the static build copies them along.
+- The place names (`albummaker/data/places.tsv.gz`) are from
   [GeoNames](https://www.geonames.org/), under the Creative Commons
   Attribution 4.0 licence. Pages that show place names say so in their
   footer, as that licence asks. `python tools/build_places.py` rebuilds
   the file from GeoNames' current data.
-- To go back to loading everything from the internet, delete the
-  `vendor` folder. To refresh the files, run the command again.
+- To go back to loading everything from the internet, remove the
+  `offline-assets` folder. To refresh the files, run the command again.
 
 ### Step 2: keep the map tiles you've looked at (live server)
 
 ```bash
-python trip_server.py -i /path/to/your/photos --tile-cache tile_cache
+python album_server.py -i /path/to/your/photos --tile-cache tile_cache
 ```
 
 With this, the pages ask the server for their tiles. The server downloads
@@ -764,7 +785,7 @@ those areas keep working with no connection. How it behaves:
   `--tile-url "https://tiles.example.com/{z}/{x}/{y}.png"`. With
   `--tile-url` but no `--tile-cache`, the pages use that provider
   directly.
-- The server introduces itself to the provider as "TripSite". OpenStreetMap's
+- The server introduces itself to the provider as "AlbumMaker". OpenStreetMap's
   free tile server is meant for light, personal use like this; for
   anything heavier, use a provider you have an account with. The credit
   shown on the maps says "OpenStreetMap contributors"; if you switch
@@ -1243,14 +1264,14 @@ so none of this applies there. The exceptions:
   makes every grid heavier, including the small sizes that don't need it.
 - **The map is blank or grey.** By default the map library and tiles
   load from the internet, so check your connection. To be independent of
-  it, see "Working without internet". With the local `vendor` folder in
+  it, see "Working without internet". With local offline assets in
   place you'll see a rough outline and a "tiles unavailable" notice
   instead of a blank box.
 - **`--fetch-offline-assets` says it couldn't download.** It needs a
   connection to the npm registry (registry.npmjs.org); check your
   internet, proxy or firewall and run it again. Nothing was changed.
 - **The fonts look different without internet.** The fonts load from the
-  internet unless the `vendor` folder is present; run
+  internet unless offline assets are present; run
   `--fetch-offline-assets` once. Until then the browser uses a fallback.
 - **I use `--tile-cache` but tiles don't appear.** The server has to be
   able to reach the tile provider the first time it needs a tile. Watch
@@ -1283,11 +1304,11 @@ so none of this applies there. The exceptions:
 
 ## Running the tests
 
-The `tests/` folder holds a test suite for both scripts. It builds small
+The `tests/` folder holds a test suite for the project. It builds small
 photos (and, with ffmpeg, short videos) in temporary folders, runs the
 generator and the live server exactly as you would, and checks what comes
 out. It never touches your own photos, your `trip_content.json` or your
-`vendor` folder. From the project folder:
+AlbumMaker user data. From the project folder:
 
 ```bash
 python -m unittest discover -s tests -t .
@@ -1302,9 +1323,9 @@ python -m unittest tests.test_server.ServerBasicsTests.test_byte_ranges
 python -m unittest tests.test_review_fixes
 ```
 
-Tests that patch module-level names should patch them in the `tripsite`
-module that uses them (for example `tripsite.offline._NPM_REGISTRY`), not
-in `trip_common`, which only re-exports them.
+Tests that patch module-level names should patch them in the `albummaker`
+module that uses them (for example `albummaker.offline._NPM_REGISTRY`), not
+in `album_common`, which only re-exports them.
 
 Some parts are optional, and are skipped with a note when their
 requirements are missing:
@@ -1353,19 +1374,19 @@ servers, and HEIC conversion, which needs `pillow-heif`.
 
 The whole design is shared by both scripts, so a change shows up in the
 static site and the live server alike. It lives in ordinary files in the
-`tripsite` folder:
+`albummaker` folder:
 
-- **`tripsite/static/style.css`.** Colours are CSS variables at the top
+- **`albummaker/static/style.css`.** Colours are CSS variables at the top
   (`--navy`, `--gold`, `--teal`, etc.), so they're easy to swap.
-- **`DAY_COLORS` in `tripsite/model.py`.** This is the palette used for
+- **`DAY_COLORS` in `albummaker/model.py`.** This is the palette used for
   each day on the overview map.
-- **`tripsite/templates/`.** The page layout: plain Jinja2 templates
+- **`albummaker/templates/`.** The page layout: plain Jinja2 templates
   (`index.html`, `day.html`, and the `head.html` and `slideshow.html`
   parts they include).
-- **`tripsite/static/world_land.json`.** The continent outline the maps
+- **`albummaker/static/world_land.json`.** The continent outline the maps
   fall back to offline (Natural Earth, public domain). The colours it's
   drawn in are in the `addBaseMap` function in `script.js`.
-- **`tripsite/static/script.js`.** The slideshow, maps, autoplay and
+- **`albummaker/static/script.js`.** The slideshow, maps, autoplay and
   editing code.
 
 The live server reads these files when it starts, so restart it after a

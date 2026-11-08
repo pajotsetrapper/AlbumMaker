@@ -3,23 +3,25 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from tripsite.gui.commands import build_command, offline_assets_command, server_command
-from tripsite.gui.settings import (
+from albummaker.gui.commands import build_command, offline_assets_command, server_command
+from albummaker.gui.settings import (
     SettingsError,
     default_settings,
     load_settings,
     prepare_metadata_cache,
     prepare_tile_cache,
     save_settings,
+    settings_path,
     write_library_file,
 )
-from tripsite.library import read_trip_list, trip_args
-from tripsite.timezones import timezone_choices
+from albummaker.app_paths import config_dir, legacy_settings_path, offline_assets_dir
+from albummaker.library import read_trip_list, trip_args
+from albummaker.timezones import timezone_choices
 
 
 class GuiSettingsTests(unittest.TestCase):
     def test_timezone_choices_include_bundled_database_without_system_zoneinfo(self):
-        with mock.patch("tripsite.timezones.available_timezones", return_value=set()):
+        with mock.patch("albummaker.timezones.available_timezones", return_value=set()):
             choices = timezone_choices()
         self.assertIn("Europe/Paris", choices)
         self.assertIn("America/Los_Angeles", choices)
@@ -65,6 +67,77 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertEqual(loaded["build"]["thumb_size"], 400)
             self.assertEqual(loaded["server"]["large_thumb_size"], 2400)
             self.assertTrue(loaded["advanced"]["tile_cache"])
+            self.assertEqual(loaded["appearance"]["theme"], "light")
+
+            settings["appearance"]["theme"] = "dark"
+            save_settings(settings, path)
+            self.assertEqual(load_settings(path)["appearance"]["theme"], "dark")
+
+    def test_theme_values_are_validated(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = default_settings()
+            settings["appearance"]["theme"] = "midnight"
+            with self.assertRaisesRegex(SettingsError, "appearance.theme"):
+                save_settings(settings, Path(tmp) / "settings.json")
+
+    def test_default_cache_folders_live_beside_settings_file(self):
+        settings = default_settings()
+        settings_file_folder = settings_path().parent
+        self.assertEqual(
+            Path(settings["advanced"]["index_cache"]),
+            settings_file_folder / "metadata-cache",
+        )
+        self.assertEqual(
+            Path(settings["advanced"]["tile_cache"]),
+            settings_file_folder / "tile-cache",
+        )
+        self.assertEqual(offline_assets_dir(), settings_file_folder / "offline-assets")
+
+    def test_application_data_directory_uses_platform_conventions(self):
+        with mock.patch("albummaker.app_paths.sys.platform", "darwin"), mock.patch(
+            "albummaker.app_paths.Path.home", return_value=Path("/home/example")
+        ), mock.patch.dict(
+            "os.environ", {"ALBUMMAKER_CONFIG_DIR": ""}, clear=False
+        ):
+            self.assertEqual(
+                config_dir(), Path("/home/example/Library/Application Support/AlbumMaker")
+            )
+            self.assertEqual(
+                legacy_settings_path(),
+                Path("/home/example/Library/Application Support/TripServer/settings.json"),
+            )
+
+        with mock.patch("albummaker.app_paths.sys.platform", "win32"), mock.patch.dict(
+            "os.environ",
+            {"APPDATA": "/Users/example/AppData/Roaming", "ALBUMMAKER_CONFIG_DIR": ""},
+            clear=False,
+        ):
+            self.assertEqual(config_dir(), Path("/Users/example/AppData/Roaming/AlbumMaker"))
+            self.assertEqual(
+                legacy_settings_path(),
+                Path("/Users/example/AppData/Roaming/TripServer/settings.json"),
+            )
+
+        with mock.patch("albummaker.app_paths.sys.platform", "linux"), mock.patch.dict(
+            "os.environ",
+            {"XDG_CONFIG_HOME": "/home/example/.config", "ALBUMMAKER_CONFIG_DIR": ""},
+            clear=False,
+        ):
+            self.assertEqual(config_dir(), Path("/home/example/.config/albummaker"))
+            self.assertEqual(
+                legacy_settings_path(), Path("/home/example/.config/tripserver/settings.json")
+            )
+
+    def test_settings_load_from_legacy_tripserver_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            new_settings = Path(tmp) / "AlbumMaker" / "settings.json"
+            old_settings = Path(tmp) / "TripServer" / "settings.json"
+            old_settings.parent.mkdir()
+            old_settings.write_text('{"version": 1, "output_dir": "/old/output"}', encoding="utf-8")
+            with mock.patch("albummaker.gui.settings.settings_path", return_value=new_settings), mock.patch(
+                "albummaker.gui.settings.legacy_settings_path", return_value=old_settings
+            ):
+                self.assertEqual(load_settings()["output_dir"], "/old/output")
 
     def test_legacy_trip_paths_are_migrated_and_time_zones_are_validated(self):
         settings = default_settings()
@@ -170,7 +243,7 @@ class GuiCommandTests(unittest.TestCase):
             command[command.index("--tile-cache") + 1],
             self.settings["advanced"]["tile_cache"],
         )
-        from tripsite.server import build_parser
+        from albummaker.server import build_parser
         args = build_parser().parse_args(command[command.index("serve") + 1:])
         self.assertEqual(args.large_thumb_size, 0)
         entry = read_trip_list(self.library)[0]
@@ -198,7 +271,7 @@ class GuiCommandTests(unittest.TestCase):
         output = str(self.root / "Generated Site")
         command = build_command("python", self.library, output, self.settings)
 
-        from tripsite.build import build_parser
+        from albummaker.build import build_parser
         build_parser().parse_args(command[command.index("build") + 1:])
         self.assertIn("--no-dedupe", command)
         self.assertIn("--no-live-photos", command)
@@ -240,15 +313,15 @@ class GuiCommandTests(unittest.TestCase):
     def test_offline_assets_command_uses_cli_subcommand(self):
         self.assertEqual(
             offline_assets_command("python"),
-            ["python", "-u", "-m", "tripsite", "serve", "--fetch-offline-assets"],
+            ["python", "-u", "-m", "albummaker", "serve", "--fetch-offline-assets"],
         )
 
     def test_zipapp_launches_its_bundled_cli(self):
-        with mock.patch("tripsite.gui.commands.sys.argv", ["/tmp/tripsite.pyz"]):
+        with mock.patch("albummaker.gui.commands.sys.argv", ["/tmp/albummaker.pyz"]):
             command = offline_assets_command("python")
         self.assertEqual(
             command,
-            ["python", "-u", "/tmp/tripsite.pyz", "serve", "--fetch-offline-assets"],
+            ["python", "-u", "/tmp/albummaker.pyz", "serve", "--fetch-offline-assets"],
         )
 
     def test_explicit_ignore_options_take_precedence(self):

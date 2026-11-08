@@ -1,4 +1,4 @@
-"""Translate GUI settings to the existing TripServer CLI arguments."""
+"""Translate GUI settings to the existing AlbumMaker CLI arguments."""
 
 from __future__ import annotations
 
@@ -12,7 +12,7 @@ def _command_prefix(python: str, subcommand: str) -> list[str]:
     launcher = Path(sys.argv[0])
     if launcher.suffix.lower() in (".pyz", ".zip"):
         return [python, "-u", str(launcher), subcommand]
-    return [python, "-u", "-m", "tripsite", subcommand]
+    return [python, "-u", "-m", "albummaker", subcommand]
 
 
 def _validate_common(build: dict, large_thumb_size: Optional[int] = None) -> None:

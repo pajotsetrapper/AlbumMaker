@@ -27,7 +27,7 @@ sys.path.insert(0, str(ROOT))
 
 from PIL import Image  # noqa: E402
 
-from tripsite import build, content, imaging, scan, server, util  # noqa: E402
+from albummaker import build, content, imaging, scan, server, util  # noqa: E402
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
@@ -44,7 +44,7 @@ def make_jpeg(path: Path, day: int, hour: int = 12, color=(200, 100, 50), size=(
 
 class TempDirTest(unittest.TestCase):
     def setUp(self):
-        self.tmp = Path(tempfile.mkdtemp(prefix="tripsite-test-"))
+        self.tmp = Path(tempfile.mkdtemp(prefix="albummaker-test-"))
         self.photos = self.tmp / "photos"
         self.addCleanup(shutil.rmtree, self.tmp, ignore_errors=True)
 
@@ -290,7 +290,7 @@ class HiddenLivePhotoRuleTests(TempDirTest):
     @staticmethod
     def item(path, kind, duplicates=()):
         from datetime import datetime
-        from tripsite.model import MediaItem
+        from albummaker.model import MediaItem
         return MediaItem(path=Path(path), media_type=kind, dt=datetime(2026, 5, 1), dt_is_fallback=False,
                          lat=None, lon=None, is_live_clip=(kind == "video"), duplicates=[Path(d) for d in duplicates])
 
@@ -705,13 +705,13 @@ class ZipappTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             subprocess.run([sys.executable, str(ROOT / "tools" / "build_zipapp.py")], check=True,
                            capture_output=True, cwd=ROOT)
-            pyz = ROOT / "dist" / "tripsite.pyz"
+            pyz = ROOT / "dist" / "albummaker.pyz"
             r = subprocess.run([sys.executable, str(pyz), "build", "--help"], capture_output=True, text=True,
                                cwd=tmp)
             self.assertEqual(r.returncode, 0, r.stderr)
             self.assertIn("--large-thumb-size", r.stdout)
             # data files are read from inside the archive too (the place names)
-            code = ("import sys; sys.path.insert(0, sys.argv[1]); from tripsite import places; "
+            code = ("import sys; sys.path.insert(0, sys.argv[1]); from albummaker import places; "
                     "print(places.describe(places.Gazetteer().nearest(34.9858, 135.7588)))")
             r = subprocess.run([sys.executable, "-c", code, str(pyz)], capture_output=True, text=True, cwd=tmp)
             self.assertEqual((r.returncode, r.stdout.strip()), (0, "Kyoto, Japan"), r.stderr)
