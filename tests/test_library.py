@@ -42,6 +42,12 @@ class TripListTests(TempDirMixin, unittest.TestCase):
     def read(self, text):
         return library.read_trip_list(trip_list(self.tmp / "lists" / "trips.txt", text))
 
+    def test_library_title_is_trimmed_and_bounded(self):
+        self.assertEqual(library.library_title_arg("  Family Holidays  "), "Family Holidays")
+        for title in (" ", "x" * 201):
+            with self.subTest(title=title), self.assertRaises(argparse.ArgumentTypeError):
+                library.library_title_arg(title)
+
     def test_folders_names_options_comments_and_relative_paths(self):
         entries = self.read(
             "# my trips\n"
@@ -231,7 +237,7 @@ class StaticLibraryTests(TempDirMixin, unittest.TestCase):
     @classmethod
     def build(cls, *extra, list_file=None):
         return run_script(cls.app, "generate_site.py", "--library", list_file or cls.list, "-o", cls.site,
-                          "--workers", "1", *extra)
+                          "--workers", "1", "--library-title", "Family Holidays", *extra)
 
     def test_every_trip_that_can_be_built_is_and_the_page_links_them(self):
         r = self.first
@@ -244,6 +250,8 @@ class StaticLibraryTests(TempDirMixin, unittest.TestCase):
             self.assertTrue((self.site / f).is_file(), f)
         self.assertIn("initLibraryMap('library-map', ", index)
         self.assertIn("1 – 2 May 2026", index)
+        self.assertIn("<title>Family Holidays</title>", index)
+        self.assertIn("<h1>Family Holidays</h1>", index)
         record = read_json(self.site / ".trip_library.json")
         self.assertEqual(sorted(record["trips"]), ["belgium-weekend", "japan"])
 
@@ -341,12 +349,16 @@ class ServerLibraryTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.tmp / "Japan" / "secret.jpg", "2026:06:10 10:00:00", (35.0, 135.7), color=(9, 9, 9))
         write_json(cls.tmp / "Japan" / "trip_content.json", {"title": "Kansai", "photos": {"secret.jpg": {"hidden": True}}})
         trips = trip_list(cls.tmp / "trips.txt", "Belgium\nJapan | japan\n/Volumes/NotPluggedIn/Iceland\n")
-        cls.server = AlbumMaker(app, None, cls.tmp, "--library", trips).start()
+        cls.server = AlbumMaker(
+            app, None, cls.tmp, "--library", trips, "--library-title", "Family Holidays"
+        ).start()
         cls.addClassCleanup(cls.server.stop)
 
     def test_the_library_page_links_every_trip_that_loaded(self):
         html = self.server.text("/")
         self.assertEqual(cards(html), [("/japan/", "Kansai"), ("/belgium/", "Belgium")])
+        self.assertIn("<title>Family Holidays</title>", html)
+        self.assertIn("<h1>Family Holidays</h1>", html)
         log = self.server.log()
         self.assertIn("This trip is left out", log)
         self.assertIn(f"http://127.0.0.1:{self.server.port}/japan/", log)

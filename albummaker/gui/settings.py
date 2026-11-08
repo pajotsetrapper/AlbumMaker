@@ -24,6 +24,7 @@ def default_settings() -> dict:
         "trips": [],
         "output_dir": str(Path.home() / "AlbumMakerSites"),
         "appearance": {"theme": "light"},
+        "library": {"title": "Trips"},
         "server": {
             "port": 8000,
             "large_thumb_size": 2400,
@@ -74,6 +75,11 @@ def _merge_defaults(saved: object) -> dict:
         if not isinstance(value, dict):
             raise SettingsError("Settings section 'appearance' must be an object.")
         merged["appearance"].update(value)
+    if "library" in saved:
+        value = saved["library"]
+        if not isinstance(value, dict):
+            raise SettingsError("Settings section 'library' must be an object.")
+        merged["library"].update(value)
     for section in ("server", "build", "advanced"):
         if section in saved:
             value = saved[section]
@@ -100,6 +106,9 @@ def _merge_defaults(saved: object) -> dict:
         raise SettingsError("'output_dir' must be a folder path.")
     if merged["appearance"]["theme"] not in ("light", "dark"):
         raise SettingsError("'appearance.theme' must be 'light' or 'dark'.")
+    title = merged["library"]["title"]
+    if not isinstance(title, str) or not title.strip() or len(title) > 200:
+        raise SettingsError("'library.title' must be non-empty text of at most 200 characters.")
     for key in ("port", "large_thumb_size", "memory_cache_mb"):
         value = merged["server"][key]
         if not isinstance(value, int) or isinstance(value, bool):

@@ -49,8 +49,8 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .library import (TripListError, build_library_context, check_library_args, missing_folder, read_trip_list,
-                      trip_args, trip_summary)
+from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
+                      read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
                      build_day_context, build_index_context, get_templates_for_content)
@@ -573,9 +573,10 @@ class Library:
     """Several trips on one server (--library): the page at / lists them,
     each trip lives under /<name>/."""
 
-    def __init__(self, trips: dict, titles: dict):
+    def __init__(self, trips: dict, titles: dict, library_title: str = "Trips"):
         self.trips = trips          # name -> App, in list-file order
         self.titles = titles        # name -> its folder's name (for untitled trips)
+        self.library_title = library_title
         self._summaries = {}        # name -> (the content it was made from, summary)
 
     def summary(self, name: str) -> Optional[dict]:
@@ -596,7 +597,8 @@ class Library:
         summaries = [s for s in (self.summary(name) for name in self.trips) if s is not None]
         urls = next(iter(self.trips.values())).urls()
         return LIBRARY_TEMPLATE.render(**build_library_context(
-            summaries, urls, footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION))
+            summaries, urls, footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION,
+            title=self.library_title))
 
 
 class LiveUrls(SiteUrls):
@@ -1300,6 +1302,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--library", type=Path, metavar="LIST",
                         help="Serve several trips: a page at / linking them all, each trip under its own "
                              "/name/. LIST is a text file with one photos folder per line. See README.md.")
+    parser.add_argument("--library-title", type=library_title_arg, default="Trips", metavar="TITLE",
+                        help="Title shown on the overview page created with --library (default: Trips).")
     add_content_arg(parser)
     parser.add_argument("--port", type=int, default=8000)
     parser.add_argument("--lan", action="store_true",
@@ -1569,4 +1573,4 @@ def load_library(args, shared: "Shared") -> "Library":
     if not trips:
         print("! None of the trips could be loaded.", file=sys.stderr)
         sys.exit(1)
-    return Library(trips, titles)
+    return Library(trips, titles, args.library_title)

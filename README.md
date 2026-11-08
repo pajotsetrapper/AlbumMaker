@@ -118,7 +118,9 @@ Choose **Run a live server** to browse the trips in a browser while the app
 is running, or **Create a static site** to write a standalone website to the
 output folder you choose. Server setup is separate from site generation.
 **Options** contains less frequently used settings. **General** holds appearance
-and shared trip-processing options; **Live server** and **Static site** contain
+and shared trip-processing options, including the **Trip library page** title
+(default **Trips**) shown on the all-trips overview page in both workflows;
+**Live server** and **Static site** contain
 options that affect only that workflow. Choose **Help** for plain-language
 descriptions of the controls. The trip list follows the order in which folders
 were added; use **Remove** and add folders again if you need to change it.
@@ -513,12 +515,16 @@ Use either `--timezone IANA_NAME` or `--tz-offset HOURS` on a trip line,
 not both. A trip's setting overrides the command-line default; the named
 time zone also accounts for daylight-saving changes.
 
+The overview page heading and browser-tab title default to **Trips**. Set
+`--library-title` to use a different title; it applies to both live and static
+libraries:
+
 ```bash
 # every trip into its own folder under ~/AlbumMakerSites, plus a page linking them
-python generate_site.py --library trips.txt -o ~/AlbumMakerSites
+python generate_site.py --library trips.txt --library-title "Family Holidays" -o ~/AlbumMakerSites
 
 # or serve them all: the list at http://127.0.0.1:8000/, each trip under /<name>/
-python album_server.py --library trips.txt
+python album_server.py --library trips.txt --library-title "Family Holidays"
 ```
 
 The library page shows a card per trip (cover, dates, main towns, days,

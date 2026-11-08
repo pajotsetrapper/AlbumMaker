@@ -245,6 +245,9 @@ unchanged generated files. Off by default.</li>
 <h3>Options → General</h3>
 <ul>
 <li><b>Appearance:</b> choose the light or dark color theme.</li>
+<li><b>Trip overview page title:</b> under <b>Options → General → Trip library page</b>, set the
+heading and browser-tab title for the page listing all trips, for both live and static sites.
+Defaults to <code>Trips</code>.</li>
 <li><b>Default video UTC offset:</b> optional fixed fallback for videos in trips set to Automatic,
 shared by the live server and static sites. Enter hours east of UTC, such as <code>2</code> or
 <code>-5.5</code>. Leave blank to use automatic handling.</li>
@@ -577,6 +580,20 @@ class MainWindow(QMainWindow):
         self.theme_combo.currentIndexChanged.connect(self._schedule_save)
         appearance_form.addRow("Color theme", self.theme_combo)
 
+        library_box, library_form = _group("Trip library page")
+        self.library_title = QLineEdit()
+        self.library_title.setToolTip(
+            "Title shown on the all-trips overview page in both the live server and static sites."
+        )
+        self.library_title.setPlaceholderText("Trips")
+        library_form.addRow("Overview page title", self.library_title)
+        library_help = _label(
+            "Shown as the heading and browser-tab title when the trip library is displayed.",
+            "muted",
+        )
+        library_help.setWordWrap(True)
+        library_form.addRow("", library_help)
+
         time_box, time_form = _group("Video time handling")
         self.tz_offset = QLineEdit()
         self.tz_offset.setPlaceholderText("Use automatic handling")
@@ -640,7 +657,7 @@ class MainWindow(QMainWindow):
         self.gpx_files.setToolTip("These tracks are used by both workflows and ignored if GPS tracks are disabled.")
         self.gpx_files.setMaximumHeight(90)
         gpx_form.addRow("GPX paths", self.gpx_files)
-        return _scroll_page(appearance_box, time_box, media_box, behavior_box, gpx_box)
+        return _scroll_page(appearance_box, library_box, time_box, media_box, behavior_box, gpx_box)
 
     def _server_tab(self) -> QWidget:
         setup_box = QGroupBox("One-time server setup")
@@ -792,6 +809,7 @@ class MainWindow(QMainWindow):
         self.theme_combo.setCurrentIndex(
             max(0, self.theme_combo.findData(self.settings["appearance"]["theme"]))
         )
+        self.library_title.setText(self.settings["library"]["title"])
         server = self.settings["server"]
         self.port.setValue(int(server["port"]))
         self.memory_cache.setValue(int(server["memory_cache_mb"]))
@@ -833,7 +851,7 @@ class MainWindow(QMainWindow):
 
     def _connect_persistence(self) -> None:
         for widget in (
-            self.output_dir, self.tz_offset, self.date_start, self.date_end,
+            self.output_dir, self.library_title, self.tz_offset, self.date_start, self.date_end,
             self.tile_cache, self.tile_url, self.index_cache,
         ):
             widget.textChanged.connect(self._schedule_save)
@@ -1089,6 +1107,7 @@ class MainWindow(QMainWindow):
         settings = {
             "version": self.settings["version"],
             "appearance": {"theme": self.theme_combo.currentData()},
+            "library": {"title": self.library_title.text().strip() or "Trips"},
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
