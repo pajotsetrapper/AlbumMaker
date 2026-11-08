@@ -30,6 +30,7 @@ from pathlib import Path, PurePosixPath
 from typing import Optional
 from urllib.parse import quote
 
+from . import __version__
 from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (ContentFileError, hidden_rels, load_or_init_content, parse_content_file,
@@ -180,6 +181,7 @@ def save_manifest(output_dir: Path, thumb_size: int, records: dict, pages: list,
         "version": MANIFEST_VERSION,
         "note": "Build record for generate_site.py. If it is deleted, the next run "
                 "regenerates everything, but can no longer remove files from earlier runs.",
+        "app_version": __version__,
         "thumb_size": thumb_size,
         "large_thumb_size": large_thumb_size,
         "pages": sorted(pages),
@@ -593,7 +595,7 @@ class StaticUrls(SiteUrls):
     folder works from anywhere (a USB drive, file://, any web server).
     Filenames are URL-encoded, since output names keep the original's
     characters ('#', '%', spaces, ...)."""
-    footer = "Generated with generate_site.py"
+    footer = f"Generated with generate_site.py, version {__version__}"
     edit_hint = " and re-run the generator."
     has_vendor = False    # local copies of Leaflet and the fonts are bundled in assets/vendor
     large_thumbs = False  # --large-thumb-size was used, so thumbs_large/ exists
@@ -677,6 +679,7 @@ def render_site(days: list, content: dict, output_dir: Path, urls: StaticUrls) -
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a static trip website from a photo/video folder.")
+    parser.add_argument("--version", action="version", version=f"AlbumMaker {__version__}")
     parser.add_argument("-i", "--input", type=Path, help="Folder containing your photos/videos (required, "
                                                           "unless --library is given)")
     parser.add_argument("--library", type=Path, metavar="LIST",
@@ -726,6 +729,7 @@ def main(argv=None):
         sys.stdout.reconfigure(line_buffering=True)
     parser = build_parser()
     args = parser.parse_args(argv)
+    print(f"AlbumMaker {__version__} (site builder)")
     if args.fetch_offline_assets:
         sys.exit(fetch_offline_assets())
     if args.library and args.input is not None:

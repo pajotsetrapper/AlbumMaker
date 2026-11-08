@@ -206,10 +206,12 @@ class GuiSettingsTests(unittest.TestCase):
 
     def test_library_path_delimiters_are_reported(self):
         with tempfile.TemporaryDirectory() as tmp:
+            # '|' cannot be used in a Windows file name, so the folder is not
+            # created; the check under test only looks at the path text
             trip = Path(tmp) / "Trip|Name"
-            trip.mkdir()
-            with self.assertRaisesRegex(SettingsError, "cannot contain"):
-                write_library_file([str(trip)], Path(tmp) / "library.txt")
+            with mock.patch.object(Path, "is_dir", return_value=True):
+                with self.assertRaisesRegex(SettingsError, "cannot contain"):
+                    write_library_file([str(trip)], Path(tmp) / "library.txt")
 
 
 class GuiCommandTests(unittest.TestCase):
@@ -280,7 +282,7 @@ class GuiCommandTests(unittest.TestCase):
         self.assertIn("--no-live-photos", command)
         self.assertIn("--force", command)
         self.assertEqual(command[command.index("--workers") + 1], "3")
-        self.assertEqual(command[command.index("--gpx") + 1], "/tracks/route.gpx")
+        self.assertEqual(command[command.index("--gpx") + 1], str(Path("/tracks/route.gpx")))
         self.assertEqual(command[command.index("--output") + 1], output)
         self.assertEqual(command[command.index("--library-title") + 1], "Summer Trips")
         self.assertEqual(
@@ -325,7 +327,7 @@ class GuiCommandTests(unittest.TestCase):
             command = offline_assets_command("python")
         self.assertEqual(
             command,
-            ["python", "-u", "/tmp/albummaker.pyz", "serve", "--fetch-offline-assets"],
+            ["python", "-u", str(Path("/tmp/albummaker.pyz")), "serve", "--fetch-offline-assets"],
         )
 
     def test_frozen_gui_launches_its_bundled_cli_helper(self):

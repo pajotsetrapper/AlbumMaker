@@ -3,198 +3,321 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="AlbumMaker turns local trip photos and videos into a mapped, day-by-day gallery you can keep private or share.">
-  <meta name="theme-color" content="#17243b">
-  <title>AlbumMaker — Your trips, told by the photos</title>
+  <meta name="description" content="AlbumMaker turns a folder of trip photos, videos and GPS tracks into a mapped, day-by-day website. Private by design: no account, no uploads.">
+  <meta name="theme-color" content="#141c30">
+  <meta property="og:title" content="AlbumMaker: your trips, told by the photos">
+  <meta property="og:description" content="Turn a folder of photos into a mapped, day-by-day travel site. Browse it privately or share it as a self-contained website.">
+  <meta property="og:image" content="assets/trip-library.png">
+  <title>AlbumMaker: your trips, told by the photos</title>
+  <link rel="stylesheet" href="demo/assets/vendor/fonts/fonts.css">
   <style>
     :root {
-      color-scheme: light;
-      --ink: #17243b;
-      --muted: #64728a;
-      --paper: #f5f7fb;
-      --card: #fff;
-      --line: #dce4ef;
-      --blue: #315fce;
-      --teal: #237b68;
-      --gold: #e6a23c;
-      font-family: Inter, "Segoe UI", -apple-system, BlinkMacSystemFont, sans-serif;
+      color-scheme: dark;
+      --bg: #141c30; --bg2: #1a2440; --line: #2b3858; --cream: #efe6d6; --text: #d3d9e6; --muted: #98a3bb;
+      --amber: #e6a23c; --teal: #5cc1b4; --ink: #141c30;
+      --serif: Fraunces, Georgia, "Times New Roman", serif;
+      --sans: "IBM Plex Sans", "Segoe UI", system-ui, sans-serif;
     }
     * { box-sizing: border-box; }
-    body { margin: 0; color: var(--ink); background: var(--paper); line-height: 1.6; }
+    html { scroll-behavior: smooth; scroll-padding-top: 76px; }
+    body { margin: 0; background: var(--bg); color: var(--text); font: 400 1.04rem/1.65 var(--sans); -webkit-font-smoothing: antialiased; }
     a { color: inherit; }
-    .wrap { width: min(1120px, calc(100% - 40px)); margin: 0 auto; }
-    .topbar { display: flex; align-items: center; justify-content: space-between; padding: 22px 0; }
-    .brand { display: flex; align-items: center; gap: 11px; font-size: 1.1rem; font-weight: 750; letter-spacing: -.03em; }
-    .mark { display: grid; width: 34px; height: 34px; place-items: center; color: white; background: var(--blue); border-radius: 10px; font-weight: 800; }
-    nav { display: flex; gap: 24px; color: var(--muted); font-size: .92rem; }
+    a:focus-visible, .btn:focus-visible { outline: 3px solid var(--amber); outline-offset: 3px; border-radius: 6px; }
+    .wrap { width: min(1140px, calc(100% - 44px)); margin: 0 auto; }
+    h1, h2, h3 { font-family: var(--serif); color: var(--cream); font-weight: 600; margin: 0; }
+
+    .top { position: sticky; top: 0; z-index: 5; background: #141c30ee; backdrop-filter: blur(8px); border-bottom: 1px solid var(--line); }
+    .top .wrap { display: flex; align-items: center; justify-content: space-between; min-height: 64px; gap: 18px; }
+    .brand { font: 700 1.3rem var(--serif); color: var(--cream); text-decoration: none; letter-spacing: -.01em; }
+    .brand i { color: var(--amber); font-style: normal; }
+    nav { display: flex; align-items: center; gap: 26px; font-size: .94rem; color: var(--muted); }
     nav a { text-decoration: none; }
-    nav a:hover { color: var(--blue); }
-    .hero { display: grid; grid-template-columns: .9fr 1.1fr; gap: 44px; align-items: center; padding: 42px 0 76px; }
-    .kicker { color: var(--teal); font-size: .78rem; font-weight: 750; letter-spacing: .13em; text-transform: uppercase; }
-    h1 { max-width: 550px; margin: 13px 0 18px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2.7rem, 5vw, 4.6rem); font-weight: 600; letter-spacing: -.055em; line-height: 1.02; }
-    .lead { max-width: 510px; color: var(--muted); font-size: 1.14rem; }
-    .actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 27px; }
-    .button { display: inline-flex; min-height: 46px; align-items: center; justify-content: center; padding: 0 18px; border: 1px solid var(--line); border-radius: 9px; background: var(--card); font-weight: 700; text-decoration: none; }
-    .button.primary { color: #fff; background: var(--blue); border-color: var(--blue); }
-    .button:hover { transform: translateY(-1px); box-shadow: 0 5px 16px #17243b16; }
-    .small-note { margin-top: 12px; color: var(--muted); font-size: .82rem; }
-    .hero-shot, .shot { display: block; width: 100%; height: auto; border: 1px solid #26334c20; border-radius: 14px; box-shadow: 0 20px 55px #20304a20; }
-    .hero-shot { max-height: 510px; object-fit: cover; object-position: top; }
-    .section { padding: 70px 0; border-top: 1px solid var(--line); }
-    .section-heading { max-width: 680px; margin-bottom: 30px; }
-    h2 { margin: 8px 0 12px; font-family: Georgia, "Times New Roman", serif; font-size: clamp(2rem, 3.6vw, 3rem); font-weight: 600; letter-spacing: -.04em; line-height: 1.1; }
-    .section-heading p, .card p, .privacy p { color: var(--muted); }
-    .screens { display: grid; grid-template-columns: 1fr 1fr; gap: 22px; align-items: start; }
-    .desktop-screenshot { margin-top: 24px; }
-    figure { margin: 0; }
-    figcaption { padding: 12px 3px 0; color: var(--muted); font-size: .88rem; }
-    .fig-title { display: block; color: var(--ink); font-weight: 700; }
-    .walkthrough { display: grid; grid-template-columns: repeat(3, 1fr); gap: 16px; margin-top: 28px; }
-    .card { padding: 22px; border: 1px solid var(--line); border-radius: 13px; background: var(--card); }
-    .number { display: inline-grid; width: 30px; height: 30px; place-items: center; border-radius: 50%; color: #68460e; background: #fae7c6; font-weight: 800; }
-    .card h3 { margin: 13px 0 6px; font-size: 1.05rem; }
-    .card p { margin: 0; font-size: .94rem; }
-    .demo-cta { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; padding: 22px 24px; border-radius: 13px; background: #e8f4f1; }
-    .demo-cta p { margin: 3px 0 0; color: var(--muted); }
-    .details { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .detail { padding: 24px; border: 1px solid var(--line); border-radius: 13px; background: var(--card); }
-    .detail h3 { margin: 0 0 12px; }
-    .detail ul { margin: 0; padding-left: 20px; color: var(--muted); }
-    .detail li + li { margin-top: 8px; }
-    .privacy { padding: 26px; border-left: 4px solid var(--teal); border-radius: 0 12px 12px 0; background: #e8f4f1; }
-    .privacy h3 { margin: 0 0 6px; }
-    .privacy p { margin: 0; }
-    footer { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px; padding: 26px 0 36px; border-top: 1px solid var(--line); color: var(--muted); font-size: .87rem; }
-    footer a { color: var(--ink); }
-    @media (max-width: 760px) {
-      .wrap { width: min(100% - 28px, 600px); }
-      .topbar { align-items: flex-start; }
-      nav { flex-wrap: wrap; justify-content: flex-end; gap: 8px 14px; }
-      .hero { grid-template-columns: 1fr; gap: 28px; padding: 30px 0 52px; }
-      .hero-shot { max-height: none; }
-      .screens, .details { grid-template-columns: 1fr; }
-      .walkthrough { grid-template-columns: 1fr; }
-      .section { padding: 52px 0; }
+    nav a:hover { color: var(--cream); }
+    .btn { display: inline-flex; align-items: center; justify-content: center; min-height: 48px; padding: 0 22px; border-radius: 10px; border: 1px solid var(--line); font: 600 1rem var(--sans); color: var(--cream); text-decoration: none; background: transparent; transition: background .15s, border-color .15s; }
+    .btn:hover { border-color: var(--muted); background: #ffffff0d; }
+    .btn.primary { background: var(--amber); border-color: var(--amber); color: var(--ink); }
+    .btn.primary:hover { background: #f0b252; }
+    nav .btn { min-height: 40px; padding: 0 16px; font-size: .92rem; color: var(--ink); }
+
+    .hero { padding: 76px 0 0; text-align: center; }
+    .hero h1 { max-width: 880px; margin: 0 auto; font-size: clamp(2.9rem, 7vw, 5.6rem); line-height: 1; letter-spacing: -.035em; font-weight: 700; }
+    .hero h1 em { display: block; color: var(--amber); font-style: italic; font-weight: 500; }
+    .lead { max-width: 640px; margin: 26px auto 0; font-size: 1.2rem; color: var(--text); }
+    .actions { display: flex; flex-wrap: wrap; justify-content: center; gap: 12px; margin-top: 32px; }
+    .fine { margin: 16px auto 0; max-width: 620px; color: var(--muted); font-size: .86rem; }
+
+    .stage { position: relative; margin: 54px auto 0; max-width: 1040px; }
+    .browser { border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); overflow: hidden; box-shadow: 0 40px 90px #05091a88; }
+    .bar { display: flex; align-items: center; gap: 7px; padding: 11px 14px; border-bottom: 1px solid var(--line); }
+    .bar b { width: 10px; height: 10px; border-radius: 50%; background: #3a4766; }
+    .bar span { margin-left: 12px; padding: 3px 14px; border-radius: 6px; background: var(--bg); color: var(--muted); font-size: .78rem; }
+    .browser img { display: block; width: 100%; aspect-ratio: 16 / 9.4; object-fit: cover; object-position: top; }
+    .float { position: absolute; right: -26px; bottom: -44px; width: 31%; border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 24px 60px #05091acc; background: var(--bg2); }
+    .float img { display: block; width: 100%; height: auto; border-radius: 11px; }
+    @media (prefers-reduced-motion: no-preference) {
+      .stage { animation: rise .9s cubic-bezier(.2, .7, .2, 1) both; }
+      @keyframes rise { from { opacity: 0; transform: translateY(26px); } }
     }
-    @media (max-width: 440px) {
-      .topbar { display: block; }
-      nav { justify-content: flex-start; margin-top: 14px; }
-      .actions .button { width: 100%; }
+
+    .trust { margin-top: 96px; border-block: 1px solid var(--line); }
+    .trust ul { display: grid; grid-template-columns: repeat(4, 1fr); margin: 0 auto; padding: 0; list-style: none; }
+    .trust li { padding: 22px 24px; border-left: 1px solid var(--line); font-size: .95rem; color: var(--muted); }
+    .trust li:first-child { border-left: 0; padding-left: 0; }
+    .trust strong { display: block; color: var(--cream); font: 600 1.12rem var(--serif); }
+
+    section { padding: 96px 0 0; }
+    .head { max-width: 700px; margin-bottom: 44px; }
+    .head h2 { font-size: clamp(2.1rem, 4.4vw, 3.3rem); line-height: 1.08; letter-spacing: -.03em; }
+    .head p { margin: 16px 0 0; color: var(--muted); font-size: 1.1rem; }
+
+    .row { display: grid; grid-template-columns: 1fr 1.25fr; gap: 56px; align-items: center; margin-bottom: 80px; }
+    .row.flip { grid-template-columns: 1.25fr 1fr; }
+    .row.flip .copy { order: 2; }
+    .row h3 { font-size: 1.9rem; line-height: 1.15; letter-spacing: -.02em; margin-bottom: 12px; }
+    .row p { margin: 0; color: var(--muted); }
+    .row ul { margin: 18px 0 0; padding: 0; list-style: none; }
+    .row li { position: relative; padding: 7px 0 7px 22px; }
+    .row li::before { content: ""; position: absolute; left: 0; top: 1.05em; width: 9px; height: 2px; background: var(--amber); }
+    .shot { border: 1px solid var(--line); border-radius: 14px; overflow: hidden; background: var(--bg2); box-shadow: 0 30px 70px #05091a77; }
+    .shot img { display: block; width: 100%; height: auto; }
+    .shot.crop img { aspect-ratio: 4 / 3.1; object-fit: cover; object-position: top; }
+    .caption { margin: 10px 0 0; font-size: .8rem; color: var(--muted); }
+
+    .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
+    .grid article { padding: 28px 26px; background: var(--bg); }
+    .grid h3 { font-size: 1.2rem; margin-bottom: 8px; }
+    .grid p { margin: 0; color: var(--muted); font-size: .96rem; }
+
+    .demo { margin-top: 96px; padding: 56px 0; background: var(--cream); color: var(--ink); }
+    .demo .wrap { display: grid; grid-template-columns: 1fr 1.1fr; gap: 56px; align-items: center; }
+    .demo h2 { color: var(--ink); font-size: clamp(2rem, 4vw, 3rem); line-height: 1.08; letter-spacing: -.03em; margin-bottom: 14px; }
+    .demo p { margin: 0 0 22px; color: #3b4764; }
+    .demo .btn { background: var(--ink); border-color: var(--ink); color: var(--cream); }
+    .demo .btn:hover { background: #26335a; }
+    .demo small { display: block; margin-top: 18px; color: #55607a; font-size: .82rem; }
+    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+    .photos a { display: block; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px #14203a33; transition: transform .2s; }
+    .photos a:hover { transform: translateY(-3px); }
+    .photos img { display: block; width: 100%; height: auto; }
+
+    .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin: 0 0 44px; padding: 0; list-style: none; counter-reset: s; }
+    .steps li { counter-increment: s; padding-top: 18px; border-top: 2px solid var(--amber); }
+    .steps li::before { content: counter(s); display: block; margin-bottom: 6px; font: 700 2.4rem var(--serif); color: var(--amber); }
+    .steps h3 { font-size: 1.25rem; margin-bottom: 6px; }
+    .steps p { margin: 0; color: var(--muted); font-size: .97rem; }
+    .app { max-width: 900px; margin: 0 auto; }
+
+    .privacy { display: grid; grid-template-columns: 1fr 1.2fr; gap: 56px; align-items: start; padding: 44px; border: 1px solid #2f6b66; border-radius: 16px; background: linear-gradient(160deg, #173238, var(--bg)); }
+    .privacy h2 { font-size: clamp(1.9rem, 3.6vw, 2.7rem); line-height: 1.1; letter-spacing: -.03em; }
+    .privacy p { margin: 0 0 14px; font-size: .98rem; }
+    .privacy p:last-child { margin: 0; }
+    .good { color: var(--teal); font-weight: 600; }
+
+    .two { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
+    .card { padding: 30px; border: 1px solid var(--line); border-radius: 14px; background: var(--bg2); }
+    .card h3 { font-size: 1.4rem; margin-bottom: 12px; }
+    .card ul { margin: 0 0 22px; padding-left: 20px; color: var(--muted); font-size: .96rem; }
+    .card li { margin: 6px 0; }
+    code { padding: 2px 7px; border-radius: 5px; background: var(--bg); border: 1px solid var(--line); font: .86em "IBM Plex Mono", ui-monospace, Consolas, monospace; color: var(--cream); }
+    pre { margin: 0 0 22px; padding: 16px 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font: .84rem/1.7 "IBM Plex Mono", ui-monospace, Consolas, monospace; color: var(--cream); }
+    pre span { color: var(--muted); }
+
+    footer { margin-top: 110px; border-top: 1px solid var(--line); padding: 34px 0 46px; color: var(--muted); font-size: .88rem; }
+    footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px 30px; }
+    footer a:hover { color: var(--cream); }
+    footer p { margin: 0 0 8px; max-width: 760px; }
+
+    @media (max-width: 860px) {
+      nav a:not(.btn) { display: none; }
+      .hero { padding-top: 52px; }
+      .float { position: static; width: 70%; margin: -34px 0 0 auto; }
+      .trust ul { grid-template-columns: 1fr 1fr; }
+      .trust li:nth-child(odd) { border-left: 0; padding-left: 0; }
+      .trust li:nth-child(n+3) { border-top: 1px solid var(--line); }
+      .row, .row.flip, .demo .wrap, .privacy, .two { grid-template-columns: 1fr; gap: 28px; }
+      .row.flip .copy { order: 0; }
+      .grid, .steps { grid-template-columns: 1fr; }
+      .privacy { padding: 28px; }
     }
+    @media (max-width: 480px) { .actions .btn { width: 100%; } }
   </style>
 </head>
 <body>
-  <header class="wrap topbar">
-    <a class="brand" href="#" aria-label="AlbumMaker home"><span class="mark">A</span> AlbumMaker</a>
-    <nav aria-label="Main navigation">
-      <a href="#demo">See it in action</a>
-      <a href="#privacy">Privacy</a>
-      <a href="#platforms">Platforms</a>
-      <a href="https://github.com/pajotsetrapper/TripServer">Source</a>
-    </nav>
+  <header class="top">
+    <div class="wrap">
+      <a class="brand" href="#top">Album<i>Maker</i></a>
+      <nav aria-label="Main">
+        <a href="#features">Features</a>
+        <a href="#how">How it works</a>
+        <a href="#privacy">Privacy</a>
+        <a href="#get">Get it</a>
+        <a class="btn primary" href="demo/index.html">Try the demo</a>
+      </nav>
+    </div>
   </header>
 
-  <main>
-    <section class="wrap hero">
-      <div>
-        <div class="kicker">Your photos stay yours</div>
-        <h1>Your trip, told by the photos.</h1>
-        <p class="lead">Turn a folder of photos, videos and a GPS track into a beautiful, day-by-day travel story. Explore it on your computer, then share a self-contained website.</p>
-        <div class="actions">
-          <a class="button primary" href="demo/index.html">Explore the sample trip <span aria-hidden="true">&nbsp;→</span></a>
-          <a class="button" href="https://github.com/pajotsetrapper/TripServer/actions/workflows/build-executables.yml">Find desktop builds</a>
-        </div>
-        <p class="small-note">MIT-licensed source. No account or cloud upload required. Current build downloads are temporary GitHub Actions artifacts, retained for 30 days.</p>
+  <main id="top">
+    <section class="hero wrap">
+      <h1>Your trips, <em>told by the photos.</em></h1>
+      <p class="lead">Point AlbumMaker at a folder of photos, videos and a GPS track. It builds a day-by-day travel site with maps, routes and a full-screen slideshow. It runs on your computer and nothing is uploaded.</p>
+      <div class="actions">
+        <a class="btn primary" href="demo/index.html">Explore the live sample trip</a>
+        <a class="btn" href="#get">Get AlbumMaker</a>
       </div>
-      <a href="demo/index.html" aria-label="Open the interactive sample trip">
-        <img class="hero-shot" src="assets/trip-library.png" alt="AlbumMaker sample trip overview with its photo map and day cards">
-      </a>
-    </section>
-
-    <section class="section" id="demo">
-      <div class="wrap">
-        <div class="section-heading">
-          <div class="kicker">A quick look</div>
-          <h2>From a folder to a story you can revisit.</h2>
-          <p>AlbumMaker organizes media by capture date, adds locations from photo metadata or a GPX track, and gives each day a map, gallery and slideshow.</p>
+      <p class="fine">Free and open source (MIT). Windows, macOS and Linux.</p>
+      <div class="stage">
+        <div class="browser">
+          <div class="bar"><b></b><b></b><b></b><span>127.0.0.1:8000</span></div>
+          <img src="assets/trip-library.png" width="1440" height="1400" alt="A Weekend in the Netherlands: the trip homepage with its title, totals, a map of the route and a card for each day">
         </div>
-        <div class="screens">
-          <figure>
-            <a href="demo/index.html"><img class="shot" src="assets/trip-library.png" alt="Sample trip homepage showing the trip title, map, route and day cards"></a>
-            <figcaption><span class="fig-title">One overview for the whole trip</span>Follow the route, browse each day and see the places you visited. Map tiles shown here are © OpenStreetMap contributors.</figcaption>
-          </figure>
-          <figure>
-            <a href="demo/days/2025-05-14.html"><img class="shot" src="assets/trip-day.png" alt="Sample day page with day title, description, route map and photo thumbnails"></a>
-            <figcaption><span class="fig-title">A page for every day</span>Open a photo for a full-screen slideshow, captions and camera details.</figcaption>
-          </figure>
-        </div>
-        <div class="walkthrough" aria-label="How AlbumMaker works">
-          <article class="card"><span class="number">1</span><h3>Choose your trip folders</h3><p>Add one folder or a whole library. Pick a time zone for each trip when needed.</p></article>
-          <article class="card"><span class="number">2</span><h3>Browse and curate</h3><p>Use the live server to add titles and captions, mark favorites, hide photos and select covers.</p></article>
-          <article class="card"><span class="number">3</span><h3>Keep it or share it</h3><p>Build a static site to copy, publish or keep offline. Hidden photos are left out of the build.</p></article>
-        </div>
-        <div class="demo-cta">
-          <div><strong>Try the interactive sample</strong><p>It is a real AlbumMaker site built from a small sample trip.</p></div>
-          <a class="button primary" href="demo/index.html">Open sample trip →</a>
-        </div>
-        <p class="small-note">The sample photos are original generated illustrations, not photographs of a real trip. The route and trip details are fictional.</p>
+        <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="A day page titled Canals and coffee, with a description, a route map and photo thumbnails" loading="lazy"></div>
       </div>
     </section>
 
-    <section class="section" id="privacy">
-      <div class="wrap">
-        <div class="section-heading">
-          <div class="kicker">Private by design</div>
-          <h2>Your originals stay on your computer.</h2>
+    <div class="trust">
+      <ul class="wrap">
+        <li><strong>No account</strong>No sign-up, no subscription, no cloud.</li>
+        <li><strong>Your files stay put</strong>Originals are never changed or uploaded.</li>
+        <li><strong>One window</strong>Add folders, press start. Or use the command line.</li>
+        <li><strong>Open source</strong>MIT-licensed code you can read and change.</li>
+      </ul>
+    </div>
+
+    <section id="features" class="wrap">
+      <div class="head">
+        <h2>Everything a trip needs, worked out for you.</h2>
+        <p>AlbumMaker reads the dates and locations already stored in your files, so you only type a title or a story if you want to.</p>
+      </div>
+
+      <div class="row">
+        <div class="copy">
+          <h3>One overview for the whole journey</h3>
+          <p>The homepage shows the trip title, how many days, photos and kilometres it covers, and a map of where you went. Each day gets its own colour and card.</p>
+          <ul>
+            <li>Routes drawn from a GPX track, or from where your photos were taken</li>
+            <li>Card size from S to XL, so large trips stay easy to scan</li>
+            <li>Several trips can share one library page</li>
+          </ul>
         </div>
-        <div class="privacy">
-          <h3>No account. No photo uploads.</h3>
-          <p>AlbumMaker processes your library locally. It does not send your photos to an AlbumMaker service. The live server listens only on your computer by default; enabling local-network access lets other devices on your network view non-hidden photos, and the server has no login. Map tiles and, when needed, offline assets come from their stated providers, so those providers can receive network requests. A static site contains copies of visible media that you choose to share.</p>
+        <div>
+          <div class="shot crop"><a href="demo/index.html"><img src="assets/trip-library.png" width="1440" height="1400" alt="Trip overview with map and day cards" loading="lazy"></a></div>
+          <p class="caption">Map tiles © OpenStreetMap contributors.</p>
+        </div>
+      </div>
+
+      <div class="row flip">
+        <div class="copy">
+          <h3>A page for every day</h3>
+          <p>Photos and videos are grouped by when they were taken, with the place name, a short description and the day's route above the gallery.</p>
+          <ul>
+            <li>Full-screen slideshow with keyboard, swipe and autoplay</li>
+            <li>Captions, favourites and camera details for each photo</li>
+            <li>Direct links to a photo, and the Back button works as you'd expect</li>
+          </ul>
+        </div>
+        <div class="shot crop"><a href="demo/days/2025-05-14.html"><img src="assets/trip-day.png" width="1440" height="1600" alt="Day page with description, route map and thumbnails" loading="lazy"></a></div>
+      </div>
+
+      <div class="grid">
+        <article><h3>Edit right in the page</h3><p>With the live server, add captions, mark favourites, hide photos and choose each day's cover without opening a file.</p></article>
+        <article><h3>Photos and video together</h3><p>Handles common photo and video formats, pairs Live Photos, and skips duplicates and system clutter on its own.</p></article>
+        <article><h3>Place names built in</h3><p>Photos with GPS get a place name from a bundled database, so this step does not need the internet.</p></article>
+        <article><h3>Works offline</h3><p>Save the map library, fonts and tiles you have viewed, and your sites keep working without a connection.</p></article>
+        <article><h3>Right time zone</h3><p>Pick a time zone for each trip so photos from different cameras and countries land on the correct day.</p></article>
+        <article><h3>A site you can keep</h3><p>Build a static folder to copy to a USB drive or any web host. Hidden photos stay out of it.</p></article>
+      </div>
+    </section>
+
+    <div class="demo" id="demo">
+      <div class="wrap">
+        <div>
+          <h2>Open a real AlbumMaker site.</h2>
+          <p>The sample is a finished two-day trip built by AlbumMaker itself. Zoom the map, switch the card size, open a photo and use the arrow keys.</p>
+          <a class="btn" href="demo/index.html">Open the sample trip</a>
+          <small>The photos are generated illustrations, not a real trip. The route and details are fictional.</small>
+        </div>
+        <div class="photos">
+          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_4102.jpg" width="400" height="300" alt="Illustration of a city skyline at sunset" loading="lazy"></a>
+          <a href="demo/days/2025-05-14.html" aria-label="Open day 1 of the sample trip"><img src="demo/thumbs/IMG_4138.jpg" width="400" height="300" alt="Illustration of a canal at dusk" loading="lazy"></a>
+          <a href="demo/days/2025-05-15.html" aria-label="Open day 2 of the sample trip"><img src="demo/thumbs/IMG_5201.jpg" width="400" height="300" alt="Illustration of mountains under a pale sun" loading="lazy"></a>
+          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_5244.jpg" width="400" height="300" alt="Illustration of a countryside landscape" loading="lazy"></a>
+        </div>
+      </div>
+    </div>
+
+    <section id="how" class="wrap">
+      <div class="head">
+        <h2>From a folder to a trip site in three steps.</h2>
+        <p>The desktop app walks you through them in one window.</p>
+      </div>
+      <ol class="steps">
+        <li><h3>Choose your trip folders</h3><p>Add one folder, or several to build a library. Set a time zone for each trip if you need to.</p></li>
+        <li><h3>Pick live or static</h3><p>Browse and edit on a live server, or create a standalone site to share or publish.</p></li>
+        <li><h3>Press start</h3><p>AlbumMaker reads your files, makes the thumbnails and opens the result.</p></li>
+      </ol>
+      <div class="app">
+        <div class="shot"><img src="assets/desktop-app.png" width="1160" height="900" alt="The AlbumMaker desktop app showing a trip folder, the live server and static site choices, and a Start live server button" loading="lazy"></div>
+        <p class="caption">The desktop app also has a dark theme.</p>
+      </div>
+    </section>
+
+    <section id="privacy" class="wrap">
+      <div class="privacy">
+        <h2>Your originals stay on your computer.</h2>
+        <div>
+          <p><span class="good">No account. No photo uploads.</span> AlbumMaker processes your library locally and does not send your photos to an AlbumMaker service.</p>
+          <p>The live server listens only on your computer by default. If you turn on local-network access, other devices on your network can view photos that are not hidden, and the server has no login.</p>
+          <p>Map tiles and, when needed, offline assets come from their stated providers, so those providers can receive network requests. A static site contains copies of the visible media you choose to share.</p>
         </div>
       </div>
     </section>
 
-    <section class="section" id="platforms">
-      <div class="wrap">
-        <div class="section-heading">
-          <div class="kicker">Getting started</div>
-          <h2>Desktop app or command line.</h2>
-          <p>Use the app to manage trips and run either workflow, or use the command-line tools if you prefer.</p>
-        </div>
-        <div class="details">
-          <article class="detail">
-            <h3>Standalone desktop app</h3>
-            <ul>
-              <li>Windows x64, macOS Intel and Apple Silicon, and Linux x64.</li>
-              <li>Python and FFmpeg are bundled; no separate installation is needed.</li>
-              <li>Linux builds target Ubuntu 22.04 and need a compatible glibc system.</li>
-              <li>Current builds are unsigned/not notarized, so the OS may show a security warning.</li>
-            </ul>
-          </article>
-          <article class="detail">
-            <h3>Run from source</h3>
-            <ul>
-              <li>Python 3.9 or newer.</li>
-              <li>Install the project requirements; install FFmpeg for video metadata and previews.</li>
-              <li>Install the optional GUI requirements to use the desktop interface.</li>
-              <li>See the README for install steps, offline use and detailed settings.</li>
-            </ul>
-          </article>
-        </div>
-        <div class="screens desktop-screenshot">
-          <figure>
-            <img class="shot" src="assets/desktop-app.png" alt="AlbumMaker desktop app with a sample trip folder, workflow choices and a start button">
-            <figcaption><span class="fig-title">A guided desktop workflow</span>Add folders, choose live browsing or a static site, and run it from one window.</figcaption>
-          </figure>
-        </div>
-        <p class="small-note">The application source is MIT-licensed. Bundled third-party components have their own licenses, including GPL-licensed FFmpeg and x265; see the <a href="https://github.com/pajotsetrapper/TripServer/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a> before redistributing binaries.</p>
+    <section id="get" class="wrap">
+      <div class="head">
+        <h2>Get AlbumMaker.</h2>
+        <p>Use the desktop app, or run it from the command line if you prefer.</p>
+      </div>
+      <div class="two">
+        <article class="card">
+          <h3>Desktop app</h3>
+          <ul>
+            <li>Windows x64, macOS (Intel and Apple Silicon) and Linux x64</li>
+            <li>Python and FFmpeg are included, so there is nothing else to install</li>
+            <li>Linux builds target Ubuntu 22.04 and need a compatible glibc</li>
+            <li>Builds are not yet signed or notarized, so your system may show a security warning</li>
+            <li>Downloads are GitHub Actions artifacts and are kept for 30 days</li>
+          </ul>
+          <a class="btn primary" href="https://github.com/pajotsetrapper/TripServer/actions/workflows/build-executables.yml">Find the desktop builds</a>
+        </article>
+        <article class="card">
+          <h3>Run from source</h3>
+          <pre><span># Python 3.9 or newer</span>
+pip install -r requirements.txt
+python album_server.py -i /path/to/photos
+<span># then open http://127.0.0.1:8000/</span></pre>
+          <ul>
+            <li>Install FFmpeg for video details and previews</li>
+            <li>Add <code>requirements-gui.txt</code> for the desktop interface</li>
+            <li>Check your version with <code>--version</code></li>
+          </ul>
+          <a class="btn" href="https://github.com/pajotsetrapper/TripServer/blob/main/README.md">Read the documentation</a>
+        </article>
       </div>
     </section>
   </main>
 
-  <footer class="wrap">
-    <span>AlbumMaker · Keep your trip stories close.</span>
-    <span><a href="https://github.com/pajotsetrapper/TripServer">Source code</a> · <a href="https://github.com/pajotsetrapper/TripServer/blob/main/README.md">Documentation</a> · <a href="https://github.com/pajotsetrapper/TripServer/blob/main/LICENSE">MIT license</a> · <a href="https://github.com/pajotsetrapper/TripServer/blob/main/THIRD_PARTY_NOTICES.md">Third-party notices</a></span>
+  <footer>
+    <div class="wrap">
+      <div>
+        <p><strong style="color:var(--cream)">AlbumMaker.</strong> Keep your trip stories close.</p>
+        <p>The application source is MIT-licensed. Bundled third-party components have their own licenses, including GPL-licensed FFmpeg and x265. Read the <a href="https://github.com/pajotsetrapper/TripServer/blob/main/THIRD_PARTY_NOTICES.md">third-party notices</a> before redistributing binaries.</p>
+      </div>
+      <div>
+        <a href="https://github.com/pajotsetrapper/TripServer">Source code</a> &nbsp;·&nbsp;
+        <a href="https://github.com/pajotsetrapper/TripServer/blob/main/README.md">Documentation</a> &nbsp;·&nbsp;
+        <a href="https://github.com/pajotsetrapper/TripServer/blob/main/LICENSE">MIT license</a>
+      </div>
+    </div>
   </footer>
 </body>
 </html>
