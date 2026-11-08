@@ -146,8 +146,12 @@ offline. The offline map library and fonts are stored in the `offline-assets`
 subfolder beside `settings.json`; use **Download offline assets** in the
 server options to refresh them manually. Static-site generation bundles these
 assets when available, but does not require the live-server setup. Once the
-live server is ready, the app shows a link in **Activity** to open it in your
-browser.
+live server is ready, the main window shows prominent buttons to open the trip
+site and, when editing is enabled, the private editing link. Do not share that
+link: it grants editing access. These buttons remain visible when the Activity
+panel is closed. The main **Start live server** button becomes **Stop server**
+while the server is running; stopping it shows a clear stopped status instead
+of a platform-specific exit code.
 
 The GUI's live-server high-resolution thumbnail defaults to **2400 pixels**
 (longest side), a sensible balance for Full HD and 4K displays. Only larger
@@ -457,9 +461,11 @@ Options:
   converted photos kept between requests (default 512). The limit is on
   their total size, so a few huge converted HEICs can't push the server
   into gigabytes.
-- `--index-cache FILE`: keep every file's metadata (dates, GPS, camera
-  details) in this file, so the next start only reads new or changed
-  files. Off by default. Without it, metadata is still read in parallel.
+- `--index-cache PATH`: keep each file's metadata (dates, GPS, camera
+  details) for reuse at the next start. For one trip, PATH is the JSON
+  cache file; with `--library`, PATH is a folder containing a separate
+  cache file for each trip. Off by default. Without it, metadata is still
+  read in parallel.
 - `--verbose`: log every request. Normally only errors (other than 404)
   and requests slower than two seconds are printed.
 
