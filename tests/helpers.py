@@ -20,6 +20,7 @@ import tempfile
 import time
 import unittest
 from pathlib import Path
+from types import SimpleNamespace
 
 from PIL import Image
 
@@ -27,9 +28,63 @@ ROOT = Path(__file__).resolve().parent.parent
 if str(ROOT) not in sys.path:
     sys.path.insert(0, str(ROOT))
 
-import album_common as tc  # noqa: E402  (needs ROOT on sys.path first)
+from albummaker import cli, content, metadata, model, offline, render, scan, util  # noqa: E402
 
-SCRIPTS = ("album_common.py", "album_server.py", "generate_site.py")
+tc = SimpleNamespace(
+    CAPTION_MAX=content.CAPTION_MAX,
+    ContentFileError=content.ContentFileError,
+    DayGroup=model.DayGroup,
+    LIVE_CLIP_MAX_SECONDS=metadata.LIVE_CLIP_MAX_SECONDS,
+    MediaItem=model.MediaItem,
+    SITE_MARKER=scan.SITE_MARKER,
+    UNKNOWN_DAY_KEY=model.UNKNOWN_DAY_KEY,
+    _VENDOR_FONT_WEIGHTS=offline._VENDOR_FONT_WEIGHTS,
+    _font_faces=offline._font_faces,
+    _parse_iso_datetime=metadata._parse_iso_datetime,
+    _route_distance_km=model.route_distance_km,
+    add_date_check_args=cli.add_date_check_args,
+    apply_date_check=scan.apply_date_check,
+    assign_rel_paths=scan.assign_rel_paths,
+    atomic_write_bytes=util.atomic_write_bytes,
+    atomic_write_text=util.atomic_write_text,
+    collect_candidates=scan.collect_candidates,
+    day_text=content.day_text,
+    dedupe_candidates=scan.dedupe_candidates,
+    fast_fingerprint=scan.fast_fingerprint,
+    fetch_offline_assets=offline.fetch_offline_assets,
+    find_suspicious_dates=scan.find_suspicious_dates,
+    format_altitude=metadata.format_altitude,
+    format_camera=metadata.format_camera,
+    format_duration=metadata.format_duration,
+    format_exposure=metadata.format_exposure,
+    format_fnumber=metadata.format_fnumber,
+    format_focal=metadata.format_focal,
+    format_gps_display=metadata.format_gps_display,
+    format_iso=metadata.format_iso,
+    format_long_date=scan.format_long_date,
+    group_by_day=scan.group_by_day,
+    hidden_rels=content.hidden_rels,
+    human_filesize=metadata.human_filesize,
+    is_ignored_path=scan.is_ignored_path,
+    is_live_photo_clip=metadata.is_live_photo_clip,
+    list_media_files=scan.list_media_files,
+    pair_live_photos=scan.pair_live_photos,
+    parse_content_file=content.parse_content_file,
+    photo_entry=content.photo_entry,
+    pick_cover=render.pick_cover,
+    positive_thumb_size=cli.positive_thumb_size,
+    report_unknown_photo_keys=content.report_unknown_photo_keys,
+    resolve_date_range=cli.resolve_date_range,
+    set_cover=content.set_cover,
+    set_day_text=content.set_day_text,
+    set_photo_fields=content.set_photo_fields,
+    trip_title=content.trip_title,
+    valid_gps=metadata.valid_gps,
+    vendor_ready=offline.vendor_ready,
+    visible_days=scan.visible_days,
+)
+
+SCRIPTS = ("album_server.py", "generate_site.py")
 HAVE_FFMPEG = shutil.which("ffmpeg") is not None
 needs_ffmpeg = unittest.skipUnless(HAVE_FFMPEG, "ffmpeg is not installed")
 

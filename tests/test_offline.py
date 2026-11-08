@@ -145,7 +145,7 @@ class RegistryTestCase(TempDirMixin, unittest.TestCase):
     def fetch(self, vendor, packages=None, **patches):
         packages = packages or synthetic_packages(self.registry)
         out, err = io.StringIO(), io.StringIO()
-        # Patch the module that does the work; album_common only re-exports its names.
+        # Patch the module that does the work.
         with mock.patch.object(offline, "_VENDOR_PACKAGES", packages), \
              mock.patch.object(offline, "_NPM_REGISTRY", self.registry.url), \
              mock.patch.multiple(offline, **patches) if patches else mock.patch.dict(os.environ, {}), \
@@ -306,24 +306,6 @@ class FontFaceParsingTests(unittest.TestCase):
                 self.assertFalse(tc.vendor_ready(vendor))
                 (vendor / (rel + ".gone")).rename(vendor / rel)
         self.assertFalse(tc.vendor_ready(tmp / "does-not-exist"))
-
-
-    def test_existing_project_vendor_folder_is_migrated_to_user_data(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            root = Path(tmp)
-            legacy = make_fake_vendor(root / "vendor")
-            target = root / "AlbumMaker" / "offline-assets"
-            with mock.patch.object(offline, "LEGACY_VENDOR_DIR", legacy), mock.patch.object(
-                offline, "VENDOR_DIR", target
-            ):
-                self.assertTrue(offline.vendor_ready())
-            self.assertTrue((target / "VERSIONS.txt").is_file())
-            self.assertEqual(
-                (target / "leaflet" / "leaflet.js").read_bytes(),
-                (legacy / "leaflet" / "leaflet.js").read_bytes(),
-            )
-
-
 class VendorServingTests(TempDirMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -363,9 +345,9 @@ class VendorServingTests(TempDirMixin, unittest.TestCase):
                 self.assertEqual(self.server.get(base + ref)[0], 200, ref)
 
     def test_nothing_outside_the_vendor_folder_can_be_read(self):
-        attacks = ["/vendor/../album_common.py", "/vendor/%2e%2e/album_common.py", "/vendor/%252e%252e/album_common.py",
-                   "/vendor/leaflet/../../album_common.py", "/vendor/..%2falbum_common.py", "/vendor/%2e%2e%2falbum_server.py",
-                   "/vendor/leaflet/", "/vendor/", "/vendor", "/vendor/leaflet/leaflet.js/..", "/vendor/fonts/..\\..\\album_common.py",
+        attacks = ["/vendor/../album_server.py", "/vendor/%2e%2e/album_server.py", "/vendor/%252e%252e/album_server.py",
+                   "/vendor/leaflet/../../albummaker/server.py", "/vendor/..%2falbum_server.py", "/vendor/%2e%2e%2falbum_server.py",
+                   "/vendor/leaflet/", "/vendor/", "/vendor", "/vendor/leaflet/leaflet.js/..", "/vendor/fonts/..\\..\\album_server.py",
                    "/vendor//etc/passwd", "/vendor/leaflet/nonexistent.js", "/vendor/%00", "/vendor/./leaflet/leaflet.js"]
         for attack in attacks:
             with self.subTest(attack=attack):

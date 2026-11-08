@@ -26,15 +26,3 @@ def settings_path() -> Path:
 
 def offline_assets_dir() -> Path:
     return config_dir() / "offline-assets"
-
-
-def legacy_settings_path() -> Path:
-    if sys.platform == "win32":
-        base = os.environ.get("APPDATA")
-        directory = (Path(base) if base else Path.home() / "AppData" / "Roaming") / "TripServer"
-    elif sys.platform == "darwin":
-        directory = Path.home() / "Library" / "Application Support" / "TripServer"
-    else:
-        base = os.environ.get("XDG_CONFIG_HOME")
-        directory = (Path(base) if base else Path.home() / ".config") / "tripserver"
-    return directory / "settings.json"

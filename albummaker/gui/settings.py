@@ -8,7 +8,7 @@ import shlex
 import tempfile
 from pathlib import Path
 from typing import Optional
-from ..app_paths import config_dir, legacy_settings_path, settings_path
+from ..app_paths import config_dir, settings_path
 from ..timezones import get_timezone
 
 SETTINGS_VERSION = 1
@@ -84,8 +84,6 @@ def _merge_defaults(saved: object) -> dict:
         raise SettingsError("'trips' must be a list of trip folders.")
     trips = []
     for trip in merged["trips"]:
-        if isinstance(trip, str):
-            trip = {"path": trip, "timezone": ""}
         if not isinstance(trip, dict) or not isinstance(trip.get("path"), str):
             raise SettingsError("Each trip must have a folder path.")
         timezone_name = trip.get("timezone", "")
@@ -150,10 +148,6 @@ def _merge_defaults(saved: object) -> dict:
 
 def load_settings(path: Optional[Path] = None) -> dict:
     path = Path(path or settings_path())
-    if path == settings_path() and not path.exists():
-        legacy_path = legacy_settings_path()
-        if legacy_path.is_file():
-            path = legacy_path
     if not path.exists():
         return default_settings()
     try:
