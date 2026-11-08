@@ -9,6 +9,17 @@ from typing import Optional
 
 
 def _command_prefix(python: str, subcommand: str) -> list[str]:
+    if getattr(sys, "frozen", False):
+        executable = "albummaker-cli.exe" if sys.platform == "win32" else "albummaker-cli"
+        bundled_dir = Path(getattr(sys, "_MEIPASS", Path(sys.executable).parent))
+        candidates = [bundled_dir / "bin" / executable]
+        if sys.platform == "darwin":
+            contents = Path(sys.executable).resolve().parent.parent
+            candidates.append(contents / "Resources" / "bin" / executable)
+        cli = next((candidate for candidate in candidates if candidate.is_file()), candidates[0])
+        if not cli.is_file():
+            raise ValueError(f"The packaged command runner is missing: {cli}")
+        return [str(cli), subcommand]
     launcher = Path(sys.argv[0])
     if launcher.suffix.lower() in (".pyz", ".zip"):
         return [python, "-u", str(launcher), subcommand]
