@@ -20,6 +20,7 @@ sections after it are the full reference.
 
 **Contents:**
 [Quick start](#quick-start) ·
+[Product page](./docs/index.html) ·
 [Desktop app](#desktop-app) ·
 [Step by step](#step-by-step) ·
 [1. Install](#1-install) ·
@@ -35,7 +36,8 @@ sections after it are the full reference.
 [Notes & limitations](#notes--limitations) ·
 [Troubleshooting](#troubleshooting) ·
 [Running the tests](#running-the-tests) ·
-[Customizing the look](#customizing-the-look)
+[Customizing the look](#customizing-the-look) ·
+[License and third-party notices](#license-and-third-party-notices)
 
 ## Quick start
 
@@ -92,6 +94,10 @@ trip library, starting the live server, generating static sites, and
 watching progress and HTTP requests. It uses the same server and build
 commands as the terminal tools.
 
+See the [AlbumMaker product page](./docs/index.html) for a visual introduction
+and an interactive sample trip. To publish it with GitHub Pages, configure the
+repository to deploy from the `main` branch's `/docs` folder.
+
 ### Download a standalone app
 
 Tagged builds and manually started **Build desktop executables** runs in
@@ -102,11 +108,16 @@ ffprobe; installing Python or FFmpeg separately is not required. Download
 the platform artifact from the corresponding run in the repository's
 **Actions** tab; artifacts are retained for 30 days.
 
-The bundled FFmpeg build includes GPL components. Its license information and
-the corresponding-source location are included with each app. These builds
-are not code-signed or notarized, so Windows or macOS may display a security
-warning when you first open one. Linux builds are made on Ubuntu 22.04 and
-require a compatible Linux system with glibc.
+The app source is MIT-licensed, but bundled components keep their own terms.
+The executable carries the project `LICENSE`, a third-party inventory, and
+build-generated notices with exact component versions and license text.
+FFmpeg and the codecs bundled with `pillow-heif` include GPL-licensed code.
+Before redistributing binaries, verify the complete corresponding source and
+build materials for those exact components; see
+[Third-party notices](./THIRD_PARTY_NOTICES.md). These builds are not
+code-signed or notarized, so Windows or macOS may display a security warning
+when you first open one. Linux builds are made on Ubuntu 22.04 and require a
+compatible Linux system with glibc.
 
 ### Run from source
 
@@ -1491,3 +1502,12 @@ static site and the live server alike. It lives in ordinary files in the
 The live server reads these files when it starts, so restart it after a
 change. Its pages link to the CSS and JavaScript with a version code that
 changes with their content, so browsers pick up the new files at once.
+
+## License and third-party notices
+
+AlbumMaker's source code is available under the [MIT License](./LICENSE).
+Third-party software and data are not relicensed under MIT; their licenses,
+attributions and binary-distribution notes are listed in
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Read the notices for the
+specific executable before redistributing it, especially the GPL source
+availability notes for bundled FFmpeg and HEIF codecs.
