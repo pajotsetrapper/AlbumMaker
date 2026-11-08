@@ -15,6 +15,7 @@ from PySide6.QtWidgets import (
     QCheckBox,
     QDialog,
     QDialogButtonBox,
+    QCompleter,
     QFileDialog,
     QFormLayout,
     QFrame,
@@ -641,22 +642,41 @@ class MainWindow(QMainWindow):
         self.trip_table.setItem(row, 0, trip_item)
 
         zone_combo = QComboBox()
+        zone_combo.setEditable(True)
+        zone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         zone_combo.addItem("Automatic", "")
         for zone_name in timezone_choices():
             zone_combo.addItem(zone_name, zone_name)
         if timezone_name:
             zone_combo.setCurrentIndex(zone_combo.findData(timezone_name))
+        zone_combo.setProperty("timezoneValue", zone_combo.currentData() or "")
         zone_combo.setMaxVisibleItems(20)
+        zone_combo.lineEdit().setPlaceholderText("Search or choose a time zone")
+        completer = QCompleter(zone_combo.model(), zone_combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        zone_combo.setCompleter(completer)
         zone_combo.setToolTip(
-            "Automatic does not infer a trip location. Photos keep their EXIF times. Videos use the shared default offset if set; otherwise iPhone local times are kept and other UTC times use this computer's time zone."
+            "Search by typing a region or city, or open the dropdown to browse all IANA time zones. "
+            "Automatic does not infer a trip location."
         )
         zone_combo.currentIndexChanged.connect(
+            lambda *_args, combo=zone_combo: self._on_timezone_changed(combo)
+        )
+        zone_combo.activated.connect(
             lambda *_args, combo=zone_combo: self._on_timezone_changed(combo)
         )
         self.trip_table.setCellWidget(row, 1, zone_combo)
         self.trip_table.setRowHeight(row, 34)
 
     def _on_timezone_changed(self, combo: QComboBox) -> None:
+        if combo.currentIndex() < 0:
+            exact_match = combo.findData(combo.currentText())
+            if exact_match >= 0:
+                combo.setCurrentIndex(exact_match)
+        if combo.currentIndex() >= 0:
+            combo.setProperty("timezoneValue", combo.currentData() or "")
         position = combo.mapTo(self.trip_table.viewport(), combo.rect().center())
         index = self.trip_table.indexAt(position)
         if index.isValid():
@@ -765,7 +785,7 @@ class MainWindow(QMainWindow):
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
-                    "timezone": self.trip_table.cellWidget(row, 1).currentData() or "",
+                    "timezone": self.trip_table.cellWidget(row, 1).property("timezoneValue") or "",
                 }
                 for row in range(self.trip_table.rowCount())
             ],
