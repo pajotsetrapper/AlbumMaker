@@ -93,11 +93,29 @@ def _offset_from_gps_stamp(local: datetime, gps_ifd: dict) -> Optional[int]:
 
 
 def check_ffmpeg():
-    missing = [tool for tool in ("ffmpeg", "ffprobe") if shutil.which(tool) is None]
+    missing = [tool for tool in ("ffmpeg", "ffprobe") if find_multimedia_tool(tool) is None]
     if missing:
         print(f"Note: {' and '.join(missing)} not found. Videos will still be included, but "
               f"without date, location or preview frame. Install ffmpeg to fix this.",
               file=sys.stderr)
+
+
+def find_multimedia_tool(name: str) -> Optional[str]:
+    """Find a bundled multimedia tool first, then one installed on the system."""
+    if name not in ("ffmpeg", "ffprobe"):
+        raise ValueError(f"Unsupported multimedia tool: {name}")
+    frozen_dir = getattr(sys, "_MEIPASS", None)
+    if frozen_dir:
+        executable = f"{name}.exe" if os.name == "nt" else name
+        bundled = Path(frozen_dir) / "ffmpeg" / executable
+        if bundled.is_file():
+            return str(bundled)
+    return shutil.which(name)
+
+
+def multimedia_tool(name: str) -> str:
+    """Return a usable command name, preserving the existing missing-tool behavior."""
+    return find_multimedia_tool(name) or name
 
 
 def _to_deg(value) -> float:
@@ -323,7 +341,7 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
     meta = {}
     try:
         result = subprocess.run(
-            ["ffprobe", "-v", "quiet", "-print_format", "json",
+            [multimedia_tool("ffprobe"), "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", ffmpeg_input(path)],
             capture_output=True, text=True, errors="replace", timeout=30,
         )

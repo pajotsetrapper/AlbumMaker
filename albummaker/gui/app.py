@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -1210,6 +1211,10 @@ class MainWindow(QMainWindow):
             return
         self.activity_toggle.setChecked(True)
         process = QProcess(self)
+        if sys.platform == "win32" and getattr(sys, "frozen", False):
+            process.setCreateProcessArgumentsModifier(
+                lambda args: setattr(args, "flags", args.flags | subprocess.CREATE_NO_WINDOW)
+            )
         process.setWorkingDirectory(str(PROJECT_ROOT))
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")

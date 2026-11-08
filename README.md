@@ -91,14 +91,41 @@ trip library, starting the live server, generating static sites, and
 watching progress and HTTP requests. It uses the same server and build
 commands as the terminal tools.
 
-Install the normal project requirements and the optional GUI dependency,
-then launch it from the project folder:
+### Download a standalone app
+
+Tagged builds and manually started **Build desktop executables** runs in
+GitHub Actions produce downloadable bundles for Windows x64, macOS Intel,
+macOS Apple Silicon, and Linux x64. Each bundle contains the GUI, its
+background command runner, the Python and GUI dependencies, and FFmpeg plus
+ffprobe; installing Python or FFmpeg separately is not required. Download
+the platform artifact from the corresponding run in the repository's
+**Actions** tab; artifacts are retained for 30 days.
+
+The bundled FFmpeg build includes GPL components. Its license information and
+the corresponding-source location are included with each app. These builds
+are not code-signed or notarized, so Windows or macOS may display a security
+warning when you first open one. Linux builds are made on Ubuntu 22.04 and
+require a compatible Linux system with glibc.
+
+### Run from source
+
+To run the GUI from the project source, install Python and the optional GUI
+dependency, then launch it from the project folder:
 
 ```bash
 python -m pip install -r requirements.txt
 python -m pip install -r requirements-gui.txt
 python album_gui.py
 # Or: python -m albummaker gui
+```
+
+To build a standalone app locally for the current operating system, install
+the packaging dependencies and run the build script. Native platform builds
+are required; a macOS build cannot create the Windows or Linux app.
+
+```bash
+python -m pip install -r requirements-packaging.txt
+python tools/build_executable.py
 ```
 
 The app guides you through three steps: add trip folders, choose a workflow,
@@ -168,9 +195,10 @@ if set; otherwise iPhone local times are kept as recorded and other UTC times
 are converted to the computer's local time zone. The shared **Default video
 UTC offset** is in **Options → General** and applies to both workflows.
 
-The GUI needs Python 3.9 or newer and the same `ffmpeg` setup as the
-command-line tools. PySide6 is optional and is not installed for CLI-only
-users. Download offline assets while connected to the internet.
+When running from source, the GUI needs Python 3.9 or newer and the same
+`ffmpeg` setup as the command-line tools. PySide6 is optional and is not
+installed for CLI-only users. Download offline assets while connected to the
+internet.
 
 ## Step by step
 

@@ -11,7 +11,7 @@ from typing import Iterable, Optional
 
 from PIL import Image, ImageOps
 
-from .metadata import ffmpeg_input
+from .metadata import ffmpeg_input, multimedia_tool
 
 THUMB_QUALITY = 82
 DISPLAY_QUALITY = 97
@@ -113,7 +113,8 @@ def video_frame(path: Path, size: int, timeout: int = 30) -> Optional[Image.Imag
     for seek in ("00:00:01", "00:00:00"):
         try:
             result = subprocess.run(
-                ["ffmpeg", "-v", "quiet", "-nostdin", "-ss", seek, "-i", ffmpeg_input(path),
+                [multimedia_tool("ffmpeg"), "-v", "quiet", "-nostdin", "-ss", seek,
+                 "-i", ffmpeg_input(path),
                  "-frames:v", "1",
                  "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease",
                  "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"],

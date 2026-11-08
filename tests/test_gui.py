@@ -1,9 +1,10 @@
+import sys
 import tempfile
 import unittest
 from pathlib import Path
 from unittest import mock
 
-from albummaker.gui.commands import build_command, offline_assets_command, server_command
+from albummaker.gui.commands import _command_prefix, build_command, offline_assets_command, server_command
 from albummaker.gui.settings import (
     SettingsError,
     default_settings,
@@ -326,6 +327,19 @@ class GuiCommandTests(unittest.TestCase):
             command,
             ["python", "-u", "/tmp/albummaker.pyz", "serve", "--fetch-offline-assets"],
         )
+
+    def test_frozen_gui_launches_its_bundled_cli_helper(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            helper_dir = Path(tmp) / "bin"
+            helper_dir.mkdir()
+            helper = helper_dir / (
+                "albummaker-cli.exe" if sys.platform == "win32" else "albummaker-cli"
+            )
+            helper.touch()
+            with mock.patch("albummaker.gui.commands.sys.frozen", True, create=True), mock.patch(
+                "albummaker.gui.commands.sys._MEIPASS", tmp, create=True
+            ):
+                self.assertEqual(_command_prefix("ignored-python", "serve"), [str(helper), "serve"])
 
     def test_explicit_ignore_options_take_precedence(self):
         self.settings["build"]["no_date_check"] = True
