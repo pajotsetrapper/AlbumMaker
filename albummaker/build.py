@@ -39,8 +39,8 @@ from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, check_ffmpeg, meta_from_json, meta_to_json, read_metadata
 from .model import BROWSER_NATIVE_IMAGE_EXTS, VIDEO_EXTS, StaticOutputs
 from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
-from .library import (TripListError, build_library_context, check_library_args, missing_folder, read_trip_list,
-                      trip_args, trip_summary)
+from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
+                      read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
                      build_day_context, build_index_context, get_templates_for_content)
@@ -683,6 +683,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Build several trips at once, each into its own folder under -o, plus a page "
                              "linking them all. LIST is a text file with one photos folder per line. "
                              "See README.md.")
+    parser.add_argument("--library-title", type=library_title_arg, default="Trips", metavar="TITLE",
+                        help="Title shown on the overview page created with --library (default: Trips).")
     parser.add_argument("-o", "--output", default=Path("site"), type=Path, help="Output folder for the generated site")
     add_content_arg(parser)
     parser.add_argument("--thumb-size", type=positive_thumb_size, default=400,
@@ -913,7 +915,7 @@ def build_library(args) -> int:
     root.mkdir(parents=True, exist_ok=True)
     write_assets(root, urls.has_vendor)
     context = build_library_context(list(summaries.values()), urls, footer=StaticUrls.footer,
-                                    places_credit=PLACES_ATTRIBUTION)
+                                    places_credit=PLACES_ATTRIBUTION, title=args.library_title)
     atomic_write_text(root / "index.html", LIBRARY_TEMPLATE.render(**context))
     atomic_write_text(root / LIBRARY_MARKER, json.dumps(
         {"version": 1, "note": "Record of a generate_site.py --library build.", "trips": summaries},

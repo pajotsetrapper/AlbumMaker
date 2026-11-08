@@ -67,6 +67,15 @@ class TripListError(Exception):
     """The list file can't be used as written (the message says where)."""
 
 
+def library_title_arg(value: str) -> str:
+    title = value.strip()
+    if not title:
+        raise argparse.ArgumentTypeError("the library title cannot be blank")
+    if len(title) > 200:
+        raise argparse.ArgumentTypeError("the library title cannot exceed 200 characters")
+    return title
+
+
 @dataclass
 class TripEntry:
     path: Path              # the photos folder
@@ -320,13 +329,16 @@ def trip_summary(name: str, days: list, content: dict, urls, href: str, base: st
     }
 
 
-def build_library_context(trips: list, urls, footer: str, places_credit: str) -> dict:
+def build_library_context(
+    trips: list, urls, footer: str, places_credit: str, title: str = "Trips"
+) -> dict:
     """Template variables for LIBRARY_TEMPLATE: newest trip first."""
     trips = sorted(trips, key=lambda t: t["first_date"], reverse=True)
     for i, t in enumerate(trips):
         t["color"] = DAY_COLORS[i % len(DAY_COLORS)]
     return dict(
-        page_title="Trips",
+        page_title=title,
+        library_title=title,
         assets_prefix=urls.assets_prefix(from_index=True),
         css_href=urls.asset("style.css", from_index=True),
         js_href=urls.asset("script.js", from_index=True),

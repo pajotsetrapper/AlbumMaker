@@ -3,12 +3,12 @@
 {% include "head.html" %}
 <body>
 <header class="site-header">
-  <span class="brand">Trips</span>
+  <span class="brand">{{ library_title }}</span>
 </header>
 
 <section class="hero">
   <div class="eyebrow">{{ trip_count }} trip{{ 's' if trip_count != 1 else '' }}</div>
-  <h1>Trips</h1>
+  <h1>{{ library_title }}</h1>
   <div class="stats">
     <div class="stat"><div class="n">{{ trip_count }}</div><div class="l">Trips</div></div>
     <div class="stat"><div class="n">{{ day_count }}</div><div class="l">Days</div></div>

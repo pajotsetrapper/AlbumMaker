@@ -65,6 +65,7 @@ class GuiSettingsTests(unittest.TestCase):
             settings = default_settings()
             settings["trips"] = [{"path": "/photos/Japan", "timezone": "Asia/Tokyo"}]
             settings["server"]["editor_link_only"] = True
+            settings["library"]["title"] = "Family Holidays"
             save_settings(settings, path)
 
             loaded = load_settings(path)
@@ -77,6 +78,7 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertEqual(loaded["server"]["large_thumb_size"], 2400)
             self.assertTrue(loaded["advanced"]["tile_cache"])
             self.assertEqual(loaded["appearance"]["theme"], "light")
+            self.assertEqual(loaded["library"]["title"], "Family Holidays")
 
             settings["appearance"]["theme"] = "dark"
             save_settings(settings, path)
@@ -87,6 +89,16 @@ class GuiSettingsTests(unittest.TestCase):
             settings = default_settings()
             settings["appearance"]["theme"] = "midnight"
             with self.assertRaisesRegex(SettingsError, "appearance.theme"):
+                save_settings(settings, Path(tmp) / "settings.json")
+
+    def test_library_title_must_be_nonempty_and_reasonably_short(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            settings = default_settings()
+            settings["library"]["title"] = " "
+            with self.assertRaisesRegex(SettingsError, "library.title"):
+                save_settings(settings, Path(tmp) / "settings.json")
+            settings["library"]["title"] = "x" * 201
+            with self.assertRaisesRegex(SettingsError, "library.title"):
                 save_settings(settings, Path(tmp) / "settings.json")
 
     def test_default_cache_folders_live_beside_settings_file(self):
@@ -212,6 +224,7 @@ class GuiCommandTests(unittest.TestCase):
         self.settings["build"]["date_range_end"] = "2024-05-03"
 
     def test_server_command_includes_editor_link_and_server_settings(self):
+        self.settings["library"]["title"] = "Family Holidays"
         self.settings["server"].update({
             "port": 8123,
             "large_thumb_size": 0,
@@ -225,6 +238,7 @@ class GuiCommandTests(unittest.TestCase):
         self.assertIn("--editor-link-only", command)
         self.assertIn("--read-only", command)
         self.assertIn("--lan", command)
+        self.assertEqual(command[command.index("--library-title") + 1], "Family Holidays")
         self.assertEqual(command[command.index("--port") + 1], "8123")
         self.assertEqual(
             command[command.index("--tile-cache") + 1],
@@ -248,6 +262,7 @@ class GuiCommandTests(unittest.TestCase):
             server_command("python", self.library, self.settings)
 
     def test_build_command_maps_media_options_and_output(self):
+        self.settings["library"]["title"] = "Summer Trips"
         self.settings["build"].update({
             "no_dedupe": True,
             "no_live_photos": True,
@@ -266,6 +281,7 @@ class GuiCommandTests(unittest.TestCase):
         self.assertEqual(command[command.index("--workers") + 1], "3")
         self.assertEqual(command[command.index("--gpx") + 1], "/tracks/route.gpx")
         self.assertEqual(command[command.index("--output") + 1], output)
+        self.assertEqual(command[command.index("--library-title") + 1], "Summer Trips")
         self.assertEqual(
             read_trip_list(self.library)[0].options[-3:],
             ["--date-range", "2024-05-01", "2024-05-03"],
