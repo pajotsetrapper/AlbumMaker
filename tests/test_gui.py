@@ -16,7 +16,7 @@ from albummaker.gui.settings import (
 )
 from albummaker.app_paths import config_dir, offline_assets_dir
 from albummaker.library import read_trip_list, trip_args
-from albummaker.timezones import timezone_choices
+from albummaker.timezones import get_timezone, timezone_choices
 
 
 class GuiSettingsTests(unittest.TestCase):
@@ -25,6 +25,8 @@ class GuiSettingsTests(unittest.TestCase):
             choices = timezone_choices()
         self.assertIn("Europe/Paris", choices)
         self.assertIn("America/Los_Angeles", choices)
+        self.assertGreater(len(choices), 100)
+        self.assertEqual(get_timezone("Europe/Paris").key, "Europe/Paris")
         self.assertEqual(choices, sorted(set(choices)))
 
     def test_metadata_cache_folder_is_created_and_validated(self):
