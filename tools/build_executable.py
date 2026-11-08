@@ -75,29 +75,65 @@ def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
     gpl_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/{gpl_file}"
     with urllib.request.urlopen(gpl_url, timeout=60) as response:
         gpl_license = response.read().decode("utf-8")
-    from importlib.metadata import distribution
-
-    package = distribution("static-ffmpeg")
-    mit_file = next(
-        (package.locate_file(path) for path in package.files or ()
-         if path.as_posix().endswith("licenses/LICENSE")),
-        None,
-    )
-    mit_license = Path(mit_file).read_text(encoding="utf-8") if mit_file else (
-        "static-ffmpeg is MIT-licensed: https://opensource.org/license/mit/"
-    )
+    if gpl_version == "2":
+        gpl_v2_license = gpl_license
+    else:
+        gpl_v2_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/COPYING.GPLv2"
+        with urllib.request.urlopen(gpl_v2_url, timeout=60) as response:
+            gpl_v2_license = response.read().decode("utf-8")
+    lgpl_url = f"https://raw.githubusercontent.com/FFmpeg/FFmpeg/{source_tag}/COPYING.LGPLv3"
+    with urllib.request.urlopen(lgpl_url, timeout=60) as response:
+        lgpl_v3_license = response.read().decode("utf-8")
+    python_notices = _python_package_notices()
     return (
         "AlbumMaker includes FFmpeg and ffprobe binaries provided by static-ffmpeg 3.0.\n"
         f"FFmpeg binary version: {ffmpeg_version}\n"
         f"FFmpeg source code: https://github.com/FFmpeg/FFmpeg/tree/{source_tag}\n"
-        f"Corresponding binary build sources: {SOURCE_URL}\n\n"
-        "static-ffmpeg package license (MIT):\n"
-        f"{mit_license}\n\n"
+        f"Binary provider repository (not verified as a corresponding-source archive): {SOURCE_URL}\n"
+        f"FFmpeg build configuration:\n{version_info}\n\n"
+        f"{python_notices}\n\n"
         "FFmpeg / ffprobe license information:\n"
         f"{ffmpeg_license}\n\n"
+        "GNU GPL version 2 license text (also relevant to bundled x265):\n"
+        f"{gpl_v2_license}\n\n"
         f"GNU GPL version {gpl_version} license text:\n"
-        f"{gpl_license}\n"
+        f"{gpl_license}\n\n"
+        "GNU LGPL version 3 license text (relevant to bundled Qt and HEIF libraries):\n"
+        f"{lgpl_v3_license}\n"
     )
+
+
+def _python_package_notices() -> str:
+    from importlib.metadata import distribution
+
+    packages = (
+        ("Pillow", ("licenses/LICENSE",)),
+        ("pillow-heif", ("licenses/LICENSE.txt", "licenses/LICENSES_bundled.txt")),
+        ("Jinja2", ("licenses/LICENSE.txt",)),
+        ("MarkupSafe", ("licenses/LICENSE.txt",)),
+        ("tzdata", ("LICENSE_APACHE",)),
+        ("static-ffmpeg", ("licenses/LICENSE",)),
+    )
+    sections = ["Third-party Python package licenses and bundled-library notices:"]
+    for package_name, required_files in packages:
+        package = distribution(package_name)
+        paths = {path.as_posix(): path for path in package.files or ()}
+        sections.append(f"\n--- {package.metadata['Name']} {package.version} ---")
+        for required_file in required_files:
+            path = next(
+                (file for name, file in paths.items() if name.endswith(required_file)),
+                None,
+            )
+            if path is None:
+                raise RuntimeError(
+                    f"Could not find {required_file} for {package.metadata['Name']} "
+                    f"{package.version}; refusing to build without its license notice."
+                )
+            sections.append(
+                f"\n[{required_file}]\n"
+                f"{Path(package.locate_file(path)).read_text(encoding='utf-8').strip()}"
+            )
+    return "\n".join(sections)
 
 
 def _pyinstaller(
@@ -194,6 +230,10 @@ def _build(output: Path) -> Path:
             _binary_argument(cli_binary, "bin"),
             "--add-data",
             _data_argument(notice_file, "."),
+            "--add-data",
+            _data_argument(ROOT / "LICENSE", "."),
+            "--add-data",
+            _data_argument(ROOT / "THIRD_PARTY_NOTICES.md", "."),
         ]
         if os.name == "nt":
             gui_extra.extend(("--icon", str(ROOT / "albummaker" / "gui" / "assets" / "albummaker.ico")))
@@ -236,7 +276,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     target = _build(args.output)
     print(f"Built self-contained desktop app: {target}")
-    print("The bundled FFmpeg license notice is included with the app.")
+    print("Project and third-party license notices are included with the app.")
     return 0
 
 

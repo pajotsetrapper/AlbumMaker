@@ -1,0 +1,9 @@
+Saved by --fetch-offline-assets on 2026-11-08 09:57.
+
+leaflet 1.9.4  (checked against its published SHA-512)
+@fontsource/fraunces 5.3.0  (checked against its published SHA-512)
+@fontsource/ibm-plex-sans 5.3.0  (checked against its published SHA-512)
+@fontsource/ibm-plex-mono 5.3.0  (checked against its published SHA-512)
+
+Licenses are in the licenses folder: Leaflet is BSD-2-Clause, the fonts are
+SIL Open Font License 1.1.

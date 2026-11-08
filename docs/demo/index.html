@@ -1,0 +1,95 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>A Weekend in the Netherlands</title>
+
+<link rel="stylesheet" href="assets/vendor/fonts/fonts.css">
+<link rel="stylesheet" href="assets/vendor/leaflet/leaflet.css">
+
+<link rel="stylesheet" href="assets/style.css">
+<script>window.TILE_URL = "https://tile.openstreetmap.org/{z}/{x}/{y}.png";</script>
+</head>
+<body>
+<header class="site-header">
+  
+  <span class="brand"><a href="index.html">A Weekend in the Netherlands</a></span>
+</header>
+
+<section class="hero">
+  <div class="eyebrow">2 days on the road</div>
+  <h1>A Weekend in the Netherlands</h1>
+  <p class="subtitle">Canals, countryside and slow mornings</p>
+  <div class="stats">
+    <div class="stat"><div class="n">2</div><div class="l">Days</div></div>
+    <div class="stat"><div class="n">4</div><div class="l">Photos</div></div>
+    <div class="stat"><div class="n">0</div><div class="l">Videos</div></div>
+    <div class="stat"><div class="n">1.7</div><div class="l">Km tracked</div></div>
+  </div>
+</section>
+
+<div class="map-wrap">
+  <div class="map" id="overview-map"></div>
+  <div class="map-legend">
+    
+    <span><span class="sw" style="background:#E3A857"></span>Day 1 — 2025-05-14</span>
+    
+    <span><span class="sw" style="background:#4FA5A0"></span>Day 2 — 2025-05-15</span>
+    
+  </div>
+</div>
+
+
+<div class="grid-controls cards">
+  <span class="grid-controls-label">Card size</span>
+  <div class="size-toggle" role="group" aria-label="Card size" data-target="day-list" data-store="tripCardSize">
+    <button type="button" class="size-btn" data-size="small">S</button>
+    <button type="button" class="size-btn" data-size="medium">M</button>
+    <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
+  </div>
+</div>
+
+
+<div class="day-list" id="day-list">
+  
+  <a class="day-card" href="days/2025-05-14.html">
+    <div class="cover" style="background-image:url('thumbs/IMG_4102.jpg')" data-lo="thumbs/IMG_4102.jpg" data-hi="thumbs_large/IMG_4102.jpg"></div>
+    <div class="body">
+      <div class="stamp"><span class="num">1</span><span class="of">DAY</span></div>
+      <div class="date">Wednesday, May 14, 2025</div>
+      <div class="places">Amsterdam</div>
+      <h3>Canals &amp; coffee</h3>
+      <p>A gentle first day, following the canals and stopping whenever something caught our eye.</p>
+      <div class="meta">2 photos</div>
+    </div>
+  </a>
+  
+  <a class="day-card" href="days/2025-05-15.html">
+    <div class="cover" style="background-image:url('thumbs/IMG_5201.jpg')" data-lo="thumbs/IMG_5201.jpg" data-hi="thumbs_large/IMG_5201.jpg"></div>
+    <div class="body">
+      <div class="stamp"><span class="num">2</span><span class="of">DAY</span></div>
+      <div class="date">Thursday, May 15, 2025</div>
+      <div class="places">Amsterdam</div>
+      <h3>A little farther out</h3>
+      <p>One last walk, a quiet view, and time to take the long way back.</p>
+      <div class="meta">2 photos</div>
+    </div>
+  </a>
+  
+</div>
+
+<footer class="site-footer">Generated with generate_site.py<br>Place names: GeoNames (CC BY 4.0)</footer>
+
+<script src="assets/vendor/leaflet/leaflet.js"></script>
+<script src="assets/script.js"></script>
+<script>
+initSizeControls();
+initSharpThumbs();
+
+try { initOverviewMap('overview-map', [{"href": "days/2025-05-14.html", "date_display": "Wednesday, May 14, 2025", "title": "Canals \u0026 coffee", "excerpt": "A gentle first day, following the canals and stopping whenever something caught our eye.", "cover": "thumbs/IMG_4102.jpg", "cover_hi": "thumbs_large/IMG_4102.jpg", "photo_count": 2, "video_count": 0, "color": "#E3A857", "route": [[52.371, 4.9], [52.374, 4.89]], "track": [[[52.37, 4.895], [52.371, 4.9]], [[52.374, 4.89], [52.376, 4.885]]], "places": ["Amsterdam"], "label": "Day 1 \u2014 2025-05-14", "is_unknown": false, "day_number": 1}, {"href": "days/2025-05-15.html", "date_display": "Thursday, May 15, 2025", "title": "A little farther out", "excerpt": "One last walk, a quiet view, and time to take the long way back.", "cover": "thumbs/IMG_5201.jpg", "cover_hi": "thumbs_large/IMG_5201.jpg", "photo_count": 2, "video_count": 0, "color": "#4FA5A0", "route": [[52.37, 4.895], [52.378, 4.9]], "track": [], "places": ["Amsterdam"], "label": "Day 2 \u2014 2025-05-15", "is_unknown": false, "day_number": 2}]); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>
