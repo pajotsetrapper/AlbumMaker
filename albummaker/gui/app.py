@@ -31,6 +31,7 @@ from PySide6.QtWidgets import (
     QPushButton,
     QRadioButton,
     QScrollArea,
+    QSizePolicy,
     QSpinBox,
     QTableWidget,
     QTableWidgetItem,
@@ -52,10 +53,15 @@ PROJECT_ROOT = project_dir()
 
 THEME_STYLES = {
     "light": """
-        QWidget { background: #f3f6fb; color: #17243b; font-size: 13px; }
-        QFrame#header, QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane,
+        QWidget { color: #17243b; font-size: 13px; }
+        QMainWindow, QDialog { background: #f3f6fb; }
+        QWidget#mainRoot { background: #f3f6fb; }
+        QWidget#scrollPage { background: transparent; }
+        QScrollArea { background: transparent; border: 0; }
+        QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane,
         QPlainTextEdit { background: #ffffff; border: 1px solid #dce4ef; border-radius: 12px; }
-        QFrame#header { border: 0; }
+        QTabWidget::pane { background: #ffffff; border: 1px solid #dce4ef; border-radius: 10px; }
+        QFrame#header { background: transparent; border: 0; }
         QFrame#stepCard { border-radius: 14px; }
         QFrame#workflowChoice { background: #f8faff; border: 1px solid #e1e8f3; border-radius: 10px; }
         QGroupBox { margin-top: 12px; padding: 14px 12px 10px; font-weight: 600; }
@@ -73,21 +79,33 @@ THEME_STYLES = {
             selection-background-color: #315fce; }
         QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: #537ddd; }
         QTableWidget { gridline-color: #e6ebf2; alternate-background-color: #f7f9fc; }
+        QHeaderView::section { background: #edf2f9; color: #33445f;
+            border: 0; border-bottom: 1px solid #dce4ef; padding: 5px 8px; }
         QTableWidget::item:selected { background: #e7eefc; color: #173c88; }
         QTabBar::tab { background: #e9eef6; border-top-left-radius: 7px;
             border-top-right-radius: 7px; padding: 9px 14px; margin-right: 3px; }
         QTabBar::tab:selected { background: #ffffff; color: #234da8; font-weight: 600; }
         QRadioButton { spacing: 9px; }
         QCheckBox { spacing: 8px; }
+        QScrollBar:vertical { width: 10px; background: transparent; margin: 0; }
+        QScrollBar:horizontal { height: 10px; background: transparent; margin: 0; }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background: #c4cfdf; border-radius: 4px; min-height: 24px; min-width: 24px; }
+        QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QLabel#muted { color: #66748a; }
         QLabel#status { color: #315fce; font-weight: 600; }
         QLabel#stepNumber { color: #315fce; font-size: 12px; font-weight: 700; }
     """,
     "dark": """
-        QWidget { background: #171b24; color: #e6eaf2; font-size: 13px; }
+        QWidget { color: #e6eaf2; font-size: 13px; }
+        QMainWindow, QDialog { background: #171b24; }
+        QWidget#mainRoot { background: #171b24; }
+        QWidget#scrollPage { background: transparent; }
+        QScrollArea { background: transparent; border: 0; }
         QFrame#header { background: transparent; border: 0; }
         QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit {
             background: #202633; border: 1px solid #343e4f; border-radius: 12px; }
+        QTabWidget::pane { background: #202633; border: 1px solid #343e4f; border-radius: 10px; }
         QFrame#stepCard { border-radius: 14px; }
         QFrame#workflowChoice { background: #242c39; border: 1px solid #3a4659; border-radius: 10px; }
         QGroupBox { margin-top: 12px; padding: 14px 12px 10px; font-weight: 600; }
@@ -105,12 +123,19 @@ THEME_STYLES = {
             selection-background-color: #4a78dc; }
         QLineEdit:focus, QSpinBox:focus, QPlainTextEdit:focus, QComboBox:focus { border-color: #7699e2; }
         QTableWidget { gridline-color: #343e4f; alternate-background-color: #242c39; }
+        QHeaderView::section { background: #293344; color: #e6eaf2;
+            border: 0; border-bottom: 1px solid #343e4f; padding: 5px 8px; }
         QTableWidget::item:selected { background: #354c73; color: #ffffff; }
         QTabBar::tab { background: #252e3d; border-top-left-radius: 7px;
             border-top-right-radius: 7px; padding: 9px 14px; margin-right: 3px; }
         QTabBar::tab:selected { background: #202633; color: #a9c2ff; font-weight: 600; }
         QRadioButton { spacing: 9px; }
         QCheckBox { spacing: 8px; }
+        QScrollBar:vertical { width: 10px; background: transparent; margin: 0; }
+        QScrollBar:horizontal { height: 10px; background: transparent; margin: 0; }
+        QScrollBar::handle:vertical, QScrollBar::handle:horizontal {
+            background: #48566c; border-radius: 4px; min-height: 24px; min-width: 24px; }
+        QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QLabel#muted { color: #a2adbf; }
         QLabel#status { color: #a9c2ff; font-weight: 600; }
         QLabel#stepNumber { color: #a9c2ff; font-size: 12px; font-weight: 700; }
@@ -247,6 +272,7 @@ def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
 
 def _scroll_page(*widgets: QWidget) -> QScrollArea:
     page = QWidget()
+    page.setObjectName("scrollPage")
     layout = QVBoxLayout(page)
     layout.setContentsMargins(14, 14, 14, 14)
     layout.setSpacing(12)
@@ -274,7 +300,7 @@ class MainWindow(QMainWindow):
         self._save_timer.timeout.connect(self._save_from_ui)
 
         self.setWindowTitle("AlbumMaker")
-        self.setMinimumSize(780, 620)
+        self.setMinimumSize(680, 580)
         self.resize(920, 820)
         self._build_ui()
         self._load_ui()
@@ -284,6 +310,7 @@ class MainWindow(QMainWindow):
 
     def _build_ui(self) -> None:
         root = QWidget()
+        root.setObjectName("mainRoot")
         outer = QVBoxLayout(root)
         outer.setContentsMargins(28, 22, 28, 22)
         outer.setSpacing(14)
@@ -309,7 +336,7 @@ class MainWindow(QMainWindow):
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
 
-        outer.addWidget(self._build_library_panel())
+        outer.addWidget(self._build_library_panel(), 1)
         outer.addWidget(self._build_workflow_panel())
         outer.addWidget(self._build_run_panel())
 
@@ -333,8 +360,8 @@ class MainWindow(QMainWindow):
         activity_layout.addWidget(self.server_url)
         self.activity_box.setVisible(False)
         outer.addWidget(self.activity_box)
-        outer.addStretch(1)
         scroll = QScrollArea()
+        scroll.setObjectName("mainScroll")
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(root)
@@ -370,8 +397,10 @@ class MainWindow(QMainWindow):
         header.setSectionResizeMode(1, QHeaderView.ResizeMode.Interactive)
         self.trip_table.setColumnWidth(1, 240)
         self.trip_table.setMinimumHeight(155)
-        self.trip_table.setMaximumHeight(230)
-        layout.addWidget(self.trip_table)
+        self.trip_table.setSizePolicy(
+            QSizePolicy.Policy.Expanding, QSizePolicy.Policy.Expanding
+        )
+        layout.addWidget(self.trip_table, 1)
 
         buttons = QHBoxLayout()
         self.add_trip_button = QPushButton("Add folders")
@@ -414,7 +443,9 @@ class MainWindow(QMainWindow):
             radio.setText(title)
             self.workflow_group.addButton(radio)
             card_layout.addWidget(radio)
-            card_layout.addWidget(_label(description, "muted"))
+            description_label = _label(description, "muted")
+            description_label.setWordWrap(True)
+            card_layout.addWidget(description_label)
             choices.addWidget(card, 1)
         self.live_radio.setChecked(True)
         layout.addLayout(choices)
@@ -466,7 +497,6 @@ class MainWindow(QMainWindow):
         intro = _label("Optional settings. Most people can use the defaults.", "muted")
         layout.addWidget(intro)
         self.options_tabs = QTabWidget()
-        self.options_tabs.setDocumentMode(True)
         self.options_tabs.addTab(self._general_tab(), "General")
         self.options_tabs.addTab(self._server_tab(), "Live server")
         self.options_tabs.addTab(self._build_tab(), "Static site")
