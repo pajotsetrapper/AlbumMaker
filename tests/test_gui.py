@@ -16,7 +16,7 @@ from albummaker.gui.settings import (
 )
 from albummaker.app_paths import config_dir, offline_assets_dir
 from albummaker.library import read_trip_list, trip_args
-from albummaker.timezones import get_timezone, timezone_choices
+from albummaker.timezones import get_timezone, timezone_choices, timezone_search_choices
 
 
 class GuiSettingsTests(unittest.TestCase):
@@ -28,6 +28,13 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertGreater(len(choices), 100)
         self.assertEqual(get_timezone("Europe/Paris").key, "Europe/Paris")
         self.assertEqual(choices, sorted(set(choices)))
+
+    def test_timezone_search_choices_match_city_and_region_names(self):
+        suggestions = dict((label, zone) for label, zone in timezone_search_choices())
+        self.assertIn("Brussels (Europe/Brussels)", suggestions)
+        self.assertEqual(suggestions["Brussels (Europe/Brussels)"], "Europe/Brussels")
+        self.assertIn("Bangkok (Asia/Bangkok)", suggestions)
+        self.assertEqual(suggestions["Bangkok (Asia/Bangkok)"], "Asia/Bangkok")
 
     def test_metadata_cache_folder_is_created_and_validated(self):
         with tempfile.TemporaryDirectory() as tmp:

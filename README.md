@@ -104,8 +104,9 @@ python album_gui.py
 The app guides you through three steps: add trip folders, choose a workflow,
 and run it. Use **Add folders** to select several photo folders at once.
 Choose each trip's IANA time zone directly in the **Time zone** column (for
-example, `Europe/Paris`); the setting follows that folder and accounts for
-daylight-saving changes. **Automatic** does not infer a trip's location.
+example, search for `Brussels` to find `Europe/Brussels`); the setting follows
+that folder and accounts for daylight-saving changes. **Automatic** does not
+infer the trip's location.
 The folder list and GUI settings are saved automatically and restored on the
 next launch:
 
@@ -124,9 +125,11 @@ were added; use **Remove** and add folders again if you need to change it.
 Choose the light or dark appearance in **Options → General**.
 
 Before starting the live server in the app, set up the **Metadata cache
-folder**, the **Map tile cache folder**, and the **Offline assets** in
-**Options → Live server**. Both cache folders are created if needed and must
-be writable. Their defaults are `metadata-cache` and `tile-cache` folders
+folder** and the **Map tile cache folder** in **Options → Live server**. Both
+cache folders are created if needed and must be writable. Missing offline
+assets are downloaded automatically the first time you start the server, so
+an internet connection is needed for that first start. Their defaults are
+`metadata-cache` and `tile-cache` folders
 inside the same application configuration directory as `settings.json`:
 
 - macOS: `~/Library/Application Support/AlbumMaker/`
@@ -140,8 +143,11 @@ files can reuse these results instead of being scanned again. It does not
 store photo or video copies. The tile cache keeps map tiles after they are
 viewed, so they do not need to be downloaded again and remain available
 offline. The offline map library and fonts are stored in the `offline-assets`
-subfolder beside `settings.json`. Static-site generation bundles these assets
-when available, but does not require the live-server setup.
+subfolder beside `settings.json`; use **Download offline assets** in the
+server options to refresh them manually. Static-site generation bundles these
+assets when available, but does not require the live-server setup. Once the
+live server is ready, the app shows a link in **Activity** to open it in your
+browser.
 
 The GUI's live-server high-resolution thumbnail defaults to **2400 pixels**
 (longest side), a sensible balance for Full HD and 4K displays. Only larger

@@ -7,11 +7,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt
-from PySide6.QtGui import QFont, QDoubleValidator
+from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, QUrl
+from PySide6.QtGui import QDesktopServices, QFont, QDoubleValidator, QIcon, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
+    QAbstractButton,
     QButtonGroup,
     QCheckBox,
     QDialog,
@@ -45,9 +46,9 @@ from PySide6.QtWidgets import (
 from .commands import build_command, offline_assets_command, server_command
 from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
                        prepare_tile_cache, save_settings, settings_path, write_library_file)
-from ..timezones import timezone_choices
+from ..timezones import timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
-from ..util import project_dir
+from ..util import project_dir, read_resource_bytes
 
 PROJECT_ROOT = project_dir()
 
@@ -59,7 +60,7 @@ THEME_STYLES = {
         QWidget#scrollPage { background: transparent; }
         QScrollArea { background: transparent; border: 0; }
         QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane,
-        QPlainTextEdit { background: #ffffff; border: 1px solid #dce4ef; border-radius: 12px; }
+        QPlainTextEdit, QTextBrowser { background: #ffffff; border: 1px solid #dce4ef; border-radius: 12px; }
         QTabWidget::pane { background: #ffffff; border: 1px solid #dce4ef; border-radius: 10px; }
         QFrame#header { background: transparent; border: 0; }
         QFrame#stepCard { border-radius: 14px; }
@@ -103,7 +104,7 @@ THEME_STYLES = {
         QWidget#scrollPage { background: transparent; }
         QScrollArea { background: transparent; border: 0; }
         QFrame#header { background: transparent; border: 0; }
-        QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit {
+        QFrame#stepCard, QGroupBox, QTableWidget, QTabWidget::pane, QPlainTextEdit, QTextBrowser {
             background: #202633; border: 1px solid #343e4f; border-radius: 12px; }
         QTabWidget::pane { background: #202633; border: 1px solid #343e4f; border-radius: 10px; }
         QFrame#stepCard { border-radius: 14px; }
@@ -171,16 +172,17 @@ until you stop it. Required setup is in Options → Live server.</li>
 window; it does not require the live-server setup.</li>
 </ul>
 <h3>Options → Live server</h3>
-<p>These settings only affect the live server. It requires the metadata cache folder, map tile cache
-folder, and downloaded offline assets. The two cache folders are created if needed. Offline assets
-are stored in <code>offline-assets</code> beside AlbumMaker's settings file.</p>
+<p>These settings only affect the live server. It requires the metadata cache folder and map tile
+cache folder, which are created if needed. Missing offline assets are downloaded automatically when
+you start the server; an internet connection is required. You can also download or refresh them
+here. Offline assets are stored in <code>offline-assets</code> beside AlbumMaker's settings file.</p>
 <ul>
 <li><b>Metadata cache folder:</b> required. Stores a small JSON index per trip with each media
 file's size and modification time plus metadata read from it, including capture date, GPS
 coordinates, dimensions, camera details and video information. On a later server start, unchanged
 files can reuse these results instead of being read again. It does not store photo or video copies.
 By default this is a <code>metadata-cache</code> folder next to AlbumMaker's settings file.</li>
-<li><b>Offline assets:</b> required in this app before starting the server. Downloads local copies
+<li><b>Offline assets:</b> downloads local copies
 of the map library and fonts once, so those interface assets are served locally. Map backgrounds
 (tiles) are separate: they come from the configured map provider unless you use a tile cache.
 If these assets are available, static-site generation also bundles them into the site; they are
@@ -286,6 +288,13 @@ def _scroll_page(*widgets: QWidget) -> QScrollArea:
     return scroll
 
 
+def _application_icon() -> QIcon:
+    image = QPixmap()
+    if not image.loadFromData(read_resource_bytes("gui", "assets", "albummaker.ico")):
+        raise RuntimeError("The AlbumMaker application icon could not be loaded.")
+    return QIcon(image)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings: dict):
         super().__init__()
@@ -294,12 +303,15 @@ class MainWindow(QMainWindow):
         self._process_kind = ""
         self._log_remainder = ""
         self._offline_asset_error = ""
+        self._pending_server_start = False
+        self._server_ready = False
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
         self._save_timer.timeout.connect(self._save_from_ui)
 
         self.setWindowTitle("AlbumMaker")
+        self.setWindowIcon(_application_icon())
         self.setMinimumSize(680, 580)
         self.resize(920, 820)
         self._build_ui()
@@ -327,9 +339,11 @@ class MainWindow(QMainWindow):
         header_layout.addLayout(title_block)
         header_layout.addStretch(1)
         self.options_button = QPushButton("Options")
+        self.options_button.setToolTip("Change appearance and advanced settings.")
         self.options_button.clicked.connect(lambda: self.options_dialog.exec())
         header_layout.addWidget(self.options_button)
         help_button = QPushButton("Help")
+        help_button.setToolTip("Read plain-language help for the workflows and settings.")
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
         self.status_label = _label("Ready", "status")
@@ -341,6 +355,7 @@ class MainWindow(QMainWindow):
         outer.addWidget(self._build_run_panel())
 
         self.activity_toggle = QPushButton("Show activity")
+        self.activity_toggle.setToolTip("Show or hide progress, errors, and server activity.")
         self.activity_toggle.setCheckable(True)
         self.activity_toggle.toggled.connect(self._toggle_activity)
         outer.addWidget(self.activity_toggle, alignment=Qt.AlignmentFlag.AlignLeft)
@@ -353,10 +368,18 @@ class MainWindow(QMainWindow):
         self.log_view.setPlaceholderText(
             "Server requests, build progress and errors will appear here."
         )
+        self.log_view.setToolTip("Read-only progress, error, and server activity messages.")
         self.log_view.setFont(QFont("monospace", 10))
         self.log_view.setMaximumHeight(150)
         activity_layout.addWidget(self.log_view)
-        self.server_url = _label("Server URL: not running", "muted")
+        self.server_url = _label("", "muted")
+        self.server_url.setTextFormat(Qt.TextFormat.RichText)
+        self.server_url.setOpenExternalLinks(False)
+        self.server_url.linkActivated.connect(
+            lambda url: QDesktopServices.openUrl(QUrl(url))
+        )
+        self.server_url.setToolTip("Opens the running trip site in your web browser.")
+        self.server_url.setVisible(False)
         activity_layout.addWidget(self.server_url)
         self.activity_box.setVisible(False)
         outer.addWidget(self.activity_box)
@@ -368,6 +391,9 @@ class MainWindow(QMainWindow):
         self.setCentralWidget(scroll)
 
         self._build_options_dialog()
+        for button in self.findChildren(QAbstractButton):
+            if not button.toolTip():
+                button.setToolTip(button.text().replace("&", "") or "Activate this control.")
         self.stop_button.clicked.connect(self._stop_process)
         self.run_button.clicked.connect(self._run_selected_workflow)
         self.offline_button.clicked.connect(self._fetch_offline_assets)
@@ -404,7 +430,9 @@ class MainWindow(QMainWindow):
 
         buttons = QHBoxLayout()
         self.add_trip_button = QPushButton("Add folders")
+        self.add_trip_button.setToolTip("Add one or more trip folders to the library.")
         self.remove_trip_button = QPushButton("Remove")
+        self.remove_trip_button.setToolTip("Remove the selected folders from the library; files are not deleted.")
         self.trip_count = _label("0 folders", "muted")
         buttons.addWidget(self.add_trip_button)
         buttons.addWidget(self.remove_trip_button)
@@ -458,6 +486,7 @@ class MainWindow(QMainWindow):
         output_layout.addWidget(_label("Save site to"))
         output_layout.addWidget(self.output_dir, 1)
         browse_output = QPushButton("Browse…")
+        browse_output.setToolTip("Choose the folder where the static site will be created.")
         browse_output.clicked.connect(self._browse_output)
         output_layout.addWidget(browse_output)
         layout.addWidget(self.output_row)
@@ -479,6 +508,7 @@ class MainWindow(QMainWindow):
         self.run_button.setObjectName("primary")
         self.run_button.setMinimumHeight(42)
         self.stop_button = QPushButton("Stop")
+        self.stop_button.setToolTip("Stop the running server or site-generation task.")
         self.stop_button.setObjectName("stop")
         self.stop_button.setVisible(False)
         row.addWidget(self.run_button)
@@ -511,6 +541,7 @@ class MainWindow(QMainWindow):
         self.theme_combo = QComboBox()
         self.theme_combo.addItem("Light", "light")
         self.theme_combo.addItem("Dark", "dark")
+        self.theme_combo.setToolTip("Choose the color theme used by the desktop app.")
         self.theme_combo.currentIndexChanged.connect(self._apply_theme)
         self.theme_combo.currentIndexChanged.connect(self._schedule_save)
         appearance_form.addRow("Color theme", self.theme_combo)
@@ -541,8 +572,10 @@ class MainWindow(QMainWindow):
         media_form.addRow("Thumbnail size", self.thumb_size)
         self.date_start = QLineEdit()
         self.date_start.setPlaceholderText("YYYY-MM-DD")
+        self.date_start.setToolTip("Optional first date to include in every trip (YYYY-MM-DD).")
         self.date_end = QLineEdit()
         self.date_end.setPlaceholderText("YYYY-MM-DD")
+        self.date_end.setToolTip("Optional last date to include in every trip (YYYY-MM-DD).")
         date_row = QWidget()
         dates = QHBoxLayout(date_row)
         dates.setContentsMargins(0, 0, 0, 0)
@@ -553,8 +586,10 @@ class MainWindow(QMainWindow):
 
         behavior_box, behavior_form = _group("Shared import behavior")
         self.no_dedupe = QCheckBox("Keep exact duplicate files")
+        self.no_dedupe.setToolTip("Include byte-identical copies that would otherwise be skipped.")
         behavior_form.addRow("", self.no_dedupe)
         self.no_live_photos = QCheckBox("Show Live Photo video clips separately")
+        self.no_live_photos.setToolTip("List paired Live Photo clips as videos instead of attaching them to photos.")
         behavior_form.addRow("", self.no_live_photos)
         self.no_date_check = QCheckBox("Trust all captured dates")
         self.no_date_check.setToolTip(
@@ -562,8 +597,10 @@ class MainWindow(QMainWindow):
         )
         behavior_form.addRow("", self.no_date_check)
         self.no_gpx = QCheckBox("Ignore GPS tracks")
+        self.no_gpx.setToolTip("Disable matching media to GPX tracks and drawing GPS routes.")
         behavior_form.addRow("", self.no_gpx)
         self.no_places = QCheckBox("Hide offline place names")
+        self.no_places.setToolTip("Do not show nearest-town names on the trip maps.")
         behavior_form.addRow("", self.no_places)
 
         gpx_box, gpx_form = _group("Additional GPS tracks")
@@ -578,8 +615,9 @@ class MainWindow(QMainWindow):
         setup_box = QGroupBox("One-time server setup")
         setup_layout = QVBoxLayout(setup_box)
         setup_intro = _label(
-            "All three items are required for the live server. Static sites can use offline assets when available, "
-            "but do not require these server setup steps. Cache folders are created if needed.",
+            "The two cache folders are required for the live server and are created if needed. "
+            "Missing offline assets download automatically the first time you start the server. "
+            "Static sites do not require these server setup steps.",
             "muted",
         )
         setup_intro.setWordWrap(True)
@@ -587,9 +625,15 @@ class MainWindow(QMainWindow):
         cache_form = QFormLayout()
         self.index_cache = QLineEdit()
         self.index_cache.setPlaceholderText("Choose where AlbumMaker should store the metadata index")
+        self.index_cache.setToolTip(
+            "Required for the live server. Stores reusable metadata indexes, not copies of your media."
+        )
         cache_form.addRow("Metadata cache folder", self._path_field(self.index_cache, directory=True))
         self.tile_cache = QLineEdit()
         self.tile_cache.setPlaceholderText("Choose where viewed map tiles should be saved")
+        self.tile_cache.setToolTip(
+            "Required for the live server. Saves viewed map tiles for faster repeat loads and offline use."
+        )
         cache_form.addRow("Map tile cache folder", self._path_field(self.tile_cache, directory=True))
         setup_layout.addLayout(cache_form)
         self.metadata_cache_help = _label(
@@ -606,6 +650,9 @@ class MainWindow(QMainWindow):
         self.offline_status.setWordWrap(True)
         offline_row.addWidget(self.offline_status, 1)
         self.offline_button = QPushButton("Download offline assets")
+        self.offline_button.setToolTip(
+            "Download or refresh the local map library and fonts. Missing assets download automatically when the server starts."
+        )
         offline_row.addWidget(self.offline_button)
         setup_layout.addLayout(offline_row)
         self.offline_location = _label(
@@ -625,6 +672,7 @@ class MainWindow(QMainWindow):
         self.memory_cache = QSpinBox()
         self.memory_cache.setRange(16, 65536)
         self.memory_cache.setSuffix(" MB")
+        self.memory_cache.setToolTip("Maximum memory used to cache generated thumbnails and converted photos.")
         form.addRow("Image cache", self.memory_cache)
         self.server_large_thumb_size = QSpinBox()
         self.server_large_thumb_size.setRange(0, 4096)
@@ -639,6 +687,7 @@ class MainWindow(QMainWindow):
         self.lan.setToolTip("Anyone on your local network can access the site; there is no login.")
         form.addRow("", self.lan)
         self.read_only = QCheckBox("Disable all in-page editing")
+        self.read_only.setToolTip("Prevent changes to captions, favorites, hidden photos, covers, titles, and descriptions.")
         form.addRow("", self.read_only)
         self.editor_link_only = QCheckBox("Require the editor link for editing")
         self.editor_link_only.setToolTip(
@@ -646,6 +695,7 @@ class MainWindow(QMainWindow):
         )
         form.addRow("", self.editor_link_only)
         self.verbose = QCheckBox("Show every request in the activity log")
+        self.verbose.setToolTip("Show all HTTP requests in Activity instead of only errors and slow requests.")
         form.addRow("", self.verbose)
         network_note = _label(
             "LAN access has no login protection. Only allow other devices on a trusted home network.",
@@ -660,6 +710,7 @@ class MainWindow(QMainWindow):
         maps_form.addRow("Custom map URL", self.tile_url)
         self.allow_hosts = QPlainTextEdit()
         self.allow_hosts.setPlaceholderText("Leave blank unless you use a custom local host name")
+        self.allow_hosts.setToolTip("Optional additional host names the live server may answer to, one per line.")
         self.allow_hosts.setMaximumHeight(65)
         maps_form.addRow("Extra allowed host names", self.allow_hosts)
 
@@ -693,6 +744,9 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(line_edit, 1)
         button = QPushButton("Browse…")
+        button.setToolTip(
+            "Choose a folder for this setting." if directory else "Choose a file for this setting."
+        )
         if directory:
             button.clicked.connect(lambda: self._browse_directory(line_edit))
         else:
@@ -792,8 +846,8 @@ class MainWindow(QMainWindow):
         zone_combo.setEditable(True)
         zone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
         zone_combo.addItem("Automatic", "")
-        for zone_name in timezone_choices():
-            zone_combo.addItem(zone_name, zone_name)
+        for label, zone_name in timezone_search_choices():
+            zone_combo.addItem(label, zone_name)
         if timezone_name:
             zone_combo.setCurrentIndex(zone_combo.findData(timezone_name))
         zone_combo.setProperty("timezoneValue", zone_combo.currentData() or "")
@@ -918,10 +972,15 @@ class MainWindow(QMainWindow):
             self._process and self._process.state() != QProcess.ProcessState.NotRunning
         )
         if running:
-            self.workflow_status.setText(
-                "The live server is running." if self._process_kind == "server"
-                else f"{self._process_kind.capitalize()} is in progress."
-            )
+            if self._process_kind == "server":
+                status = (
+                    "The live server is running."
+                    if self._server_ready
+                    else "Waiting for the live server to become ready…"
+                )
+            else:
+                status = f"{self._process_kind.capitalize()} is in progress."
+            self.workflow_status.setText(status)
             self.run_button.setEnabled(False)
             return
 
@@ -937,13 +996,17 @@ class MainWindow(QMainWindow):
                 "Ready to create your site." if ready else "Choose where to save your site."
             )
         else:
-            ready = self._offline_assets_ready() and bool(self.index_cache.text().strip()) and bool(
-                self.tile_cache.text().strip()
-            )
-            self.workflow_status.setText(
-                "Live server setup is ready." if ready
-                else (self._offline_asset_error or "Complete the required setup in Options → Live server.")
-            )
+            ready = bool(self.index_cache.text().strip()) and bool(self.tile_cache.text().strip())
+            if not ready:
+                self.workflow_status.setText("Choose the required cache folders in Options → Live server.")
+            elif self._offline_assets_ready():
+                self.workflow_status.setText("Live server setup is ready.")
+            elif self._offline_asset_error:
+                self.workflow_status.setText(self._offline_asset_error)
+            else:
+                self.workflow_status.setText(
+                    "Offline assets will download automatically when you start the server."
+                )
         self.run_button.setEnabled(ready)
 
     def _browse_output(self) -> None:
@@ -1016,10 +1079,28 @@ class MainWindow(QMainWindow):
         dialog.resize(720, 700)
         layout = QVBoxLayout(dialog)
         content = QTextBrowser()
-        content.setHtml(HELP_HTML)
+        dark = self.theme_combo.currentData() == "dark"
+        background, foreground, muted, code_background = (
+            ("#202633", "#e6eaf2", "#a2adbf", "#293344")
+            if dark
+            else ("#ffffff", "#17243b", "#66748a", "#edf2f9")
+        )
+        content.setHtml(
+            "<html><head><style>"
+            f"body {{ background-color: {background}; color: {foreground}; "
+            "font-family: sans-serif; line-height: 1.45; } "
+            f"h2, h3, li, p {{ color: {foreground}; }} "
+            f"code {{ background-color: {code_background}; color: {foreground}; "
+            "padding: 2px 4px; border-radius: 3px; } "
+            f".muted {{ color: {muted}; }}"
+            "</style></head><body>"
+            + HELP_HTML
+            + "</body></html>"
+        )
         content.setOpenExternalLinks(True)
         layout.addWidget(content)
         buttons = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        buttons.setToolTip("Close the help window.")
         buttons.rejected.connect(dialog.reject)
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
@@ -1062,6 +1143,8 @@ class MainWindow(QMainWindow):
         process.finished.connect(self._on_finished)
         self._process = process
         self._process_kind = kind
+        self._server_ready = False
+        self.server_url.hide()
         self._log_remainder = ""
         self._append_log(f"Starting {kind}: {self._display_command(arguments)}")
         self.status_label.setText(f"Starting {kind}…")
@@ -1073,14 +1156,6 @@ class MainWindow(QMainWindow):
         return " ".join(f'"{arg}"' if " " in arg else arg for arg in arguments)
 
     def _start_server(self) -> None:
-        if not self._offline_assets_ready():
-            QMessageBox.warning(
-                self, "Cannot prepare offline assets",
-                self._offline_asset_error
-                or "Download offline assets in Options → Live server before starting the server.",
-            )
-            self._update_server_setup()
-            return
         try:
             cache_folder = prepare_metadata_cache(self.index_cache.text())
             self.index_cache.setText(str(cache_folder))
@@ -1091,7 +1166,11 @@ class MainWindow(QMainWindow):
         except (OSError, SettingsError, ValueError, KeyError) as exc:
             QMessageBox.warning(self, "Cannot start server", str(exc))
             return
-        self.server_url.setText(f"Server URL: http://127.0.0.1:{self.port.value()}/")
+        if not self._offline_assets_ready():
+            self._pending_server_start = True
+            self._append_log("Offline assets are missing; downloading them before server startup.")
+            self._launch("offline assets", offline_assets_command(sys.executable))
+            return
         self._launch("server", arguments)
 
     def _build_site(self) -> None:
@@ -1123,7 +1202,20 @@ class MainWindow(QMainWindow):
         self._log_remainder = ""
         for line in lines:
             if line.endswith(("\n", "\r")):
-                self._append_log(line.rstrip("\r\n"))
+                message = line.rstrip("\r\n")
+                self._append_log(message)
+                expected_url = f"http://127.0.0.1:{self.port.value()}/"
+                if (
+                    self._process_kind == "server"
+                    and message.strip() == f"Serving at {expected_url}"
+                ):
+                    self._server_ready = True
+                    self.server_url.setText(
+                        f'<a href="{expected_url}">Open live trip site in your browser</a>'
+                    )
+                    self.server_url.show()
+                    self.status_label.setText("Server running")
+                    self._update_workflow()
             else:
                 self._log_remainder = line
 
@@ -1133,13 +1225,11 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, kind: str) -> None:
         states = {
-            "server": "Server running",
+            "server": "Starting server",
             "build": "Generating site",
             "offline assets": "Downloading assets",
         }
         self.status_label.setText(states.get(kind, f"{kind.capitalize()} running"))
-        if kind == "server":
-            self._append_log(f"Server running at http://127.0.0.1:{self.port.value()}/")
         self._update_actions()
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
@@ -1147,7 +1237,10 @@ class MainWindow(QMainWindow):
             message = self._process.errorString() if self._process else "Could not start the process."
             self._append_log(f"Error: {message}")
             self.status_label.setText("Could not start")
-            self.server_url.setText("Server URL: not running")
+            self.server_url.hide()
+            self._server_ready = False
+            if self._process_kind == "offline assets":
+                self._pending_server_start = False
             self._cleanup_process()
             self._update_actions()
 
@@ -1157,17 +1250,33 @@ class MainWindow(QMainWindow):
             self._append_log(self._log_remainder)
             self._log_remainder = ""
         kind = self._process_kind
+        resume_server = kind == "offline assets" and self._pending_server_start
+        if resume_server:
+            self._pending_server_start = False
         label = "Server stopped" if kind == "server" and exit_code == 0 else (
             "Completed" if exit_code == 0 else f"Failed (exit code {exit_code})"
         )
         self.status_label.setText(label)
         if kind == "server":
-            self.server_url.setText("Server URL: not running")
+            self.server_url.hide()
+            self._server_ready = False
         if kind == "offline assets":
             self._update_server_setup()
         self._append_log(f"{kind.capitalize()} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
+        if resume_server:
+            if exit_code == 0 and self._offline_assets_ready():
+                self._append_log("Offline assets are ready; starting the live server.")
+                self._start_server()
+            else:
+                self.status_label.setText("Could not prepare offline assets")
+                self.workflow_status.setText(
+                    "The live server was not started because offline assets could not be downloaded."
+                )
+                self._append_log(
+                    "The live server was not started: offline asset download failed or validation did not pass."
+                )
 
     def _cleanup_process(self) -> None:
         if self._process:
@@ -1206,7 +1315,7 @@ class MainWindow(QMainWindow):
             if assets_ready
             else (
                 self._offline_asset_error
-                or f"Offline assets are missing from {VENDOR_DIR}. Download them before starting the live server."
+                or f"Offline assets are missing from {VENDOR_DIR}; they will download automatically when the live server starts."
             )
         )
         self.offline_button.setText(
@@ -1217,18 +1326,15 @@ class MainWindow(QMainWindow):
             requirements.append("Choose a metadata cache folder")
         if not tile_cache_configured:
             requirements.append("choose a map tile cache folder")
-        if not assets_ready:
-            requirements.append(
-                self._offline_asset_error or "download the offline assets"
-            )
         if requirements:
             self.server_setup_status.setText(
                 "To start the live server, " + " and ".join(requirements) + "."
             )
         else:
-            self.server_setup_status.setText(
-                "Server setup is complete. The cache folders will be created if needed."
-            )
+            status = "Server setup is complete. The cache folders will be created if needed."
+            if not assets_ready and not self._offline_asset_error:
+                status += " Missing offline assets will download automatically when you start the server."
+            self.server_setup_status.setText(status)
         self._update_workflow()
 
     def closeEvent(self, event) -> None:
@@ -1255,6 +1361,7 @@ def main() -> int:
     app = QApplication(sys.argv)
     app.setApplicationName("AlbumMaker")
     app.setOrganizationName("AlbumMaker")
+    app.setWindowIcon(_application_icon())
     try:
         settings = load_settings()
     except SettingsError as exc:
