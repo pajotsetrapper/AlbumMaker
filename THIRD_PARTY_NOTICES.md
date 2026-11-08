@@ -7,10 +7,12 @@ data distributed with AlbumMaker. Each component remains under its own terms.
 The component versions and even the licenses of some binary dependencies can
 change as dependencies are updated. The executable build generates
 `THIRD_PARTY_NOTICES.txt` with the exact FFmpeg version, its reported license,
-the FFmpeg source tag and build configuration, and the license texts for
-packaged Python components. Read that file alongside this inventory for the
-specific executable you are using. Static sites that include downloaded
-offline assets carry their notices under `assets/vendor/licenses/`.
+the FFmpeg source tag and build configuration, and the full GPL/LGPL and
+packaged Python component license texts. The GPL/LGPL texts are stored in the
+repository's `licenses/` directory so executable builds do not need to fetch
+them from a license website. Read the generated file alongside this inventory
+for the specific executable you are using. Static sites that include
+downloaded offline assets carry their notices under `assets/vendor/licenses/`.
 
 ## Components
 

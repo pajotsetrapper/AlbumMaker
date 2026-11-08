@@ -10,17 +10,17 @@ import shutil
 import subprocess
 import sys
 import tempfile
-import urllib.request
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = ROOT / "dist" / "executable"
 SOURCE_URL = "https://github.com/zackees/ffmpeg_bins"
-GPL_LICENSE_URLS = {
-    "2": "https://www.gnu.org/licenses/old-licenses/gpl-2.0.txt",
-    "3": "https://www.gnu.org/licenses/gpl-3.0.txt",
+LICENSES_DIR = ROOT / "licenses"
+GPL_LICENSE_FILES = {
+    "2": LICENSES_DIR / "GPL-2.0.txt",
+    "3": LICENSES_DIR / "GPL-3.0.txt",
 }
-LGPL_V3_LICENSE_URL = "https://www.gnu.org/licenses/lgpl-3.0.txt"
+LGPL_V3_LICENSE_FILE = LICENSES_DIR / "LGPL-3.0.txt"
 
 
 def _run(
@@ -76,17 +76,17 @@ def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
         raise RuntimeError("The bundled FFmpeg version could not be determined.")
     ffmpeg_version = version_match.group(1)
     source_tag = f"n{ffmpeg_version}"
-    gpl_license = _download_license_text(
-        GPL_LICENSE_URLS[gpl_version], f"GNU GPL version {gpl_version}"
+    gpl_license = _read_license_text(
+        GPL_LICENSE_FILES[gpl_version], f"GNU GPL version {gpl_version}"
     )
     if gpl_version == "2":
         gpl_v2_license = gpl_license
     else:
-        gpl_v2_license = _download_license_text(
-            GPL_LICENSE_URLS["2"], "GNU GPL version 2"
+        gpl_v2_license = _read_license_text(
+            GPL_LICENSE_FILES["2"], "GNU GPL version 2"
         )
-    lgpl_v3_license = _download_license_text(
-        LGPL_V3_LICENSE_URL, "GNU LGPL version 3"
+    lgpl_v3_license = _read_license_text(
+        LGPL_V3_LICENSE_FILE, "GNU LGPL version 3"
     )
     python_notices = _python_package_notices()
     return (
@@ -107,13 +107,12 @@ def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
     )
 
 
-def _download_license_text(url: str, license_name: str) -> str:
+def _read_license_text(path: Path, license_name: str) -> str:
     try:
-        with urllib.request.urlopen(url, timeout=60) as response:
-            return response.read().decode("utf-8")
+        return path.read_text(encoding="utf-8")
     except (OSError, UnicodeError) as exc:
         raise RuntimeError(
-            f"Could not retrieve {license_name} text from {url}: {exc}"
+            f"Could not read {license_name} text from {path}: {exc}"
         ) from exc
 
 
