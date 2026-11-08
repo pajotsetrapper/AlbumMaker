@@ -32,3 +32,14 @@ def timezone_choices() -> list[str]:
 
     collect_tzif_files(bundled)
     return sorted(zones)
+
+
+def timezone_search_choices() -> list[tuple[str, str]]:
+    """Return human-searchable labels mapped to IANA zone names."""
+    return sorted(
+        (
+            (f"{name.rsplit('/', 1)[-1].replace('_', ' ')} ({name})", name)
+            for name in timezone_choices()
+        ),
+        key=lambda choice: choice[0].casefold(),
+    )
