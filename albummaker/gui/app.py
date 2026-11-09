@@ -4,8 +4,10 @@ from __future__ import annotations
 
 import platform
 import re
+import socket
 import subprocess
 import sys
+import traceback
 from datetime import datetime
 from html import escape as _escape_html
 from pathlib import Path
@@ -219,7 +221,8 @@ HELP_HTML = """
 <p>Follow the three steps in the main window: add trip folders, choose whether to run a live server
 or create a static site, then start. Your choices are saved automatically. Most people can use the
 defaults; less common settings are under <b>Options</b>. General options apply to both workflows;
-Live server and Static site options apply only to their named workflow.</p>
+Live server and Static site options apply only to their named workflow. The version number is shown
+under the app name and at the bottom of this window; please include it when reporting a problem.</p>
 <h3>Trip library</h3>
 <ul>
 <li><b>Add folders:</b> choose multiple trip folders in the folder picker.
@@ -1318,13 +1321,23 @@ class MainWindow(QMainWindow):
             return
         self.activity_toggle.setChecked(True)
         process = QProcess(self)
-        if sys.platform == "win32" and getattr(sys, "frozen", False):
-            process.setCreateProcessArgumentsModifier(
-                lambda args: setattr(args, "flags", args.flags | subprocess.CREATE_NO_WINDOW)
-            )
-        process.setWorkingDirectory(str(PROJECT_ROOT))
+        # No console-window tweak is needed here: Qt already starts the child
+        # without a console window when this GUI program has none.
+        frozen = getattr(sys, "frozen", False)
+        # The packaged app's own folder is not a good place to run from; every
+        # path the command uses is absolute, so any existing folder will do.
+        working_dir = settings_path().parent if frozen else PROJECT_ROOT
+        process.setWorkingDirectory(str(working_dir if working_dir.is_dir() else Path.home()))
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
+        if frozen:
+            # The helper is another PyInstaller program. Variables the packaged
+            # app set for itself must not leak into it, or it can mistake itself
+            # for part of this app and not start.
+            for name in environment.keys():
+                if name.startswith("_PYI_") or name == "_MEIPASS2":
+                    environment.remove(name)
+            environment.insert("PYINSTALLER_RESET_ENVIRONMENT", "1")
         process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
         process.readyReadStandardOutput.connect(self._read_process_output)
@@ -1360,6 +1373,16 @@ class MainWindow(QMainWindow):
             arguments = server_command(sys.executable, library, self.settings)
         except (OSError, SettingsError, ValueError, KeyError) as exc:
             QMessageBox.warning(self, "Cannot start server", str(exc))
+            return
+        port = int(self.settings["server"]["port"])
+        if _port_in_use(port):
+            QMessageBox.warning(
+                self, "Port already in use",
+                f"Something is already listening on port {port}. It may be an earlier AlbumMaker "
+                f"server that is still running, and the browser would show that one instead of "
+                f"this one.\n\nClose it (for example, end any 'albummaker-cli' process in Task "
+                f"Manager) or choose another port in Options, then start again.",
+            )
             return
         if not self._offline_assets_ready():
             self._pending_server_start = True
@@ -1440,6 +1463,8 @@ class MainWindow(QMainWindow):
         self._update_actions()
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
+        if error != QProcess.ProcessError.FailedToStart and self._process and not self._stopping:
+            self._append_log(f"Process error: {self._process.errorString()}")
         if error == QProcess.ProcessError.FailedToStart:
             message = self._process.errorString() if self._process else "Could not start the process."
             self._append_log(f"Error: {message}")
@@ -1514,14 +1539,37 @@ class MainWindow(QMainWindow):
             self._stopping = True
             self.status_label.setText("Stopping…")
             self._append_log("Requesting process shutdown…")
-            self._process.terminate()
+            if sys.platform == "win32":
+                # terminate() does nothing to a program without a window, so end the
+                # whole process tree at once (the helper runs as a launcher + child).
+                self._kill_process_tree()
+            else:
+                self._process.terminate()
             QTimer.singleShot(3000, self._kill_if_running)
             self._update_actions()
 
     def _kill_if_running(self) -> None:
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
             self._append_log("Process did not stop in time; terminating it.")
-            self._process.kill()
+            self._kill_process_tree()
+
+    def _kill_process_tree(self) -> None:
+        """Kill the running task and everything it started. The packaged helper is a
+        PyInstaller launcher plus a child; killing only the launcher would leave the
+        real server running and holding its port."""
+        process = self._process
+        if process is None:
+            return
+        if sys.platform == "win32" and process.processId():
+            try:
+                subprocess.run(
+                    ["taskkill", "/PID", str(process.processId()), "/T", "/F"],
+                    capture_output=True, timeout=10,
+                    creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+                )
+            except (OSError, subprocess.SubprocessError):
+                pass
+        process.kill()
 
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
@@ -1574,17 +1622,53 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
-            self._process.terminate()
+            if sys.platform == "win32":
+                self._kill_process_tree()
+            else:
+                self._process.terminate()
             if not self._process.waitForFinished(2500):
-                self._process.kill()
+                self._kill_process_tree()
                 self._process.waitForFinished(1000)
         event.accept()
+
+
+def _port_in_use(port: int) -> bool:
+    """True when something on this computer already accepts connections on the port."""
+    with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as probe:
+        probe.settimeout(0.5)
+        return probe.connect_ex(("127.0.0.1", port)) == 0
+
+
+def _install_error_log() -> None:
+    """The packaged app has no console, so an unexpected error would vanish.
+    Save it to a log file next to the settings and show it in a message box."""
+    log_path = settings_path().parent / "albummaker-gui-error.log"
+
+    def hook(kind, value, trace) -> None:
+        text = "".join(traceback.format_exception(kind, value, trace))
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+            with log_path.open("a", encoding="utf-8") as stream:
+                stream.write(f"--- {datetime.now():%Y-%m-%d %H:%M:%S}  AlbumMaker {__version__}\n{text}\n")
+        except OSError:
+            pass
+        try:
+            QMessageBox.critical(
+                None, "AlbumMaker error",
+                f"An unexpected error occurred:\n\n{value}\n\nDetails were saved to:\n{log_path}",
+            )
+        except Exception:
+            pass
+
+    sys.excepthook = hook
 
 
 def main() -> int:
     if "--version" in sys.argv[1:]:
         print(f"AlbumMaker {__version__}")
         return 0
+    if getattr(sys, "frozen", False):
+        _install_error_log()
     app = QApplication(sys.argv)
     app.setApplicationName("AlbumMaker")
     app.setOrganizationName("AlbumMaker")

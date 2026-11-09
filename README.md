@@ -60,6 +60,9 @@ python generate_site.py --library trips.txt -o ~/AlbumMakerSites
 # Optional desktop app (Mac, Windows, Linux):
 python -m pip install -r requirements-gui.txt
 python album_gui.py
+
+# Which version is this? (works with every script; see "Version number"):
+python album_server.py --version
 ```
 
 A `.gpx` track in the photos folder is picked up by itself (see "GPS
@@ -160,8 +163,12 @@ python album_gui.py --version
 python -m albummaker --version
 ```
 
-Generated pages say which version made them, and a static site's build
-record (`app_version`) stores it. To release: change `__version__`, commit,
+Generated pages say which version made them (in the page footer), and a
+static site's build record (`.trip_site_manifest.json`) stores it as
+`app_version`; the record's own `version` field is its file format, not the
+program's. The `--version` flag prints `AlbumMaker 2.0.0` and exits; when it
+starts, the server and the site builder print the same version as their first
+line. To release: change `__version__`, commit,
 then tag that commit with the same number (`v2.1.0` for `2.1.0`). In CI,
 `python tools/check_version.py "$GITHUB_REF_NAME"` fails the build when the
 tag and `__version__` differ.
@@ -234,7 +241,11 @@ and shared trip-processing options, including the **Trip library page** title
 options that affect only that workflow. Choose **Help** for plain-language
 descriptions of the controls. The trip list follows the order in which folders
 were added; use **Remove** and add folders again if you need to change it.
-Choose the light or dark appearance in **Options → General**.
+Choose the light or dark appearance in **Options → General**; it also
+applies to the **Add folders** picker. The app's version number is shown in the
+window title and under the app name, and the **Help** window ends with a
+line giving the version, Python, PySide6 and platform (useful in a bug
+report).
 
 Before starting the live server in the app, set up the **Metadata cache
 folder** and the **Map tile cache folder** in **Options → Live server**. Both
@@ -1364,6 +1375,9 @@ so none of this applies there. The exceptions:
   - The build record also keeps every file's metadata, so unchanged
     files aren't even opened again; a re-run with nothing new takes
     well under a second for most trips.
+  - The record also notes which AlbumMaker version made the site
+    (`app_version`). It is informational: a site built by an older version
+    is rebuilt by the same rules as before.
   - Deleting the build record is safe: the next run just regenerates
     thumbnails and converted images, and re-checks the copies. It can no
     longer tell which old files earlier runs made, though, so it cleans
@@ -1396,6 +1410,15 @@ so none of this applies there. The exceptions:
 
 ## Troubleshooting
 
+- **The packaged desktop app does something unexpected.** It has no console, so
+  an unexpected error is shown in a message box and saved to
+  `albummaker-gui-error.log` in the same folder as the app's settings. The
+  **Activity** panel shows the command that was started and its output; include
+  both when you report a problem.
+- **Which version am I running?** Run any script with `--version` (for
+  example `python album_server.py --version`), look at the desktop app's
+  title bar or Help window, or at the footer of a generated page. Include it
+  when you report a problem.
 - **Photos ended up on "Unsorted".** They have no capture date, or one
   that looked wrong. Open a photo's details panel: a "Date" row says
   which embedded date was ignored and why. If the dates are right, pass
@@ -1527,6 +1550,9 @@ What's covered:
 - GPS tracks (reading `.gpx` files, time zones, placing photos, the day
   tracks) and place names, and the library of trips (the list file, the
   static build and the live server).
+- The version number: that `--version` works on every entry point, that
+  generated page footers and the build record carry it, and that the
+  release-tag check (`tools/check_version.py`) accepts only a matching tag.
 - The viewer's behaviour in the browser tests above.
 
 What isn't covered: a real browser (jsdom approximates one, with a few

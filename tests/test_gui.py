@@ -214,6 +214,20 @@ class GuiSettingsTests(unittest.TestCase):
                     write_library_file([str(trip)], Path(tmp) / "library.txt")
 
 
+class PackagedLaunchTests(unittest.TestCase):
+    """The GUI cannot run here without PySide6, so guard the launch code by source."""
+
+    def test_launch_has_no_windows_only_process_hook(self):
+        source = (Path(__file__).resolve().parent.parent / "albummaker" / "gui" / "app.py").read_text(encoding="utf-8")
+        # An exception inside this hook is invisible in the windowed app and stops the helper starting.
+        self.assertNotIn("setCreateProcessArgumentsModifier", source)
+        self.assertIn("PYINSTALLER_RESET_ENVIRONMENT", source)
+
+    def test_frozen_cli_supports_worker_processes(self):
+        source = (Path(__file__).resolve().parent.parent / "tools" / "frozen_cli.py").read_text(encoding="utf-8")
+        self.assertIn("multiprocessing.freeze_support()", source)
+
+
 class GuiCommandTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
