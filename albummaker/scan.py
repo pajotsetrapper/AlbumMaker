@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Choosing which files make up the trip and organising them: the folder
 scan, exact duplicates, Live Photo pairing, the date check and grouping
 into days."""

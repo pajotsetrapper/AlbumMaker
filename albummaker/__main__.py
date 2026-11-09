@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Run as a zipapp or with `python -m albummaker`:
 
     python albummaker.pyz serve -i /path/to/photos      (= album_server.py)

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """GPS tracks (.gpx) and offline place names: reading tracks, working out
 each photo's moment in UTC, placing photos on the track, the day maps' track
 lines, naming places, and how both scripts show the result.

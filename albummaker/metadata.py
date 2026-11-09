@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Reading capture time, location and camera details out of photos (EXIF)
 and videos (ffprobe), and the format used to cache that metadata between
 runs."""

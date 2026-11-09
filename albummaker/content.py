@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """trip_content.json: titles, descriptions, captions, favorites, hidden
 photos and day covers. The user's text is never lost: a file that can't be
 parsed is never written, and only the field being changed is touched."""

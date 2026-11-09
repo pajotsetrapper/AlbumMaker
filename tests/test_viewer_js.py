@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """The viewer's behaviour in a browser-like environment (Node + jsdom): editing
 controls, links and the Back button, autoplay, and the maps with the real
 Leaflet library.

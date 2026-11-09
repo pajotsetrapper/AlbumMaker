@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """In-page editing: what the API saves into trip_content.json, what it
 refuses, who is allowed to use it, and how hidden photos are treated."""
 import json

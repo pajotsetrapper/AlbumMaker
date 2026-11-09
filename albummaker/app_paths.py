@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Per-user application paths shared by the GUI and command-line tools."""
 
 from __future__ import annotations

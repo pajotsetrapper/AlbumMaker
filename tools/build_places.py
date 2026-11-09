@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Rebuild albummaker/data/places.tsv.gz, the offline list of towns used for
 place names, from GeoNames (https://www.geonames.org/, CC BY 4.0):
 

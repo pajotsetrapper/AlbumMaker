@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Working without internet: checksum-verified local Leaflet and font assets."""
 
 from __future__ import annotations

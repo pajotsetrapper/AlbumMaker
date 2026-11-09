@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """album_server.py running for real: pages, images, byte ranges, the Host check,
 hot-reloading of trip_content.json, and the date check."""
 import json

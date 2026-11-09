@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """The pages: Jinja templates, CSS and JavaScript (real files in
 albummaker/templates and albummaker/static), and the data that fills them. Both
 scripts render the same pages; a SiteUrls subclass decides where links point."""

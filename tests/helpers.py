@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Shared building blocks for the test suite.
 
 Everything the tests need is created on the fly in temporary folders: small

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Thumbnails, browser-safe display JPEGs and video preview frames. Both
 scripts use these: generate_site writes the bytes to files, album_server
 sends (and briefly caches) them. Everything returns encoded bytes."""

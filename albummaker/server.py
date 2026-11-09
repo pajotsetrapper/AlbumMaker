@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """
 album_server: serve your trip photos/videos as a live website, generated on
 the fly. No thumbnails, no converted copies and no HTML files on disk:

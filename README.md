@@ -111,7 +111,8 @@ ffprobe; installing Python or FFmpeg separately is not required. Download
 the platform artifact from the corresponding run in the repository's
 **Actions** tab; artifacts are retained for 30 days.
 
-The app source is MIT-licensed, but bundled components keep their own terms.
+The app source is licensed under the PolyForm Noncommercial License 1.0.0,
+and bundled components keep their own terms.
 The executable carries the project `LICENSE`, a third-party inventory, and
 build-generated notices with exact component versions and license text.
 FFmpeg and the codecs bundled with `pillow-heif` include GPL-licensed code.
@@ -1584,9 +1585,28 @@ changes with their content, so browsers pick up the new files at once.
 
 ## License and third-party notices
 
-AlbumMaker's source code is available under the [MIT License](./LICENSE).
-Third-party software and data are not relicensed under MIT; their licenses,
+AlbumMaker's source code is available under the
+[PolyForm Noncommercial License 1.0.0](./LICENSE). In plain words: you may use,
+modify and share it for **noncommercial purposes**, including personal and hobby
+use, and use by charities, schools and public institutions. You may **not** sell
+it or use it for commercial purposes without a separate written license from the
+author. This is a *source-available* license, not an OSI-approved open source
+license. Any earlier version that was published under the MIT License remains MIT
+for those who received it.
+
+For commercial licensing, contact the author via the repository.
+
+Third-party software and data are not relicensed; their licenses,
 attributions and binary-distribution notes are listed in
 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Read the notices for the
 specific executable before redistributing it, especially the GPL source
 availability notes for bundled FFmpeg and HEIF codecs.
+
+## Support the project
+
+AlbumMaker is free for noncommercial use. If it is useful to you, you can make
+an optional, voluntary donation. A donation does not buy features, support or a
+commercial license.
+
+<!-- TODO: replace with your real donation link(s), e.g. GitHub Sponsors, Liberapay or Ko-fi -->
+- Donate: *(link to be added)*

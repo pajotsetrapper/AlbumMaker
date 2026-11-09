@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """GPS tracks (.gpx files from a watch, phone app or GPS logger).
 
 A track is a list of positions with their UTC time. It does two things:

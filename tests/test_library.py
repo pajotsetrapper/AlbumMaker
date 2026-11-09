@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """A library of trips (--library): the list file, building every trip plus
 the page linking them, and serving them all from one server.
 
