@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Command-line pieces shared by generate_site.py and album_server.py."""
 
 from __future__ import annotations

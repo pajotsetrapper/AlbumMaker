@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """trip_content.json: reading it, the per-photo and per-day edits, hiding,
 covers, and the safety rules around the file."""
 import contextlib

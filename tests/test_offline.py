@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Working without internet: downloading Leaflet and the fonts (against a fake
 npm registry, so no real network is used), serving them, and the map-tile cache
 (against a fake tile provider)."""

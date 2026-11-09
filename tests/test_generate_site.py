@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """generate_site.py end to end: it is run exactly as a user would run it, on
 small photos made on the fly, and the output folder is inspected."""
 import hashlib

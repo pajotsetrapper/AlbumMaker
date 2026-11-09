@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Console entry point embedded in the desktop app for its background tasks."""
 
 import multiprocessing

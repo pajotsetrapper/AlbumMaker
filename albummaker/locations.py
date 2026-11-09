@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Where things were: GPS tracks (albummaker.gpx) and place names
 (albummaker.places), applied the same way by both scripts."""
 

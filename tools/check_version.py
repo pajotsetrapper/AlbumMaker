@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Check that a release tag matches albummaker.__version__ (for CI).
 
     python tools/check_version.py v2.0.0     # exit 0 if it matches, 1 if not

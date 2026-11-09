@@ -1,7 +1,7 @@
 # Third-party notices
 
-AlbumMaker's own source code is licensed under the MIT License in
-[`LICENSE`](./LICENSE). This does **not** relicense third-party software or
+AlbumMaker's own source code is licensed under the PolyForm Noncommercial
+License 1.0.0 in [`LICENSE`](./LICENSE). This does **not** relicense third-party software or
 data distributed with AlbumMaker. Each component remains under its own terms.
 
 The component versions and even the licenses of some binary dependencies can
@@ -35,7 +35,9 @@ downloaded offline assets carry their notices under `assets/vendor/licenses/`.
 The desktop executable bundles GPL-enabled FFmpeg/ffprobe. The current
 `pillow-heif` binary wheels also contain GPL-licensed x265, in addition to
 LGPL-licensed libraries. These obligations apply whether a binary is sold or
-given away. Including license text and a source-code link is important, but
+given away. Note that AlbumMaker's own license forbids commercial use, but the GPL
+requires that anyone receiving a GPL component, including FFmpeg and x265, keeps
+their GPL rights to that component. Including license text and a source-code link is important, but
 does not by itself establish that a distribution meets every source-code
 requirement.
 

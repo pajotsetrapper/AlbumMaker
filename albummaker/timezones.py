@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """IANA time-zone helpers shared by the CLI and desktop app."""
 
 from __future__ import annotations

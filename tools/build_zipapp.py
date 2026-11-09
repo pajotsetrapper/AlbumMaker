@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Package the albummaker folder into one runnable file, dist/albummaker.pyz:
 
     python tools/build_zipapp.py

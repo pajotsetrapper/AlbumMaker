@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Tests for the fixes from the architecture review: hidden photos and their
 duplicates, output-name claims, the size-limited caches and render limiter,
 editor authentication, the socket timeout, stable URL keys, the content-file

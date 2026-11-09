@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """
 album_server.py — serve your trip photos/videos as a live website, generated
 on the fly, with in-page editing of titles, captions, favorites and covers.

@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Place names without the internet: the nearest town to each photo, from a
 list of ~160,000 towns shipped in albummaker/data/places.tsv.gz (GeoNames,
 CC BY 4.0; rebuilt by tools/build_places.py).

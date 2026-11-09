@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """A library of trips: one page linking every trip's site, from a list file.
 
     # trips.txt: one trip per line; '#' starts a comment

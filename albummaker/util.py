@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Small helpers with no knowledge of photos: atomic file writes, JSON that is
 safe inside <script>, and reading files that ship inside the package (which
 also works when the package runs from a zipapp)."""

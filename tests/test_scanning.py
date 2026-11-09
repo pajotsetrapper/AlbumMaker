@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+# Copyright (c) 2026 Pieter Remi Coppens
 """Finding files, skipping duplicates, pairing Live Photos, naming the
 static site's output files, and the build record that makes re-runs cheap."""
 import contextlib
