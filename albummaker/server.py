@@ -670,6 +670,12 @@ class TripHTTPServer(ThreadingHTTPServer):
     # thumbnails) can overflow it, and the overflow is dropped as "connection reset".
     request_queue_size = 128
     daemon_threads = True
+    # On Windows, SO_REUSEADDR (which http.server turns on) lets a second server
+    # bind a port that another one is already listening on, so a new server could
+    # start "successfully" while the browser keeps talking to the old one. Without
+    # it, Windows refuses the second bind, and the "port already in use" message
+    # below is shown instead.
+    allow_reuse_address = sys.platform != "win32"
 
     def __init__(self, address, handler, app: App, library: Optional[Library] = None):
         self.app = app              # the trip (in a library: any trip, for the shared settings)
