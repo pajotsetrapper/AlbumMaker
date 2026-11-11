@@ -17,6 +17,13 @@ apps are not code-signed: the first time, macOS asks you to allow it in
 [Download a standalone app](https://github.com/pajotsetrapper/AlbumMaker#download-a-standalone-app)
 for the details. `SHA256SUMS.txt` lists each file's checksum.
 
+### Support AlbumMaker ♥
+
+AlbumMaker is free for personal and other noncommercial use. If you enjoy it,
+you can support its development on
+[Ko-fi](https://ko-fi.com/pietercoppens) or
+[GitHub Sponsors](https://github.com/sponsors/pajotsetrapper). Thank you!
+
 ### What AlbumMaker does
 
 - Turns a folder of trip photos and videos into a website: one chapter per
@@ -47,6 +54,9 @@ for the details. `SHA256SUMS.txt` lists each file's checksum.
   app, and the app's Help window states the license.
 - The Install FFmpeg button disappears once FFmpeg is found, and the window
   grows to show the Activity panel when it opens.
+- New **♥ Support** button in the desktop app, a support section on the
+  product page and in the README, and a Sponsor button on the repository,
+  all with the Ko-fi and GitHub Sponsors links. The app never asks by itself.
 - A damaged settings file no longer stops the desktop app from starting: it
   is set aside and the app starts with default settings.
 - The unfinished alternative page templates (`"template"` in

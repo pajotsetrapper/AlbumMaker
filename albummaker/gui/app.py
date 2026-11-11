@@ -129,6 +129,16 @@ THEME_STYLES = {
         QPushButton#editorLink { color: #ffffff; background: #53627a; border-color: #53627a;
             font-weight: 650; }
         QPushButton#editorLink:hover { background: #3e4c62; }
+        QPushButton#support { color: #b4325a; background: #fff3f6; border-color: #f2c4d2;
+            font-weight: 650; }
+        QPushButton#support:hover { background: #ffe4ec; border-color: #e58aa6; }
+        QPushButton#kofi { color: #ffffff; background: #e0565b; border-color: #e0565b;
+            font-weight: 650; padding: 11px 18px; }
+        QPushButton#kofi:hover { background: #c94449; }
+        QPushButton#sponsors { color: #ffffff; background: #8f3f97; border-color: #8f3f97;
+            font-weight: 650; padding: 11px 18px; }
+        QPushButton#sponsors:hover { background: #77327e; }
+        QLabel#supportHeart { color: #e0565b; }
         QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #ffffff;
             border: 1px solid #cfd9e7; border-radius: 7px; padding: 7px;
             selection-background-color: #315fce; }
@@ -202,6 +212,16 @@ THEME_STYLES = {
         QPushButton#editorLink { color: #ffffff; background: #46556e; border-color: #46556e;
             font-weight: 650; }
         QPushButton#editorLink:hover { background: #566783; }
+        QPushButton#support { color: #ff9db8; background: #33222b; border-color: #5c3343;
+            font-weight: 650; }
+        QPushButton#support:hover { background: #432a36; border-color: #a85b78; }
+        QPushButton#kofi { color: #ffffff; background: #e0565b; border-color: #e0565b;
+            font-weight: 650; padding: 11px 18px; }
+        QPushButton#kofi:hover { background: #ec6a6f; }
+        QPushButton#sponsors { color: #ffffff; background: #9d4ba6; border-color: #9d4ba6;
+            font-weight: 650; padding: 11px 18px; }
+        QPushButton#sponsors:hover { background: #b05cb9; }
+        QLabel#supportHeart { color: #ff7b80; }
         QLineEdit, QSpinBox, QPlainTextEdit, QComboBox { background: #1b222e;
             border: 1px solid #3a4659; border-radius: 7px; padding: 7px;
             selection-background-color: #4a78dc; }
@@ -503,6 +523,16 @@ Please include the version line at the bottom of this window and, if possible, t
 Activity. The packaged app also saves unexpected errors to <code>albummaker-gui-error.log</code> next to
 the settings file.</p>
 
+<h3>Supporting AlbumMaker</h3>
+<p>AlbumMaker is free for noncommercial use. If you enjoy it, <b>♥ Support</b> in the top-right
+corner opens a small window with two ways to donate: <b>☕ Buy me a coffee on Ko-fi</b>
+(a one-off donation, no account needed) and <b>♥ Sponsor on GitHub</b> (one-off or monthly,
+with your GitHub account). You can also go straight to
+<a href="https://ko-fi.com/pietercoppens">ko-fi.com/pietercoppens</a> or
+<a href="https://github.com/sponsors/pajotsetrapper">github.com/sponsors/pajotsetrapper</a>.
+Donations are voluntary: they don't buy features, support or a commercial license, and
+AlbumMaker works the same either way. The app never asks on its own.</p>
+
 <h3>License</h3>
 <p>AlbumMaker is licensed under the PolyForm Noncommercial License 1.0.0. It uses Qt (LGPL-3.0) and
 other third-party software, which keep their own licenses. See the <code>LICENSE</code> and
@@ -529,6 +559,20 @@ def _label(text: str, object_name: Optional[str] = None) -> QLabel:
 LICENSE_TEXT = (
     "Licensed under PolyForm Noncommercial 1.0.0. Uses Qt (LGPL-3.0) and other "
     "third-party software; see THIRD_PARTY_NOTICES."
+)
+
+
+KOFI_URL = "https://ko-fi.com/pietercoppens"
+GITHUB_SPONSORS_URL = "https://github.com/sponsors/pajotsetrapper"
+SUPPORT_TEXT = (
+    "AlbumMaker is made in spare time and is free for personal and other "
+    "noncommercial use. If it helped you turn your trips into something you "
+    "enjoy looking back on, you can say thanks with a small donation. It keeps "
+    "the project going: time for new features, fixes and testing on every platform."
+)
+SUPPORT_FINE_PRINT = (
+    "Donations are voluntary and always welcome, but they don't buy features, "
+    "support or a commercial license. AlbumMaker works the same either way."
 )
 
 
@@ -705,6 +749,13 @@ class MainWindow(QMainWindow):
         self.ffmpeg_button.clicked.connect(lambda: self._offer_ffmpeg_install(force=True))
         header_layout.addWidget(self.ffmpeg_button)
         self._update_ffmpeg_button()
+        self.support_button = QPushButton("\u2665 Support")
+        self.support_button.setObjectName("support")
+        self.support_button.setToolTip(
+            "Like AlbumMaker? Support its development with a donation on Ko-fi or GitHub Sponsors."
+        )
+        self.support_button.clicked.connect(self._show_support)
+        header_layout.addWidget(self.support_button)
         self.status_label = _label("Ready", "status")
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
@@ -1581,6 +1632,76 @@ class MainWindow(QMainWindow):
         buttons.rejected.connect(dialog.reject)
         buttons.accepted.connect(dialog.accept)
         layout.addWidget(buttons)
+        dialog.exec()
+
+    def _open_link(self, url: str) -> None:
+        if not QDesktopServices.openUrl(QUrl(url)):
+            QApplication.clipboard().setText(url)
+            QMessageBox.information(
+                self, "Open this page",
+                f"Your browser could not be opened. The address was copied to the "
+                f"clipboard:\n{url}",
+            )
+
+    def _show_support(self) -> None:
+        """A friendly page with the donation links. Never shown unless asked for."""
+        dialog = QDialog(self)
+        dialog.setWindowTitle("Support AlbumMaker")
+        dialog.setMinimumWidth(460)
+        layout = QVBoxLayout(dialog)
+        layout.setContentsMargins(28, 24, 28, 20)
+        layout.setSpacing(12)
+
+        heart = _label("\u2665", "supportHeart")
+        heart.setStyleSheet("font-size: 40px;")   # the app style sheet sets label fonts
+        heart.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(heart)
+        title = _label("Enjoying AlbumMaker?")
+        title.setStyleSheet("font-size: 20px; font-weight: 700;")
+        title.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(title)
+        text = _label(SUPPORT_TEXT)
+        text.setWordWrap(True)
+        text.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(text)
+
+        buttons_row = QHBoxLayout()
+        buttons_row.setSpacing(10)
+        kofi = QPushButton("\u2615 Buy me a coffee on Ko-fi")
+        kofi.setObjectName("kofi")
+        kofi.setToolTip(f"One-off donation, no account needed: {KOFI_URL}")
+        kofi.clicked.connect(lambda: self._open_link(KOFI_URL))
+        sponsors = QPushButton("\u2665 Sponsor on GitHub")
+        sponsors.setObjectName("sponsors")
+        sponsors.setToolTip(f"One-off or monthly, with your GitHub account: {GITHUB_SPONSORS_URL}")
+        sponsors.clicked.connect(lambda: self._open_link(GITHUB_SPONSORS_URL))
+        buttons_row.addStretch(1)
+        buttons_row.addWidget(kofi)
+        buttons_row.addWidget(sponsors)
+        buttons_row.addStretch(1)
+        layout.addSpacing(4)
+        layout.addLayout(buttons_row)
+        layout.addSpacing(4)
+
+        more = _label(
+            "Not in a position to donate? A star on "
+            '<a href="https://github.com/pajotsetrapper/AlbumMaker">GitHub</a>, a bug report or '
+            "telling a friend helps too. Thank you!", "muted"
+        )
+        more.setWordWrap(True)
+        more.setOpenExternalLinks(True)
+        more.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        layout.addWidget(more)
+        fine = _label(SUPPORT_FINE_PRINT, "muted")
+        fine.setWordWrap(True)
+        fine.setAlignment(Qt.AlignmentFlag.AlignHCenter)
+        fine.setStyleSheet("font-size: 12px;")
+        layout.addWidget(fine)
+
+        close = QDialogButtonBox(QDialogButtonBox.StandardButton.Close)
+        close.setToolTip("Close this window.")
+        close.rejected.connect(dialog.reject)
+        layout.addWidget(close)
         dialog.exec()
 
     def _update_ffmpeg_button(self) -> None:

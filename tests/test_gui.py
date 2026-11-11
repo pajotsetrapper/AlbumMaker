@@ -534,6 +534,42 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("https://github.com/pajotsetrapper/AlbumMaker/issues", _help_html())
         self.assertIn("PolyForm Noncommercial 1.0.0", _about_text())
 
+    def test_support_dialog_offers_both_donation_links(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QDialog, QPushButton
+        from albummaker.gui import app as gui_app
+        window = self.make_window()
+        self.assertEqual(window.support_button.objectName(), "support")
+        self.assertTrue(window.support_button.toolTip())
+        shown = []
+        with mock.patch.object(QDialog, "exec", lambda dialog: shown.append(dialog) or 0):
+            window.support_button.click()
+        self.assertEqual(len(shown), 1)
+        buttons = {b.objectName(): b for b in shown[0].findChildren(QPushButton)}
+        opened = []
+        with mock.patch.object(gui_app.QDesktopServices, "openUrl",
+                               side_effect=lambda url: opened.append(url.toString()) or True):
+            buttons["kofi"].click()
+            buttons["sponsors"].click()
+        self.assertEqual(opened, ["https://ko-fi.com/pietercoppens",
+                                  "https://github.com/sponsors/pajotsetrapper"])
+        for name in ("kofi", "sponsors"):
+            self.assertTrue(buttons[name].toolTip())
+        help_text = gui_app._help_html()
+        for label in ("\u2665 Support", "Buy me a coffee on Ko-fi", "Sponsor on GitHub"):
+            self.assertIn(label, help_text)
+
+    def test_a_link_that_cannot_open_is_copied_instead(self):
+        from unittest import mock
+        from PySide6.QtWidgets import QApplication
+        from albummaker.gui import app as gui_app
+        window = self.make_window()
+        with mock.patch.object(gui_app.QDesktopServices, "openUrl", return_value=False), \
+                mock.patch.object(gui_app.QMessageBox, "information") as info:
+            window._open_link(gui_app.KOFI_URL)
+        self.assertEqual(QApplication.clipboard().text(), gui_app.KOFI_URL)
+        info.assert_called_once()
+
     def test_every_input_control_has_a_tooltip(self):
         from PySide6.QtWidgets import (QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit,
                                        QPlainTextEdit, QSpinBox)
