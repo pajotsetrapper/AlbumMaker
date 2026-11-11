@@ -26,6 +26,10 @@ if __name__ == "__main__":
         from albummaker.gui.commands import _command_prefix
         from albummaker.gui.settings import default_settings
 
+        from albummaker.offline import bundled_assets_dir
+        if bundled_assets_dir() is None:
+            sys.exit("The map library and fonts are missing from this build.")
+
         app = QApplication([])
         window = MainWindow(default_settings())
         window._add_trip_item(".", "")

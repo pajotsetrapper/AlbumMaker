@@ -82,7 +82,9 @@ you can support its development on
 - Trip titles on the all-trips map are shown as text, never as HTML.
 - On Linux, the downloaded app no longer passes its own libraries to the
   system's FFmpeg.
-- Downloading the map library and fonts (at the first start of the live
-  server) no longer hangs on a slow or stalling connection: it shows
+- The desktop apps now include the map library and fonts, so the live
+  server needs no download on its first start.
+- Downloading the map library and fonts (when running from source, or with
+  Refresh offline assets) no longer hangs on a slow or stalling connection: it shows
   progress, gives up on a stalled try after a time limit and tries again,
   up to three times.

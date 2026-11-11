@@ -123,7 +123,8 @@ Download the file for your computer from the
 | Linux x64 (Ubuntu 22.04 or newer, or a similar distribution) | `AlbumMaker-<version>-linux-x64.tar.gz` | `tar -xzf AlbumMaker-*-linux-x64.tar.gz`, then run `AlbumMaker/AlbumMaker` inside the unpacked folder. |
 
 Each download contains the app, its background command runner and
-everything it needs; installing Python is not required. Next to the app you
+everything it needs, including the map library and fonts the pages use;
+installing Python is not required. Next to the app you
 find `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_NOTICES.txt` (the
 licenses of the bundled components, with their exact versions).
 `SHA256SUMS.txt` in the release lists each download's checksum, if you want
@@ -154,9 +155,8 @@ where they are stored).
 
 **System requirements:** Windows 10 or 11 (64-bit), macOS 13 or newer, or a
 64-bit Linux with glibc 2.35 or newer (Ubuntu 22.04 and later). An internet
-connection is needed the first time you start the live server (to download
-the map library and fonts) and to show map tiles you have not viewed
-before. FFmpeg is optional. Running from source instead needs Python 3.9 or
+connection is only needed to show map tiles you have not viewed before (and
+to install FFmpeg). FFmpeg is optional. Running from source instead needs Python 3.9 or
 newer.
 
 ### Run from source
@@ -230,9 +230,13 @@ download page or copy the install command instead. See
 
 Before starting the live server in the app, set up the **Metadata cache
 folder** and the **Map tile cache folder** in **Options → Live server**. Both
-cache folders are created if needed and must be writable. Missing offline
+cache folders are created if needed and must be writable. The downloadable
+app includes the offline assets (the map library and fonts) and puts them in
+place on its first start. When you run the app from source, missing offline
 assets are downloaded automatically the first time you start the server, so
-an internet connection is needed for that first start. Their defaults are
+an internet connection is needed for that first start. Both download in
+chunks, show progress in Activity, and give up and retry a stalled download
+up to three times. The cache folders' defaults are
 `metadata-cache` and `tile-cache` folders
 inside the same application configuration directory as `settings.json`:
 

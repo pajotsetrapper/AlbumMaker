@@ -35,7 +35,7 @@ REPOSITORY_URL = "https://github.com/pajotsetrapper/AlbumMaker"
 NOTICE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md")
 
 
-def _notice() -> str:
+def _notice(assets_dir: Path | None = None) -> str:
     """License notices shipped inside the app.
 
     AlbumMaker does not bundle FFmpeg: it is installed separately by the user
@@ -61,12 +61,36 @@ def _notice() -> str:
         "exception, which allows it to be used with programs under any license.\n"
         "See https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt.\n\n"
         f"{_python_package_notices()}\n\n"
+        f"{_bundled_assets_notice(assets_dir)}"
         "GNU LGPL version 3 license text (relevant to bundled Qt and HEIF libraries):\n"
         f"{lgpl_v3_license}\n\n"
         "GNU GPL version 3 license text (the LGPL version 3 is an additional\n"
         "permission on top of it):\n"
         f"{gpl_v3_license}\n"
     )
+
+
+def _fetch_bundled_assets(target: Path) -> Path:
+    """Download Leaflet and the fonts (checked against their pinned SHA-512)
+    for the app to carry, so the live server needs no download at first start."""
+    from albummaker.offline import BUNDLED_ASSETS_FOLDER, fetch_offline_assets, vendor_ready
+
+    folder = target / BUNDLED_ASSETS_FOLDER
+    if fetch_offline_assets(folder) != 0 or not vendor_ready(folder):
+        raise RuntimeError("Could not download the map library and fonts to include in the app.")
+    return folder
+
+
+def _bundled_assets_notice(assets_dir: Path | None) -> str:
+    """The licenses of the map library and fonts the app carries."""
+    if assets_dir is None:
+        return ""
+    sections = ["--- Map library and fonts (in the app's offline-assets folder) ---",
+                (assets_dir / "VERSIONS.txt").read_text(encoding="utf-8").strip()]
+    for license_file in sorted((assets_dir / "licenses").glob("*.txt")):
+        sections.append(f"\n[{license_file.name}]\n"
+                        f"{license_file.read_text(encoding='utf-8', errors='replace').strip()}")
+    return "\n".join(sections) + "\n\n"
 
 
 def _lgpl_source_notice(version: str) -> str:
@@ -231,11 +255,12 @@ def _build(output: Path) -> Path:
     if output == ROOT:
         raise ValueError(f"Choose a build output folder below or outside the source tree: {output}")
 
-    notice = _notice()
     extension = ".exe" if os.name == "nt" else ""
 
     with tempfile.TemporaryDirectory(prefix="albummaker-build-") as temporary:
         work_root = Path(temporary)
+        assets_dir = _fetch_bundled_assets(work_root)
+        notice = _notice(assets_dir)
         notice_file = work_root / "THIRD_PARTY_NOTICES.txt"
         notice_file.write_text(notice, encoding="utf-8")
         cli_dist = work_root / "cli-dist"
@@ -263,6 +288,8 @@ def _build(output: Path) -> Path:
             "--onedir",
             "--add-binary",
             _binary_argument(cli_binary, "bin"),
+            "--add-data",
+            _data_argument(assets_dir, assets_dir.name),
             "--add-data",
             _data_argument(notice_file, "."),
             "--add-data",

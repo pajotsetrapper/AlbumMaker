@@ -84,6 +84,43 @@ def vendor_ready(vendor_dir: Optional[Path] = None) -> bool:
                ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
 
 
+# The desktop apps carry a copy of these files (tools/build_executable.py
+# downloads and checks them at build time), so the live server needs no
+# download on its first start. The copy lives in this folder inside the app.
+BUNDLED_ASSETS_FOLDER = "offline-assets"
+
+
+def bundled_assets_dir() -> Optional[Path]:
+    """The copy of the offline assets inside a packaged app, or None (running
+    from source, or a build without them)."""
+    base = getattr(sys, "_MEIPASS", None)
+    if not getattr(sys, "frozen", False) or not base:
+        return None
+    folder = Path(base) / BUNDLED_ASSETS_FOLDER
+    return folder if vendor_ready(folder) else None
+
+
+def install_bundled_assets(vendor_dir: Optional[Path] = None) -> bool:
+    """Copy the app's own offline assets into the per-user folder when that
+    folder is not complete yet. True when it copied them. Never raises: if it
+    can't, the assets are simply downloaded as before."""
+    vendor_dir = Path(vendor_dir or VENDOR_DIR)
+    source = bundled_assets_dir()
+    if source is None or vendor_ready(vendor_dir):
+        return False
+    try:
+        files = [f for f in sorted(source.rglob("*")) if f.is_file()]
+        # VERSIONS.txt last: until it is there, the folder never counts as ready
+        files.sort(key=lambda f: f.name == "VERSIONS.txt")
+        for f in files:
+            atomic_write_bytes(vendor_dir / f.relative_to(source), f.read_bytes())
+    except OSError as e:
+        print(f"Could not copy the included map library and fonts ({e}); "
+              "they will be downloaded instead.", file=sys.stderr)
+        return False
+    return vendor_ready(vendor_dir)
+
+
 # A slow or stalling network must never leave the download hanging without a
 # word: each network step may take at most _DOWNLOAD_TIMEOUT seconds, a whole
 # package at most _DOWNLOAD_DEADLINE, and a failed or stalled try is repeated.

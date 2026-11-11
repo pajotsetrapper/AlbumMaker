@@ -338,6 +338,55 @@ class SlowNetworkTests(unittest.TestCase):
         self.assertIn("connection closed", out)
 
 
+class BundledAssetsTests(unittest.TestCase):
+    """The packaged app carries the map library and fonts and puts them in place."""
+
+    def setUp(self):
+        import shutil, tempfile
+        self.tmp = Path(tempfile.mkdtemp())
+        self.addCleanup(shutil.rmtree, self.tmp, True)
+        self.app = self.tmp / "app"                          # stands in for sys._MEIPASS
+        bundled = self.app / offline.BUNDLED_ASSETS_FOLDER
+        for rel, text in {"leaflet/leaflet.js": "js", "leaflet/leaflet.css": "css",
+                          "fonts/fonts.css": "@font-face{}", "fonts/a.woff2": "font",
+                          "licenses/leaflet-LICENSE.txt": "BSD-2-Clause", "VERSIONS.txt": "v"}.items():
+            (bundled / rel).parent.mkdir(parents=True, exist_ok=True)
+            (bundled / rel).write_text(text)
+        self.user = self.tmp / "user" / "offline-assets"
+
+    def frozen(self):
+        return mock.patch.multiple(offline.sys, frozen=True, _MEIPASS=str(self.app), create=True)
+
+    def test_the_included_copy_is_installed_on_first_start(self):
+        written = []
+        real = offline.atomic_write_bytes
+        with self.frozen(), mock.patch.object(offline, "atomic_write_bytes",
+                                              side_effect=lambda p, d: (written.append(p.name), real(p, d))):
+            self.assertTrue(offline.install_bundled_assets(self.user))
+        self.assertTrue(offline.vendor_ready(self.user))
+        self.assertEqual((self.user / "fonts" / "a.woff2").read_text(), "font")
+        self.assertEqual(written[-1], "VERSIONS.txt")         # written last: ready only when complete
+
+    def test_an_existing_complete_folder_is_left_alone(self):
+        with self.frozen():
+            offline.install_bundled_assets(self.user)
+            (self.user / "VERSIONS.txt").write_text("downloaded later")
+            self.assertFalse(offline.install_bundled_assets(self.user))
+        self.assertEqual((self.user / "VERSIONS.txt").read_text(), "downloaded later")
+
+    def test_nothing_happens_when_running_from_source(self):
+        self.assertIsNone(offline.bundled_assets_dir())
+        self.assertFalse(offline.install_bundled_assets(self.user))
+        self.assertFalse(self.user.exists())
+
+    def test_a_copy_that_fails_falls_back_to_downloading(self):
+        err = io.StringIO()
+        with self.frozen(), mock.patch.object(offline, "atomic_write_bytes", side_effect=OSError("disk full")), \
+                mock.patch("sys.stderr", err):
+            self.assertFalse(offline.install_bundled_assets(self.user))
+        self.assertIn("downloaded instead", err.getvalue())
+
+
 class RealDownloadTests(TempDirMixin, unittest.TestCase):
     def test_the_pinned_packages_still_download_and_verify(self):
         vendor = self.make_tmp() / "vendor"
