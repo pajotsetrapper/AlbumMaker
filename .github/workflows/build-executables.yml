@@ -26,6 +26,7 @@ jobs:
           cache-dependency-path: requirements-packaging.txt
       - name: Check the tag matches the version in the code
         if: github.ref_type == 'tag'
+        shell: bash
         run: python tools/check_version.py "$GITHUB_REF_NAME"
       - name: Read version
         id: version
