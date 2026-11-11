@@ -675,6 +675,171 @@ class LiveServerTests(TempDirTest):
             s.close()
 
 
+class _FakeServer:
+    def __init__(self, app):
+        self.app = app
+        self.library = None
+
+
+class DirectEditApiTests(TempDirTest):
+    """The editing API, driven through RequestHandler.do_POST without a socket
+    (so these also run where tests may not open a port)."""
+
+    def setUp(self):
+        super().setUp()
+        make_jpeg(self.photos / "a" / "one.jpg", 1, color=(1, 2, 3))
+        make_jpeg(self.photos / "a" / "two.jpg", 2, color=(4, 5, 6))
+        shutil.copy(self.photos / "a" / "one.jpg", self.photos / "dup.jpg")
+        with mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            items = server.build_index(self.photos, None, dedupe=True)
+            days = scan.group_by_day(items)
+            self.path = self.photos / "trip_content.json"
+            store = server.ContentStore(self.path, [d.date_key for d in days])
+        self.app = server.App(server_args(), items, days, store)
+
+    def post(self, path, body, raw=None):
+        import email
+        import io
+        data = raw if raw is not None else json.dumps(body).encode("utf-8")
+        h = server.RequestHandler.__new__(server.RequestHandler)
+        h.server = _FakeServer(self.app)
+        h.client_address = ("127.0.0.1", 50000)
+        h.command, h.path, h.request_version = "POST", path, "HTTP/1.1"
+        h.requestline = f"POST {path} HTTP/1.1"
+        h.close_connection = False
+        h.headers = email.message_from_string(
+            f"Host: 127.0.0.1:8000\r\nContent-Type: application/json\r\nContent-Length: {len(data)}\r\n\r\n",
+            _class=http.client.HTTPMessage)
+        h.rfile, h.wfile = io.BytesIO(data), io.BytesIO()
+        with mock.patch("sys.stderr"):
+            h.do_POST()
+        head, _, payload = h.wfile.getvalue().partition(b"\r\n\r\n")
+        return int(head.split()[1]), json.loads(payload)
+
+    def saved(self):
+        return json.loads(self.path.read_text())
+
+    def set_content(self, mutate):
+        self.app.content.update(mutate)
+
+    # -- day text: only what changed, and never over a newer hand edit --
+
+    def test_a_title_edit_leaves_a_hand_edited_description_alone(self):
+        self.set_content(lambda c: c["days"]["2026-05-01"].update(title="Old", description="Typed by hand"))
+        status, _ = self.post("/api/day", {"date": "2026-05-01", "title": "New", "original_title": "Old"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.saved()["days"]["2026-05-01"], {"title": "New", "description": "Typed by hand"})
+
+    def test_text_changed_elsewhere_since_the_page_loaded_is_a_409_and_nothing_is_saved(self):
+        self.set_content(lambda c: c["days"]["2026-05-01"].update(description="Changed in the file"))
+        before = self.path.read_bytes()
+        status, reply = self.post("/api/day", {"date": "2026-05-01", "description": "From the form",
+                                                "original_description": "What the page showed"})
+        self.assertEqual(status, 409)
+        self.assertFalse(reply["ok"])
+        self.assertIn("Nothing was saved", reply["error"])
+        self.assertIn("description was changed elsewhere", reply["error"])
+        self.assertEqual(self.path.read_bytes(), before)
+
+    def test_only_the_fields_being_changed_are_checked(self):
+        self.set_content(lambda c: c["days"]["2026-05-01"].update(title="T", description="Changed in the file"))
+        status, _ = self.post("/api/day", {"date": "2026-05-01", "title": "T2", "original_title": "T"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.saved()["days"]["2026-05-01"]["description"], "Changed in the file")
+
+    def test_line_endings_and_outer_spaces_do_not_count_as_a_change(self):
+        self.set_content(lambda c: c["days"]["2026-05-01"].update(description="One\r\n\r\nTwo  "))
+        status, _ = self.post("/api/day", {"date": "2026-05-01", "description": "Three",
+                                            "original_description": "One\n\nTwo"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.saved()["days"]["2026-05-01"]["description"], "Three")
+
+    def test_without_an_original_the_edit_is_saved_as_before(self):
+        self.set_content(lambda c: c["days"]["2026-05-01"].update(title="Anything"))
+        self.assertEqual(self.post("/api/day", {"date": "2026-05-01", "title": "Mine"})[0], 200)
+        self.assertEqual(self.saved()["days"]["2026-05-01"]["title"], "Mine")
+
+    def test_an_original_that_is_not_text_is_refused(self):
+        status, reply = self.post("/api/day", {"date": "2026-05-01", "title": "x", "original_title": 5})
+        self.assertEqual(status, 400)
+        self.assertIn("original_title", reply["error"])
+
+    def test_a_caption_changed_elsewhere_is_not_overwritten(self):
+        self.set_content(lambda c: c["photos"].update({"a/one.jpg": {"caption": "Hand-written"}}))
+        status, _ = self.post("/api/photo", {"rel": "a/one.jpg", "caption": "Mine", "original_caption": ""})
+        self.assertEqual(status, 409)
+        self.assertEqual(self.saved()["photos"]["a/one.jpg"]["caption"], "Hand-written")
+        status, _ = self.post("/api/photo", {"rel": "a/one.jpg", "caption": "Mine",
+                                              "original_caption": "Hand-written"})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.saved()["photos"]["a/one.jpg"]["caption"], "Mine")
+
+    # -- trip cover --
+
+    def test_the_trip_cover_is_saved_and_cleared(self):
+        self.assertEqual(self.post("/api/trip-cover", {"rel": "a/two.jpg"}), (200, {"ok": True}))
+        self.assertEqual(self.saved()["cover"], "a/two.jpg")
+        self.assertEqual(self.post("/api/trip-cover", {"rel": None})[0], 200)
+        self.assertNotIn("cover", self.saved())
+
+    def test_the_trip_cover_must_be_a_known_photo(self):
+        for rel in ("nope.jpg", 5, ["a/one.jpg"]):
+            with self.subTest(rel=rel):
+                status, reply = self.post("/api/trip-cover", {"rel": rel})
+                self.assertEqual(status, 400)
+                self.assertEqual(reply["error"], "Unknown photo")
+        self.assertNotIn("cover", self.saved())
+
+    def test_a_hidden_photo_cannot_be_the_trip_cover(self):
+        self.set_content(lambda c: c["photos"].update({"a/two.jpg": {"hidden": True},
+                                                       "dup.jpg": {"hidden": True}}))
+        for rel in ("a/two.jpg", "a/one.jpg"):          # a/one.jpg: hidden through its duplicate
+            with self.subTest(rel=rel):
+                status, reply = self.post("/api/trip-cover", {"rel": rel})
+                self.assertEqual(status, 400)
+                self.assertIn("hidden photo can't be the trip's cover", reply["error"])
+        self.assertNotIn("cover", self.saved())
+
+    # -- malformed input --
+
+    def test_json_nested_too_deeply_is_a_400_not_a_500(self):
+        status, reply = self.post("/api/day", None, raw=b"[" * 30000 + b"]" * 30000)
+        self.assertEqual((status, reply), (400, {"ok": False, "error": "Invalid JSON"}))
+
+
+class TileAttributionTests(TempDirTest):
+    def make_app(self, attribution):
+        make_jpeg(self.photos / "a" / "one.jpg", 1)
+        with mock.patch("sys.stdout"), mock.patch("sys.stderr"):
+            items = server.build_index(self.photos, None, dedupe=True)
+            days = scan.group_by_day(items)
+            store = server.ContentStore(self.photos / "trip_content.json", [d.date_key for d in days])
+        shared = server.Shared(server_args(), tile_attribution=attribution)
+        return server.App(server_args(), items, days, store, shared=shared)
+
+    def test_the_credit_reaches_the_pages_as_script_safe_json(self):
+        app = self.make_app("Tiles </script><b>Acme</b> & co")
+        for page in (app.render_homepage(), app.render_day("2026-05-01")):
+            self.assertIn('window.TILE_ATTRIBUTION = "Tiles \\u003c/script\\u003e\\u003cb\\u003eAcme'
+                          '\\u003c/b\\u003e \\u0026 co";', page)
+            self.assertNotIn("<b>Acme", page)
+
+    def test_without_one_the_pages_use_their_openstreetmap_credit(self):
+        app = self.make_app(None)
+        self.assertIn("window.TILE_ATTRIBUTION = null;", app.render_homepage())
+
+    def test_a_custom_tile_url_is_credited_to_its_host(self):
+        self.assertEqual(server.tile_host_credit("https://{s}.tiles.example.com/{z}/{x}/{y}.png?key=SECRET"),
+                         "Map tiles: tiles.example.com")
+        self.assertEqual(server.tile_host_credit("https://user:pw@maps.example.org:8080/{z}/{x}/{y}"),
+                         "Map tiles: maps.example.org:8080")
+
+    def test_the_option_is_accepted(self):
+        args = server.build_parser().parse_args(["--tile-attribution", "Map data: OSM"])
+        self.assertEqual(args.tile_attribution, "Map data: OSM")
+        self.assertIsNone(server.build_parser().parse_args([]).tile_attribution)
+
+
 class TileProviderGarbageTests(unittest.TestCase):
     def test_a_garbled_answer_is_a_failed_download_not_a_crash(self):
         # http.client raises BadStatusLine (an HTTPException, not an OSError) for this

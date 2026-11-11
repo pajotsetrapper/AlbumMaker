@@ -45,8 +45,8 @@ from . import __version__
 
 from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
-from .content import (CAPTION_MAX, ContentFileError, default_content, hidden_rels, is_hidden,
-                      load_or_init_content, parse_content_file, report_unknown_photo_keys,
+from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, hidden_rels, is_hidden,
+                      load_or_init_content, photo_entry, parse_content_file, report_unknown_photo_keys,
                       resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, write_content)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
 from .locations import describe_days, locate_items
@@ -57,10 +57,10 @@ from .library import (TripListError, build_library_context, check_library_args, 
                       read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
-                     build_day_context, build_index_context, get_templates_for_content)
+                     build_day_context, build_index_context)
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
-from .util import atomic_write_bytes
+from .util import atomic_write_bytes, script_json
 
 # mimetypes' built-in table is inconsistent across OS/Python installs for a
 # few formats that matter a lot here (HEIC especially) — pin the ones we
@@ -483,10 +483,12 @@ class Shared:
 
     def __init__(self, args, tiles: Optional[TileCache] = None, tile_client_url: str = DEFAULT_TILE_URL,
                  vendor: bool = False, allowed_hostnames: Optional[set] = None,
-                 editor_token: Optional[str] = None):
+                 editor_token: Optional[str] = None, tile_attribution: Optional[str] = None):
         self.args = args
         self.tiles = tiles
         self.tile_client_url = tile_client_url
+        # plain text for the maps' corner credit; None: the pages' own OpenStreetMap credit
+        self.tile_attribution = tile_attribution
         self.vendor = vendor
         self.allowed_hostnames = allowed_hostnames or {"localhost"}
         self.editor_token = editor_token or secrets.token_urlsafe(32)
@@ -526,9 +528,16 @@ class App:
 
     @property
     def editor_cookie(self) -> str:
-        # per port: cookies aren't separated by port, and another server on
-        # localhost must not receive (or clobber) this one
+        # Per port, so two servers on one host don't overwrite each other's
+        # cookie. It is NOT a privacy boundary: browsers send a host's cookies
+        # to every port of it, so any other server on localhost (or this host
+        # name) receives this cookie too, under its own name.
         return f"trip_editor_{self.args.port}"
+
+    def page_extras(self) -> dict:
+        """What the live pages have on top of the shared page context: the
+        map credit set with --tile-attribution (or made for --tile-url)."""
+        return {"tile_attribution_json": script_json(self.tile_attribution)}
 
     def urls(self) -> "LiveUrls":
         return LiveUrls(self)
@@ -536,8 +545,8 @@ class App:
     def render_homepage(self, editable: bool = False) -> str:
         content = self.content.get()
         days = visible_days(self.days, content, editable)
-        template = get_templates_for_content(content)['index']
-        return template.render(**build_index_context(days, content, self.urls()))
+        template = INDEX_TEMPLATE
+        return template.render(**build_index_context(days, content, self.urls()), **self.page_extras())
 
     def render_day(self, date_key: str, editable: bool = False) -> Optional[str]:
         content = self.content.get()
@@ -545,8 +554,9 @@ class App:
         idx = next((i for i, d in enumerate(days) if d.date_key == date_key), None)
         if idx is None:
             return None
-        template = get_templates_for_content(content)['day']
-        return template.render(**build_day_context(days, idx, content, self.urls(), editable=editable))
+        template = DAY_TEMPLATE
+        return template.render(**build_day_context(days, idx, content, self.urls(), editable=editable),
+                               **self.page_extras())
 
     # -- image work, cached and limited -------------------------------------
 
@@ -599,10 +609,10 @@ class Library:
 
     def render(self) -> str:
         summaries = [s for s in (self.summary(name) for name in self.trips) if s is not None]
-        urls = next(iter(self.trips.values())).urls()
+        first = next(iter(self.trips.values()))
         return LIBRARY_TEMPLATE.render(**build_library_context(
-            summaries, urls, footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION,
-            title=self.library_title))
+            summaries, first.urls(), footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION,
+            title=self.library_title), **first.page_extras())
 
 
 class LiveUrls(SiteUrls):
@@ -683,6 +693,36 @@ class TripHTTPServer(ThreadingHTTPServer):
         self.app = app              # the trip (in a library: any trip, for the shared settings)
         self.library = library
         super().__init__(address, handler)
+
+
+class EditConflict(Exception):
+    """An edit made over text that has changed since the page was loaded
+    (trip_content.json edited by hand, another browser): answered with 409
+    and nothing saved, so neither version is silently lost."""
+
+
+def _original_text(body: dict, field: str) -> Optional[str]:
+    """The `original_<field>` an edit was made from: the text the page showed.
+    None when it isn't sent (older pages, scripts), which skips the check."""
+    value = body.get("original_" + field)
+    if value is not None and not isinstance(value, str):
+        raise ValueError(f"original_{field} must be text")
+    return value
+
+
+def _comparable(text: str, single_line: bool = False) -> str:
+    # as a browser hands the text back: CRLF as LF; a one-line <input> drops line breaks
+    text = text.replace("\r\n", "\n").replace("\r", "\n")
+    if single_line:
+        text = text.replace("\n", "")
+    return text.strip()
+
+
+def _check_unchanged(current: str, original: str, what: str, single_line: bool = False):
+    if _comparable(current, single_line) != _comparable(original, single_line):
+        raise EditConflict(f"Nothing was saved: {what} was changed elsewhere (in trip_content.json or "
+                           f"another browser) since this page was loaded. Copy your text, reload the "
+                           f"page to see the current version, then edit that.")
 
 
 class RequestHandler(BaseHTTPRequestHandler):
@@ -1026,7 +1066,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self._fail(413, "Request too large")
         try:
             body = json.loads(self.rfile.read(length).decode("utf-8"))
-        except (ValueError, UnicodeDecodeError):
+        except (ValueError, UnicodeDecodeError, RecursionError):   # RecursionError: [[[[...]]]] nested too deep
             return self._send_json({"ok": False, "error": "Invalid JSON"}, 400)
         if not isinstance(body, dict):
             return self._send_json({"ok": False, "error": "Expected a JSON object"}, 400)
@@ -1041,6 +1081,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self._api_day(body)
         except ContentFileError as e:
             return self._send_json({"ok": False, "error": f"Nothing was saved: {e}"}, 409)
+        except EditConflict as e:
+            return self._send_json({"ok": False, "error": str(e)}, 409)
         except ValueError as e:
             return self._send_json({"ok": False, "error": str(e)}, 400)
         except OSError as e:      # disk full, no permission, ...: the file itself is untouched
@@ -1057,6 +1099,7 @@ class RequestHandler(BaseHTTPRequestHandler):
     def _api_photo(self, body: dict) -> dict:
         item = self._item_by_rel(body.get("rel"))
         fields = {}
+        original = _original_text(body, "caption")
         if "caption" in body:
             if not isinstance(body["caption"], str):
                 raise ValueError("caption must be text")
@@ -1071,8 +1114,12 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not fields:
             raise ValueError("Nothing to change")
         out = {}
-        self.app.content.update(lambda c: out.update(
-            photo=set_photo_fields(c, item.rel, aliases=item.aliases, **fields)))
+
+        def mutate(c):
+            if original is not None and "caption" in fields:
+                _check_unchanged(photo_entry(c, item)["caption"], original, "This photo's caption")
+            out.update(photo=set_photo_fields(c, item.rel, aliases=item.aliases, **fields))
+        self.app.content.update(mutate)
         return out
 
     def _api_cover(self, body: dict) -> dict:
@@ -1092,24 +1139,45 @@ class RequestHandler(BaseHTTPRequestHandler):
         if rel is not None:
             if not isinstance(rel, str) or rel not in self.app.known_rels:
                 raise ValueError("Unknown photo")
-        self.app.content.update(lambda c: set_trip_cover(c, rel))
+
+        def mutate(c):
+            # checked against the file as it is now: visitors never see a hidden
+            # photo, so it can't be what the trip shows them on its card
+            if rel is not None and is_hidden(self.app.by_rel[rel], hidden_rels(c)):
+                raise ValueError("A hidden photo can't be the trip's cover: visitors don't see it. "
+                                 "Unhide it first, or pick another photo.")
+            set_trip_cover(c, rel)
+        self.app.content.update(mutate)
         return {}
 
     def _api_day(self, body: dict) -> dict:
         date = body.get("date")
         if not isinstance(date, str) or date not in self.app.day_keys:
             raise ValueError("Unknown day")
-        fields = {}
+        fields, originals = {}, {}
         for key, limit in (("title", 200), ("description", 20000)):
+            original = _original_text(body, key)
             if key in body:
                 if not isinstance(body[key], str):
                     raise ValueError(f"{key} must be text")
                 if len(body[key]) > limit:
                     raise ValueError(f"{key} is too long (max {limit} characters)")
                 fields[key] = body[key]
+                if original is not None:
+                    originals[key] = original
         if not fields:
             raise ValueError("Nothing to change")
-        self.app.content.update(lambda c: set_day_text(c, date, **fields))
+
+        def mutate(c):
+            # only the fields being changed are checked: an edit of the title
+            # must not fail because the description was changed elsewhere
+            title, description = day_text(c, date)
+            if "title" in originals:
+                _check_unchanged(title, originals["title"], "This day's title", single_line=True)
+            if "description" in originals:
+                _check_unchanged(description, originals["description"], "This day's description")
+            set_day_text(c, date, **fields)
+        self.app.content.update(mutate)
         return {}
 
     # -- routing --------------------------------------------------------
@@ -1348,6 +1416,11 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--tile-url", metavar="TEMPLATE",
                         help="Where map tiles come from, with {z}, {x} and {y} in it (default: "
                              "OpenStreetMap). Use this for a tile provider you have an account with.")
+    parser.add_argument("--tile-attribution", metavar="TEXT",
+                        help="The credit shown in the corner of the maps, as plain text, e.g. "
+                             "\"Map tiles: Example Maps, data: OpenStreetMap contributors\". Default: the "
+                             "OpenStreetMap credit, or \"Map tiles: <host>\" with --tile-url. Use the "
+                             "wording your tile provider asks for.")
     parser.add_argument("--read-only", action="store_true",
                         help="Turn off in-page editing (captions, favorites, hiding, covers, day text). "
                              "Nothing is written to trip_content.json at all, not even at startup.")
@@ -1369,6 +1442,18 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--verbose", action="store_true",
                         help="Log every request (normally only errors and slow requests are shown).")
     return parser
+
+
+def tile_host_credit(tile_url: str) -> str:
+    """The neutral credit for a --tile-url without --tile-attribution: the
+    tiles' host name ("{s}." subdomain placeholders left out). Not the
+    OpenStreetMap credit, which would be wrong for most other tile sources."""
+    try:
+        host = urlsplit(tile_url).netloc.rsplit("@", 1)[-1]
+    except ValueError:
+        host = ""
+    host = re.sub(r"^(\{[a-z]\}\.)+", "", host)
+    return f"Map tiles: {host}" if host else "Map tiles: custom source"
 
 
 def main(argv=None):
@@ -1398,6 +1483,13 @@ def main(argv=None):
                 part in args.tile_url for part in ("{z}", "{x}", "{y}"))):
             parser.error("--tile-url must start with http:// or https:// and contain {z}, {x} and {y}")
         tile_upstream = tile_client_url = args.tile_url
+    tile_attribution = None              # None: the pages show the OpenStreetMap credit
+    if args.tile_attribution is not None:
+        tile_attribution = " ".join(args.tile_attribution.split())
+        if not tile_attribution or len(tile_attribution) > 300:
+            parser.error("--tile-attribution must be some text, at most 300 characters")
+    elif args.tile_url:
+        tile_attribution = tile_host_credit(args.tile_url)
     tiles = None
     if args.tile_cache:
         try:
@@ -1426,7 +1518,7 @@ def main(argv=None):
     allowed = {"localhost", hostname, hostname.split(".")[0] + ".local"}
     allowed |= {h.lower().rstrip(".") for h in args.allow_host}
     shared = Shared(args, tiles=tiles, tile_client_url=tile_client_url, vendor=vendor_ready(),
-                    allowed_hostnames=allowed)
+                    allowed_hostnames=allowed, tile_attribution=tile_attribution)
 
     library = None
     if args.library:
@@ -1467,6 +1559,9 @@ def main(argv=None):
     else:
         print("Maps and fonts load from the internet. To make them work offline, run once while "
               "online:  python album_server.py --fetch-offline-assets")
+    if args.tile_url and args.tile_attribution is None:
+        print(f"The maps credit their tiles as \"{tile_attribution}\". Your tile provider likely asks for "
+              f"its own wording (and the map data's, e.g. OpenStreetMap): set it with --tile-attribution.")
     if tiles is not None:
         cached = sum(1 for _ in args.tile_cache.rglob("*.png"))
         print(f"Map tiles are cached in {args.tile_cache} ({cached} so far); browse the maps while online "
@@ -1489,6 +1584,10 @@ def main(argv=None):
         if lan_ip:
             print(f"Also reachable on your network at: http://{lan_ip}:{args.port}/")
         print("(anyone on your network can open this while the server is running — there's no login)")
+    if not args.read_only and not args.editor_link_only:
+        print("Note: a tunnel or port forward (ssh -R, VS Code port forwarding, ...) reaches this server from "
+              "this computer, so its visitors count as editors unless it adds proxy headers; use "
+              "--editor-link-only with one.")
     print("Press Ctrl+C to stop.\n")
 
     try:
