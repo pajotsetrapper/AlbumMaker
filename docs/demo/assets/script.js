@@ -1,3 +1,7 @@
+/* AlbumMaker - Copyright (c) 2026 Pieter Remi Coppens
+ * SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
+ * https://polyformproject.org/licenses/noncommercial/1.0.0
+ * Third-party components keep their own licenses (see THIRD_PARTY_NOTICES.md). */
 // ---------- shared map helpers ----------
 function fmtTime(iso){
   const d = new Date(iso);

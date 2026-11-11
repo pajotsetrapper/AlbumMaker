@@ -461,7 +461,8 @@ software with its own license (LGPL or GPL, depending on the build; see
 `python -m albummaker install-ffmpeg`, which asks first and then runs your
 system's package manager (`winget` on Windows, Homebrew on macOS and Linux).
 The desktop app offers the same on first start, and has an **Install FFmpeg**
-button. Or install it yourself:
+button. If no package manager is found, the dialog offers **Open download
+page** and **Copy command** instead. Or install it yourself:
 
 - macOS: `brew install ffmpeg`
 - Ubuntu/Debian: `sudo apt install ffmpeg`
@@ -1610,6 +1611,19 @@ license. Any earlier version that was published under the MIT License remains MI
 for those who received it.
 
 For commercial licensing, contact the author via the repository.
+
+**What counts as noncommercial?** Personal and family use, hobby projects,
+research, teaching, and use by charities, schools and public bodies are fine.
+Making albums for paying clients, selling AlbumMaker or a service built on it,
+or using it inside a business is commercial and needs a separate license. The
+license text is the authority; this summary is not legal advice.
+
+**Your albums are yours.** The license covers the AlbumMaker program and the
+CSS and JavaScript it copies into generated sites. It does not cover your
+photos, videos or text, and it puts no terms on the sites you generate beyond
+keeping the notice at the top of those files. The sample site in
+[`docs/demo`](./docs/demo/NOTICE.txt) lists what it contains and under which
+terms.
 
 Third-party software and data are not relicensed; their licenses,
 attributions and binary-distribution notes are listed in
