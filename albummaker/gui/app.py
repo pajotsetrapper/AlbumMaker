@@ -15,7 +15,7 @@ from html import escape as _escape_html
 from pathlib import Path
 from typing import Optional
 
-from PySide6.QtCore import QProcess, QProcessEnvironment, QTimer, Qt, QUrl
+from PySide6.QtCore import QEvent, QProcess, QProcessEnvironment, QTimer, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QDoubleValidator, QIcon, QPalette, QPixmap
 from PySide6.QtWidgets import (
     QApplication,
@@ -469,12 +469,13 @@ class MainWindow(QMainWindow):
         help_button.setToolTip("Read plain-language help for the workflows and settings.")
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
-        ffmpeg_button = QPushButton("Install FFmpeg")
-        ffmpeg_button.setToolTip(
+        self.ffmpeg_button = QPushButton("Install FFmpeg")
+        self.ffmpeg_button.setToolTip(
             "Install FFmpeg, the separate program AlbumMaker uses for video dates and previews."
         )
-        ffmpeg_button.clicked.connect(lambda: self._offer_ffmpeg_install(force=True))
-        header_layout.addWidget(ffmpeg_button)
+        self.ffmpeg_button.clicked.connect(lambda: self._offer_ffmpeg_install(force=True))
+        header_layout.addWidget(self.ffmpeg_button)
+        self._update_ffmpeg_button()
         self.status_label = _label("Ready", "status")
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
@@ -1308,6 +1309,18 @@ class MainWindow(QMainWindow):
         layout.addWidget(buttons)
         dialog.exec()
 
+    def _update_ffmpeg_button(self) -> None:
+        """Show the Install FFmpeg button only while FFmpeg cannot be found."""
+        from ..ffmpeg_setup import ffmpeg_missing
+        self.ffmpeg_button.setVisible(ffmpeg_missing())
+
+    def changeEvent(self, event) -> None:
+        # FFmpeg may have been installed outside AlbumMaker (for example in a
+        # terminal), so check again whenever the window comes back to the front.
+        if event.type() == QEvent.Type.ActivationChange and self.isActiveWindow():
+            self._update_ffmpeg_button()
+        super().changeEvent(event)
+
     def _offer_ffmpeg_install(self, force: bool = False) -> None:
         """Ask before installing FFmpeg, which AlbumMaker uses but does not include."""
         from ..ffmpeg_setup import (
@@ -1584,6 +1597,8 @@ class MainWindow(QMainWindow):
         self._stopping = False
         if kind == "offline assets":
             self._update_server_setup()
+        if kind == "ffmpeg setup":
+            self._update_ffmpeg_button()
         self._append_log(f"{kind.capitalize()} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
