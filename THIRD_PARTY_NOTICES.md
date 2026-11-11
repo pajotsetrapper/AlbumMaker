@@ -67,11 +67,13 @@ redistribute the application.
 from Natural Earth 1:110m land, which is in the public domain (see the table
 above).
 
-`docs/demo/media/` (sample photos for the demo site): taken by the author,
-Pieter Remi Coppens, and published with the demo; see
+`docs/demo/media/` (the sample pictures in the demo site): illustrations made
+by the author, Pieter Remi Coppens, for the demo; see
 [`docs/demo/NOTICE.txt`](./docs/demo/NOTICE.txt).
 The sample trip's texts and GPS track in `docs/demo-source/` are fictional and
 written by the author.
 
-`albummaker/gui/assets/albummaker.ico` (the app icon): its origin and license
-are not yet recorded here.
+`albummaker/gui/assets/albummaker.ico` (the app icon): original artwork made
+for AlbumMaker by the author, Pieter Remi Coppens, with the help of GitHub
+Copilot. It is part of AlbumMaker and covered by its license
+([`LICENSE`](./LICENSE)).
