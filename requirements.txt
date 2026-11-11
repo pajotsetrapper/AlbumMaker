@@ -1,5 +1,10 @@
 Pillow>=10.0
-pi-heif>=0.18
 Jinja2>=3.0
 MarkupSafe>=2.0
 tzdata>=2024.1
+# HEIC/HEIF photos (iPhone). pi-heif is the decode-only reader and is what
+# executables use. It has no ready-made wheel for Python 3.15 yet, so on 3.15
+# pillow-heif is installed instead. Use that for running from source only:
+# its wheels contain the GPL x265 encoder, so never build executables with it.
+pi-heif>=0.18; python_version < "3.15"
+pillow-heif>=1.0; python_version >= "3.15"

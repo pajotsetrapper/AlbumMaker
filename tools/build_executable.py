@@ -217,10 +217,23 @@ def _build(output: Path) -> Path:
     return target
 
 
+def _require_decode_only_heif() -> None:
+    """Refuse to build with pillow-heif: its wheels contain the GPL x265 encoder."""
+    from importlib.util import find_spec
+    if find_spec("pi_heif") is None or find_spec("pillow_heif") is not None:
+        raise SystemExit(
+            "Executables must be built with pi-heif and without pillow-heif, "
+            "whose wheels bundle the GPL x265 encoder. Use Python 3.9 to 3.14 "
+            "(pi-heif has no Python 3.15 wheel yet) in a clean environment, then "
+            "run: python -m pip uninstall pillow-heif && python -m pip install pi-heif"
+        )
+
+
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT, help="Build output folder.")
     args = parser.parse_args(argv)
+    _require_decode_only_heif()
     target = _build(args.output)
     print(f"Built self-contained desktop app: {target}")
     print("Project and third-party license notices are included with the app.")

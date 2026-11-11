@@ -42,8 +42,19 @@ class ExecutableLicenseNoticeTests(unittest.TestCase):
         requirements = (build_executable.ROOT / "requirements-packaging.txt").read_text()
         self.assertNotIn("static-ffmpeg", requirements)
         base = (build_executable.ROOT / "requirements.txt").read_text()
-        self.assertIn("pi-heif", base)
-        self.assertNotIn("pillow-heif", base)
+        self.assertIn('pi-heif>=0.18; python_version < "3.15"', base)
+        # pillow-heif (GPL x265 inside) is only a source-install fallback for 3.15+.
+        self.assertIn('pillow-heif>=1.0; python_version >= "3.15"', base)
+        self.assertIn("-r requirements.txt", requirements)
+
+    def test_build_refuses_pillow_heif_and_needs_pi_heif(self):
+        both = lambda name: object() if name in ("pi_heif", "pillow_heif") else None
+        only_pi = lambda name: object() if name == "pi_heif" else None
+        with mock.patch("importlib.util.find_spec", side_effect=both):
+            with self.assertRaises(SystemExit):
+                build_executable._require_decode_only_heif()
+        with mock.patch("importlib.util.find_spec", side_effect=only_pi):
+            build_executable._require_decode_only_heif()
 
     def test_missing_repository_license_reports_its_path(self):
         path = Path("missing-license.txt")

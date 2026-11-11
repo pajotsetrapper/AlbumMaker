@@ -40,7 +40,7 @@ libde265 libraries from `pi-heif` (LGPL-3.0). Keep these as separate,
 replaceable libraries, include their license texts (the build does this), and
 do not forbid users from modifying them or debugging such changes. AlbumMaker's
 noncommercial license applies only to AlbumMaker's own code, not to these
-libraries. Do **not** switch back to `pillow-heif` for builds: its binary
+libraries. On Python 3.15, `requirements.txt` installs `pillow-heif` for source users because `pi-heif` has no wheel there yet; that is the user's own install. Do **not** use `pillow-heif` for executable builds (the build script refuses): its binary
 wheels include x265, which is GPL-2.0 and does not mix with a noncommercial
 license. Obtain qualified legal advice before you sell or otherwise
 redistribute the application.
