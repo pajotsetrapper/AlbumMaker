@@ -531,6 +531,7 @@ class MainWindow(QMainWindow):
         scroll.setWidgetResizable(True)
         scroll.setFrameShape(QFrame.Shape.NoFrame)
         scroll.setWidget(root)
+        self._main_scroll = scroll
         self.setCentralWidget(scroll)
 
         self._build_options_dialog()
@@ -1113,6 +1114,45 @@ class MainWindow(QMainWindow):
     def _toggle_activity(self, visible: bool) -> None:
         self.activity_box.setVisible(visible)
         self.activity_toggle.setText("Hide activity" if visible else "Show activity")
+        if visible:
+            # Let the layout take the new box into account before measuring.
+            QTimer.singleShot(0, self._fit_height_to_content)
+
+    def _available_screen_rect(self):
+        screen = self.screen() or QApplication.primaryScreen()
+        return screen.availableGeometry() if screen is not None else None
+
+    def _fit_to_screen(self) -> None:
+        """Shrink the window (and move it) so it fits on the screen it is on."""
+        available = self._available_screen_rect()
+        if available is None or self.isMaximized() or self.isFullScreen():
+            return
+        frame = self.frameGeometry()
+        extra_w = frame.width() - self.width()
+        extra_h = frame.height() - self.height()
+        width = min(self.width(), available.width() - extra_w)
+        height = min(self.height(), available.height() - extra_h)
+        if (width, height) != (self.width(), self.height()):
+            self.resize(max(width, self.minimumWidth()), max(height, self.minimumHeight()))
+        frame = self.frameGeometry()
+        x = min(max(frame.left(), available.left()), available.right() - frame.width() + 1)
+        y = min(max(frame.top(), available.top()), available.bottom() - frame.height() + 1)
+        if (x, y) != (frame.left(), frame.top()):
+            self.move(max(x, available.left()), max(y, available.top()))
+
+    def _fit_height_to_content(self) -> None:
+        """Grow the window so everything, including Activity, is visible
+        without scrolling, as far as the screen allows."""
+        if self.isMaximized() or self.isFullScreen():
+            return
+        content = self._main_scroll.widget()
+        missing = content.sizeHint().height() - self._main_scroll.viewport().height()
+        if missing <= 0:
+            return
+        self.resize(self.width(), self.height() + missing)
+        self._fit_to_screen()
+        if self.activity_box.isVisible():
+            self._main_scroll.ensureWidgetVisible(self.activity_box, 0, 0)
 
     def _apply_theme(self, *_args) -> None:
         if not hasattr(self, "theme_combo"):
@@ -1767,5 +1807,6 @@ def main() -> int:
         return 1
     window = MainWindow(settings)
     window.show()
+    window._fit_to_screen()
     QTimer.singleShot(600, window._offer_ffmpeg_install)
     return app.exec()
