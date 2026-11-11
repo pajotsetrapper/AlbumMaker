@@ -21,12 +21,16 @@ from PIL import Image
 from PIL.ExifTags import GPSTAGS
 from .timezones import get_timezone
 
-try:
-    import pillow_heif
-    pillow_heif.register_heif_opener()
-    HEIF_SUPPORT = True
-except ImportError:
-    HEIF_SUPPORT = False
+# pi-heif is the decode-only HEIF plugin (no GPL encoder inside); pillow-heif
+# is accepted too if someone already has it installed.
+HEIF_SUPPORT = False
+for _heif_module in ("pi_heif", "pillow_heif"):
+    try:
+        __import__(_heif_module).register_heif_opener()
+        HEIF_SUPPORT = True
+        break
+    except ImportError:
+        continue
 
 
 def ffmpeg_input(path: Path) -> str:
@@ -98,12 +102,14 @@ def check_ffmpeg():
     missing = [tool for tool in ("ffmpeg", "ffprobe") if find_multimedia_tool(tool) is None]
     if missing:
         print(f"Note: {' and '.join(missing)} not found. Videos will still be included, but "
-              f"without date, location or preview frame. Install ffmpeg to fix this.",
+              f"without date, location or preview frame. Install FFmpeg to fix this: run "
+              f"`albummaker install-ffmpeg` or see https://ffmpeg.org/download.html.",
               file=sys.stderr)
 
 
 def find_multimedia_tool(name: str) -> Optional[str]:
-    """Find a bundled multimedia tool first, then one installed on the system."""
+    """Find a bundled tool, then one the user placed in AlbumMaker's own folder,
+    then one on the PATH, then one in the usual install folders."""
     if name not in ("ffmpeg", "ffprobe"):
         raise ValueError(f"Unsupported multimedia tool: {name}")
     frozen_dir = getattr(sys, "_MEIPASS", None)
@@ -112,7 +118,12 @@ def find_multimedia_tool(name: str) -> Optional[str]:
         bundled = Path(frozen_dir) / "ffmpeg" / executable
         if bundled.is_file():
             return str(bundled)
-    return shutil.which(name)
+    from .ffmpeg_setup import system_search_dirs, user_search_dirs
+    return (
+        shutil.which(name, path=os.pathsep.join(user_search_dirs()))
+        or shutil.which(name)
+        or shutil.which(name, path=os.pathsep.join(system_search_dirs()))
+    )
 
 
 def multimedia_tool(name: str) -> str:

@@ -52,7 +52,12 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
-from .commands import build_command, offline_assets_command, server_command
+from .commands import (
+    build_command,
+    ffmpeg_install_command,
+    offline_assets_command,
+    server_command,
+)
 from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
                        prepare_tile_cache, save_settings, settings_path, write_library_file)
 from ..timezones import timezone_search_choices
@@ -464,6 +469,12 @@ class MainWindow(QMainWindow):
         help_button.setToolTip("Read plain-language help for the workflows and settings.")
         help_button.clicked.connect(self._show_help)
         header_layout.addWidget(help_button)
+        ffmpeg_button = QPushButton("Install FFmpeg")
+        ffmpeg_button.setToolTip(
+            "Install FFmpeg, the separate program AlbumMaker uses for video dates and previews."
+        )
+        ffmpeg_button.clicked.connect(lambda: self._offer_ffmpeg_install(force=True))
+        header_layout.addWidget(ffmpeg_button)
         self.status_label = _label("Ready", "status")
         header_layout.addWidget(self.status_label)
         outer.addWidget(header)
@@ -1297,6 +1308,48 @@ class MainWindow(QMainWindow):
         layout.addWidget(buttons)
         dialog.exec()
 
+    def _offer_ffmpeg_install(self, force: bool = False) -> None:
+        """Ask before installing FFmpeg, which AlbumMaker uses but does not include."""
+        from ..ffmpeg_setup import (
+            LICENSE_NOTE,
+            ffmpeg_missing,
+            install_plan,
+            manual_instructions,
+            mark_declined,
+            was_declined,
+        )
+        if not ffmpeg_missing():
+            if force:
+                QMessageBox.information(self, "FFmpeg", "FFmpeg is already installed.")
+            return
+        if not force and was_declined():
+            return
+        plan = install_plan()
+        box = QMessageBox(self)
+        box.setIcon(QMessageBox.Icon.Question)
+        box.setWindowTitle("Install FFmpeg?")
+        text = (
+            "AlbumMaker uses a separate program called FFmpeg to read video dates and "
+            "make video previews. Without it, photos work normally but videos have no "
+            "date, location or preview.\n\n" + LICENSE_NOTE
+        )
+        install_button = None
+        if plan is not None:
+            text += "\n\nAlbumMaker will run your system's package manager:\n" + " ".join(plan)
+            install_button = box.addButton("Install FFmpeg", QMessageBox.ButtonRole.AcceptRole)
+        else:
+            text += "\n\n" + manual_instructions()
+        box.setText(text)
+        not_now = box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
+        never = box.addButton("Don't ask again", QMessageBox.ButtonRole.DestructiveRole)
+        box.setDefaultButton(not_now)
+        box.exec()
+        clicked = box.clickedButton()
+        if install_button is not None and clicked is install_button:
+            self._launch("ffmpeg setup", ffmpeg_install_command(sys.executable))
+        elif clicked is never:
+            mark_declined()
+
     def _schedule_save(self, *_args) -> None:
         self._save_timer.start()
 
@@ -1682,4 +1735,5 @@ def main() -> int:
         return 1
     window = MainWindow(settings)
     window.show()
+    QTimer.singleShot(600, window._offer_ffmpeg_install)
     return app.exec()

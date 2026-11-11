@@ -16,12 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 DEFAULT_OUTPUT = ROOT / "dist" / "executable"
-SOURCE_URL = "https://github.com/zackees/ffmpeg_bins"
 LICENSES_DIR = ROOT / "licenses"
-GPL_LICENSE_FILES = {
-    "2": LICENSES_DIR / "GPL-2.0.txt",
-    "3": LICENSES_DIR / "GPL-3.0.txt",
-}
+GPL_V3_LICENSE_FILE = LICENSES_DIR / "GPL-3.0.txt"
 LGPL_V3_LICENSE_FILE = LICENSES_DIR / "LGPL-3.0.txt"
 
 
@@ -31,81 +27,25 @@ def _run(
     return subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
-def _ffmpeg_tools() -> tuple[Path, Path]:
-    try:
-        from static_ffmpeg import run as static_ffmpeg_run
-    except ImportError as exc:
-        raise SystemExit(
-            "Packaging dependencies are missing. Install them with "
-            "'python -m pip install -r requirements-packaging.txt'."
-        ) from exc
-    platform_key = static_ffmpeg_run.get_platform_key()
-    download_url = static_ffmpeg_run.PLATFORM_ZIP_FILES[platform_key]
-    static_ffmpeg_run.PLATFORM_ZIP_FILES[platform_key] = download_url.replace(
-        "https://github.com/zackees/ffmpeg_bins/raw/",
-        "https://media.githubusercontent.com/media/zackees/ffmpeg_bins/",
-    )
-    ffmpeg, ffprobe = static_ffmpeg_run.get_or_fetch_platform_executables_else_raise()
-    paths = (Path(ffmpeg), Path(ffprobe))
-    for path in paths:
-        if not path.is_file():
-            raise RuntimeError(f"static-ffmpeg did not provide an executable: {path}")
-    return paths
+def _notice() -> str:
+    """License notices shipped inside the app.
 
-
-def _ffmpeg_notice(ffmpeg: Path, ffprobe: Path) -> str:
-    details = []
-    for tool in (ffmpeg, ffprobe):
-        license_result = subprocess.run([str(tool), "-L"], check=True, capture_output=True, text=True)
-        details.append(license_result.stdout.strip() or license_result.stderr.strip())
-    ffmpeg_license = "\n\n".join(details)
-    version_result = subprocess.run(
-        [str(ffmpeg), "-version"], check=True, capture_output=True, text=True
-    )
-    version_info = version_result.stdout.strip() or version_result.stderr.strip()
-    if "--enable-gpl" not in version_info or "--enable-nonfree" in version_info:
-        raise RuntimeError("The bundled FFmpeg must enable GPL codecs and must not enable non-free codecs.")
-    license_match = re.search(
-        r"GNU General Public License.*?either version\s+([23]).*?any later version",
-        ffmpeg_license,
-        re.IGNORECASE | re.DOTALL,
-    )
-    if not license_match:
-        raise RuntimeError("The bundled FFmpeg's GPL version could not be determined.")
-    gpl_version = license_match.group(1)
-    version_match = re.search(r"ffmpeg version\s+(\S+)", version_info, re.IGNORECASE)
-    if not version_match:
-        raise RuntimeError("The bundled FFmpeg version could not be determined.")
-    ffmpeg_version = version_match.group(1)
-    source_tag = f"n{ffmpeg_version}"
-    gpl_license = _read_license_text(
-        GPL_LICENSE_FILES[gpl_version], f"GNU GPL version {gpl_version}"
-    )
-    if gpl_version == "2":
-        gpl_v2_license = gpl_license
-    else:
-        gpl_v2_license = _read_license_text(
-            GPL_LICENSE_FILES["2"], "GNU GPL version 2"
-        )
-    lgpl_v3_license = _read_license_text(
-        LGPL_V3_LICENSE_FILE, "GNU LGPL version 3"
-    )
-    python_notices = _python_package_notices()
+    AlbumMaker does not bundle FFmpeg: it is installed separately by the user
+    (see albummaker/ffmpeg_setup.py), so no FFmpeg or GPL codec notices are
+    needed here. The bundled HEIF decoder (pi-heif) contains LGPL libraries only.
+    """
+    lgpl_v3_license = _read_license_text(LGPL_V3_LICENSE_FILE, "GNU LGPL version 3")
+    gpl_v3_license = _read_license_text(GPL_V3_LICENSE_FILE, "GNU GPL version 3")
     return (
-        "AlbumMaker includes FFmpeg and ffprobe binaries provided by static-ffmpeg 3.0.\n"
-        f"FFmpeg binary version: {ffmpeg_version}\n"
-        f"FFmpeg source code: https://github.com/FFmpeg/FFmpeg/tree/{source_tag}\n"
-        f"Binary provider repository (not verified as a corresponding-source archive): {SOURCE_URL}\n"
-        f"FFmpeg build configuration:\n{version_info}\n\n"
-        f"{python_notices}\n\n"
-        "FFmpeg / ffprobe license information:\n"
-        f"{ffmpeg_license}\n\n"
-        "GNU GPL version 2 license text (also relevant to bundled x265):\n"
-        f"{gpl_v2_license}\n\n"
-        f"GNU GPL version {gpl_version} license text:\n"
-        f"{gpl_license}\n\n"
+        "AlbumMaker is licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).\n"
+        "AlbumMaker does not include FFmpeg. If you install FFmpeg separately, it is\n"
+        "licensed by its authors; see https://ffmpeg.org/legal.html.\n\n"
+        f"{_python_package_notices()}\n\n"
         "GNU LGPL version 3 license text (relevant to bundled Qt and HEIF libraries):\n"
-        f"{lgpl_v3_license}\n"
+        f"{lgpl_v3_license}\n\n"
+        "GNU GPL version 3 license text (the LGPL version 3 is an additional\n"
+        "permission on top of it):\n"
+        f"{gpl_v3_license}\n"
     )
 
 
@@ -123,11 +63,10 @@ def _python_package_notices() -> str:
 
     packages = (
         ("Pillow", ("licenses/LICENSE",)),
-        ("pillow-heif", ("licenses/LICENSE.txt", "licenses/LICENSES_bundled.txt")),
+        ("pi-heif", ("licenses/LICENSE.txt", "licenses/LICENSES_bundled.txt")),
         ("Jinja2", ("licenses/LICENSE.txt",)),
         ("MarkupSafe", ("licenses/LICENSE.txt",)),
         ("tzdata", ("LICENSE_APACHE",)),
-        ("static-ffmpeg", ("licenses/LICENSE",)),
     )
     sections = ["Third-party Python package licenses and bundled-library notices:"]
     for package_name, required_files in packages:
@@ -204,8 +143,7 @@ def _build(output: Path) -> Path:
     if output == ROOT:
         raise ValueError(f"Choose a build output folder below or outside the source tree: {output}")
 
-    ffmpeg, ffprobe = _ffmpeg_tools()
-    notice = _ffmpeg_notice(ffmpeg, ffprobe)
+    notice = _notice()
     extension = ".exe" if os.name == "nt" else ""
 
     with tempfile.TemporaryDirectory(prefix="albummaker-build-") as temporary:
@@ -223,13 +161,7 @@ def _build(output: Path) -> Path:
             "albummaker-cli",
             cli_dist,
             cli_work,
-            [
-                "--onefile",
-                "--add-binary",
-                _binary_argument(ffmpeg, "ffmpeg"),
-                "--add-binary",
-                _binary_argument(ffprobe, "ffmpeg"),
-            ],
+            ["--onefile", "--collect-all", "pi_heif"],
         )
         cli_binary = cli_dist / f"albummaker-cli{extension}"
         if not cli_binary.is_file():

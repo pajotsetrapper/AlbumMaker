@@ -170,3 +170,8 @@ def build_command(python: str, library_file: Path, output_dir: str, settings: di
 
 def offline_assets_command(python: str) -> list[str]:
     return _command_prefix(python, "serve") + ["--fetch-offline-assets"]
+
+
+def ffmpeg_install_command(python: str) -> list[str]:
+    """Install FFmpeg with the system package manager (the user already agreed)."""
+    return _command_prefix(python, "install-ffmpeg") + ["--yes"]

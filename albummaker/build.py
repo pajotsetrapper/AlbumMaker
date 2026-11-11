@@ -770,8 +770,8 @@ def build_trip(args, date_range, library_root: Optional[Path] = None,
         sys.exit(1)
 
     if not HEIF_SUPPORT:
-        print("Note: pillow-heif not installed — .heic/.heif files will be skipped.\n"
-              "      Install with: pip install pillow-heif", file=sys.stderr)
+        print("Note: pi-heif not installed — .heic/.heif files will be skipped.\n"
+              "      Install with: pip install pi-heif", file=sys.stderr)
     if args.tz_offset is not None:
         print(f"Using a fixed UTC{args.tz_offset:+g}h offset for video timestamps.")
     elif args.timezone:

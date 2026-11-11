@@ -1419,8 +1419,8 @@ def main(argv=None):
         if problem:
             parser.error(problem)
     if not HEIF_SUPPORT:
-        print("Note: pillow-heif not installed — .heic/.heif files will be skipped.\n"
-              "      Install with: pip install pillow-heif", file=sys.stderr)
+        print("Note: pi-heif not installed — .heic/.heif files will be skipped.\n"
+              "      Install with: pip install pi-heif", file=sys.stderr)
 
     hostname = socket.gethostname().lower().rstrip(".")
     allowed = {"localhost", hostname, hostname.split(".")[0] + ".local"}

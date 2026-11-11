@@ -11,52 +11,39 @@ from tools import build_executable
 
 
 class ExecutableLicenseNoticeTests(unittest.TestCase):
-    def test_ffmpeg_license_texts_are_read_from_the_repository(self):
-        license_output = (
-            "ffmpeg is free software; you can redistribute it and/or modify\n"
-            "it under the terms of the GNU General Public License as published by\n"
-            "the Free Software Foundation; either version 3 of the License, or\n"
-            "(at your option) any later version."
-        )
-        version_output = "ffmpeg version 8.0\nconfiguration: --enable-gpl"
-        run_results = [
-            mock.Mock(stdout=license_output, stderr=""),
-            mock.Mock(stdout=license_output, stderr=""),
-            mock.Mock(stdout=version_output, stderr=""),
-        ]
+    def test_notice_has_no_ffmpeg_or_gpl2_text_and_includes_lgpl(self):
         with mock.patch.object(
-            build_executable.subprocess, "run", side_effect=run_results
-        ):
-            with mock.patch.object(
-                build_executable,
-                "_python_package_notices",
-                return_value="Python notices",
-            ):
-                with mock.patch.object(
-                    build_executable,
-                    "_read_license_text",
-                    wraps=build_executable._read_license_text,
-                ) as read_license:
-                    notice = build_executable._ffmpeg_notice(
-                        Path("ffmpeg"), Path("ffprobe")
-                    )
+            build_executable, "_python_package_notices", return_value="Python notices"
+        ), mock.patch.object(
+            build_executable,
+            "_read_license_text",
+            wraps=build_executable._read_license_text,
+        ) as read_license:
+            notice = build_executable._notice()
 
-        self.assertIn(
-            "FFmpeg source code: https://github.com/FFmpeg/FFmpeg/tree/n8.0",
-            notice,
-        )
         self.assertEqual(
             [call.args[0] for call in read_license.call_args_list],
             [
-                build_executable.GPL_LICENSE_FILES["3"],
-                build_executable.GPL_LICENSE_FILES["2"],
                 build_executable.LGPL_V3_LICENSE_FILE,
+                build_executable.GPL_V3_LICENSE_FILE,
             ],
         )
-        self.assertIn("GNU GENERAL PUBLIC LICENSE", notice)
+        self.assertIn("does not include FFmpeg", notice)
+        self.assertIn("PolyForm Noncommercial", notice)
         self.assertIn("GNU LESSER GENERAL PUBLIC LICENSE", notice)
-        self.assertIn("Version 2, June 1991", notice)
         self.assertIn("Version 3, 29 June 2007", notice)
+        self.assertNotIn("Version 2, June 1991", notice)
+        self.assertNotIn("x265", notice)
+
+    def test_executable_build_does_not_bundle_ffmpeg(self):
+        source = Path(build_executable.__file__).read_text(encoding="utf-8")
+        self.assertNotIn("static_ffmpeg", source)
+        self.assertNotIn("--add-binary\",\n                _binary_argument(ffmpeg", source)
+        requirements = (build_executable.ROOT / "requirements-packaging.txt").read_text()
+        self.assertNotIn("static-ffmpeg", requirements)
+        base = (build_executable.ROOT / "requirements.txt").read_text()
+        self.assertIn("pi-heif", base)
+        self.assertNotIn("pillow-heif", base)
 
     def test_missing_repository_license_reports_its_path(self):
         path = Path("missing-license.txt")
@@ -89,6 +76,20 @@ class BundledMultimediaToolTests(unittest.TestCase):
             "albummaker.metadata.shutil.which", return_value=None
         ):
             self.assertIsNone(find_multimedia_tool("ffprobe"))
+
+    def test_finds_a_tool_the_user_placed_in_albummakers_folder(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            suffix = ".exe" if os.name == "nt" else ""
+            tool = Path(tmp) / "ffmpeg" / f"ffmpeg{suffix}"
+            tool.parent.mkdir()
+            tool.touch()
+            tool.chmod(0o755)
+            with mock.patch.dict(os.environ, {"ALBUMMAKER_CONFIG_DIR": tmp}), mock.patch(
+                "albummaker.metadata.sys._MEIPASS", None, create=True
+            ):
+                self.assertEqual(
+                    os.path.normcase(find_multimedia_tool("ffmpeg")), os.path.normcase(str(tool))
+                )
 
     def test_rejects_unknown_tool_names(self):
         with self.assertRaisesRegex(ValueError, "Unsupported multimedia tool"):
