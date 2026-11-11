@@ -107,7 +107,7 @@ class InstallCommandTests(unittest.TestCase):
         ) as run:
             code, out = self.run_main(["--yes"])
         self.assertEqual(code, 0)
-        run.assert_called_once_with(["brew", "install", "ffmpeg"])
+        run.assert_called_once_with(["brew", "install", "ffmpeg"], env=None)  # inherited when not packaged
         self.assertIn("FFmpeg is ready", out)
 
     def test_without_a_package_manager_it_prints_manual_steps(self):

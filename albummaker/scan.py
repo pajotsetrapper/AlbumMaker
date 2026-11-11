@@ -79,13 +79,17 @@ def list_media_files(root: Path, exclude_dirs=(), quiet: bool = False,
     return sorted(files)
 
 
-def collect_candidates(root: Path, exclude_dirs=()) -> list:
-    """(path, 'image' | 'video') for every supported file under root."""
+def collect_candidates(root: Path, exclude_dirs=(), built_before=()) -> list:
+    """(path, 'image' | 'video') for every supported file under root.
+    Without pi-heif, HEIC/HEIF files are left out, except those whose paths
+    (relative to root) are in `built_before`: an earlier build already made
+    their thumbnails and copies, which can be reused without reading them."""
     candidates = []
     for path in list_media_files(root, exclude_dirs):
         ext = path.suffix.lower()
         if ext in IMAGE_EXTS:
-            if ext in (".heic", ".heif") and not HEIF_SUPPORT:
+            if (ext in (".heic", ".heif") and not HEIF_SUPPORT
+                    and path.relative_to(root).as_posix() not in built_before):
                 print(f"  ! skipping {path.name}: install pi-heif for HEIC support "
                       f"(pip install pi-heif)", file=sys.stderr)
                 continue

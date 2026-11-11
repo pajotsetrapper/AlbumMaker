@@ -20,6 +20,7 @@ from typing import Optional
 from PIL import Image
 from PIL.ExifTags import GPSTAGS
 from .timezones import get_timezone
+from .util import external_tool_env
 
 # pi-heif is the decode-only HEIF plugin (no GPL encoder inside); pillow-heif
 # is accepted too if someone already has it installed.
@@ -357,13 +358,18 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
             [multimedia_tool("ffprobe"), "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", ffmpeg_input(path)],
             capture_output=True, text=True, errors="replace", timeout=30,
+            env=external_tool_env(),
         )
     except FileNotFoundError:
         # ffprobe isn't installed: keep the video, just without metadata
-        # (main() already explained this once; don't repeat it per file)
+        # (main() already explained this once; don't repeat it per file).
+        # Marked so this empty result is never cached: a later run, with
+        # ffprobe installed, reads the video properly.
+        meta["probe_failed"] = True
         return meta
     except subprocess.TimeoutExpired:
         print(f"  ! ffprobe timed out on {path.name}", file=sys.stderr)
+        meta["probe_failed"] = True
         return meta
     if result.returncode != 0:
         # ffprobe ran but couldn't parse the file: not a usable video, so
@@ -510,10 +516,13 @@ def meta_to_json(meta: dict, tz_offset: Optional[float] = None,
 
 def meta_from_json(data, tz_offset: Optional[float] = None, media_type: str = "image",
                    timezone_name: Optional[str] = None) -> Optional[dict]:
-    """The cached metadata, or None if it can't be used (other format, or a
-    video read with a different time-zone setting)."""
+    """The cached metadata, or None if it can't be used (other format, a
+    video read with a different time-zone setting, or one ffprobe couldn't
+    read at the time)."""
     if not isinstance(data, dict) or data.get("_format") != META_FORMAT:
         return None
+    if data.get("probe_failed"):
+        return None   # ffprobe couldn't run that time: read the video again
     if media_type == "video" and data.get("_tz") != (timezone_name if timezone_name else tz_offset):
         return None
     meta = {}

@@ -20,6 +20,7 @@ from pathlib import Path
 from typing import Optional
 
 from .app_paths import config_dir
+from .util import external_tool_env
 
 FFMPEG_LEGAL_URL = "https://ffmpeg.org/legal.html"
 FFMPEG_DOWNLOAD_URL = "https://ffmpeg.org/download.html"
@@ -175,7 +176,7 @@ def main(argv: Optional[list[str]] = None) -> int:
             print("Cancelled.")
             return 2
     try:
-        code = subprocess.run(plan).returncode
+        code = subprocess.run(plan, env=external_tool_env()).returncode
     except OSError as exc:
         print(f"Could not start the installer: {exc}")
         print(manual_instructions())
