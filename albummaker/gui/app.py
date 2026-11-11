@@ -1312,10 +1312,12 @@ class MainWindow(QMainWindow):
         """Ask before installing FFmpeg, which AlbumMaker uses but does not include."""
         from ..ffmpeg_setup import (
             LICENSE_NOTE,
+            FFMPEG_DOWNLOAD_URL,
             ffmpeg_missing,
             install_plan,
             manual_instructions,
             mark_declined,
+            suggested_command,
             was_declined,
         )
         if not ffmpeg_missing():
@@ -1333,12 +1335,16 @@ class MainWindow(QMainWindow):
             "make video previews. Without it, photos work normally but videos have no "
             "date, location or preview.\n\n" + LICENSE_NOTE
         )
-        install_button = None
+        install_button = download_button = copy_button = None
         if plan is not None:
             text += "\n\nAlbumMaker will run your system's package manager:\n" + " ".join(plan)
             install_button = box.addButton("Install FFmpeg", QMessageBox.ButtonRole.AcceptRole)
         else:
             text += "\n\n" + manual_instructions()
+            download_button = box.addButton(
+                "Open download page", QMessageBox.ButtonRole.ActionRole
+            )
+            copy_button = box.addButton("Copy command", QMessageBox.ButtonRole.ActionRole)
         box.setText(text)
         not_now = box.addButton("Not now", QMessageBox.ButtonRole.RejectRole)
         never = box.addButton("Don't ask again", QMessageBox.ButtonRole.DestructiveRole)
@@ -1347,6 +1353,17 @@ class MainWindow(QMainWindow):
         clicked = box.clickedButton()
         if install_button is not None and clicked is install_button:
             self._launch("ffmpeg setup", ffmpeg_install_command(sys.executable))
+        elif download_button is not None and clicked is download_button:
+            if not QDesktopServices.openUrl(QUrl(FFMPEG_DOWNLOAD_URL)):
+                QMessageBox.information(self, "FFmpeg", f"Open this page: {FFMPEG_DOWNLOAD_URL}")
+        elif copy_button is not None and clicked is copy_button:
+            QApplication.clipboard().setText(suggested_command())
+            QMessageBox.information(
+                self,
+                "Command copied",
+                f"Copied to the clipboard:\n{suggested_command()}\n\n"
+                "Paste it into a terminal, then restart AlbumMaker.",
+            )
         elif clicked is never:
             mark_declined()
 
