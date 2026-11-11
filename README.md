@@ -20,7 +20,8 @@ sections after it are the full reference.
 
 **Contents:**
 [Quick start](#quick-start) ·
-[Product page](./docs/index.html) ·
+[Product page](https://pajotsetrapper.github.io/AlbumMaker/) ·
+[Download](https://github.com/pajotsetrapper/AlbumMaker/releases/latest) ·
 [Desktop app](#desktop-app) ·
 [Step by step](#step-by-step) ·
 [1. Install](#1-install) ·
@@ -37,7 +38,8 @@ sections after it are the full reference.
 [Troubleshooting](#troubleshooting) ·
 [Running the tests](#running-the-tests) ·
 [Customizing the look](#customizing-the-look) ·
-[License and third-party notices](#license-and-third-party-notices)
+[License and third-party notices](#license-and-third-party-notices) ·
+[Reporting problems](#reporting-problems-and-changes)
 
 ## Quick start
 
@@ -80,7 +82,7 @@ in the page:
 | | `generate_site.py` | `album_server.py` |
 |---|---|---|
 | What it does | Builds a folder of static HTML, thumbnails and media copies | Runs a small local web server that builds every page and image on request |
-| Python needed while viewing? | No. Open `index.html`, copy the folder to a USB drive, etc. | Yes, the whole time |
+| Python needed while viewing? | No. Open `index.html` (maps need a simple web server; see below), copy the folder to a USB drive, etc. | Yes, the whole time |
 | Disk space | A site folder with thumbnails, copies of visible media and browser-ready conversions where needed | No generated site; optionally `trip_content.json`, metadata and map-tile caches |
 | Without internet | Everything works except the map tiles; the map library and fonts can be bundled into the site. Maps need the site to be served over http(s), not opened from disk (see [Viewing a static site](#viewing-a-static-site-maps-need-a-web-server)) | The same, and map tiles you have already viewed can be kept in a local cache |
 | After adding or changing photos | Re-run the script (only new or changed files are processed) | Restart the server |
@@ -99,31 +101,57 @@ trip library, starting the live server, generating static sites, and
 watching progress and HTTP requests. It uses the same server and build
 commands as the terminal tools.
 
-See the [AlbumMaker product page](./docs/index.html) for a visual introduction
-and an interactive sample trip. To publish it with GitHub Pages, configure the
-repository to deploy from the `main` branch's `/docs` folder.
+See the [AlbumMaker product page](https://pajotsetrapper.github.io/AlbumMaker/)
+for a visual introduction and an interactive sample trip.
 
 ### Download a standalone app
 
-Tagged builds and manually started **Build desktop executables** runs in
-GitHub Actions produce downloadable bundles for Windows x64, macOS Intel,
-macOS Apple Silicon, and Linux x64. Each bundle contains the GUI, its
-background command runner, and the Python and GUI dependencies; installing
-Python is not required. **FFmpeg is not included**: it is separate software
-used for video dates and previews, and the app offers to install it for you on
-first start (see [Installing FFmpeg](#installing-ffmpeg)). Photos work without
-it. Download the platform artifact from the corresponding run in the repository's
-**Actions** tab; artifacts are retained for 30 days.
+Download the file for your computer from the
+[latest release](https://github.com/pajotsetrapper/AlbumMaker/releases/latest):
 
-The app source is licensed under the PolyForm Noncommercial License 1.0.0,
-and bundled components keep their own terms.
-The executable carries the project `LICENSE`, a third-party inventory, and
-build-generated notices with exact component versions and license text.
-The bundled HEIC reader (`pi-heif`) is decode-only and contains LGPL
-libraries, not GPL codecs. See [Third-party notices](./THIRD_PARTY_NOTICES.md). These builds are not
-code-signed or notarized, so Windows or macOS may display a security warning
-when you first open one. Linux builds are made on Ubuntu 22.04 and require a
-compatible Linux system with glibc.
+| Your computer | Download | Then |
+|---|---|---|
+| Windows 10 or 11 (64-bit) | `AlbumMaker-<version>-windows-x64.zip` | Unzip it, open the `AlbumMaker` folder and run `AlbumMaker.exe`. Keep the folder together: the program needs the files next to it. |
+| Mac with Apple silicon (M1 or later) | `AlbumMaker-<version>-macos-arm64.zip` | Unzip it and drag `AlbumMaker.app` to your Applications folder. |
+| Mac with an Intel processor | `AlbumMaker-<version>-macos-intel.zip` | As above. |
+| Linux x64 (Ubuntu 22.04 or newer, or a similar distribution) | `AlbumMaker-<version>-linux-x64.tar.gz` | `tar -xzf AlbumMaker-*-linux-x64.tar.gz`, then run `AlbumMaker/AlbumMaker` inside the unpacked folder. |
+
+Each download contains the app, its background command runner and
+everything it needs; installing Python is not required. Next to the app you
+find `LICENSE`, `THIRD_PARTY_NOTICES.md` and `THIRD_PARTY_NOTICES.txt` (the
+licenses of the bundled components, with their exact versions).
+`SHA256SUMS.txt` in the release lists each download's checksum, if you want
+to check that a download is complete.
+
+**FFmpeg is not included**: it is separate software used for video dates and
+previews, and the app offers to install it for you on first start (see
+[Installing FFmpeg](#installing-ffmpeg)). Photos work without it.
+
+**The first time you open it.** The apps are not code-signed, so your system
+warns you the first time:
+
+- **macOS** says AlbumMaker "cannot be opened because Apple cannot check it
+  for malicious software" (or that it is "damaged"). Close the message, open
+  **System Settings → Privacy & Security**, scroll down and choose
+  **Open Anyway** next to AlbumMaker, then confirm. If no such button
+  appears, run this once in Terminal and open the app again:
+  `xattr -dr com.apple.quarantine /Applications/AlbumMaker.app`
+- **Windows** shows "Windows protected your PC" (SmartScreen). Choose
+  **More info**, then **Run anyway**.
+- **Linux**: if the app does not start, run it from a terminal to see why.
+  It needs the usual desktop libraries (on Ubuntu or Debian:
+  `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1`).
+
+You only need to do this once. To update, download the new release and
+replace the old app; your settings and trip list are kept (see below for
+where they are stored).
+
+**System requirements:** Windows 10 or 11 (64-bit), macOS 13 or newer, or a
+64-bit Linux with glibc 2.35 or newer (Ubuntu 22.04 and later). An internet
+connection is needed the first time you start the live server (to download
+the map library and fonts) and to show map tiles you have not viewed
+before. FFmpeg is optional. Running from source instead needs Python 3.9 or
+newer.
 
 ### Run from source
 
@@ -137,118 +165,11 @@ python album_gui.py
 # Or: python -m albummaker gui
 ```
 
-To build a standalone app locally for the current operating system, install
-the packaging dependencies and run the build script. Native platform builds
-are required; a macOS build cannot create the Windows or Linux app.
+When running from source, the GUI needs Python 3.9 or newer and the same
+FFmpeg setup as the command-line tools. PySide6 is optional and is not
+installed for CLI-only users.
 
-```bash
-python -m pip install -r requirements-packaging.txt
-python tools/build_executable.py
-```
-
-The app is written to `dist/executable/`. The builder smoke-tests the GUI,
-background command runner, and HEIC support. To build for another
-operating system or architecture, run the same command on a native machine or
-use the GitHub Actions workflow described below.
-
-#### Notes for building executables
-
-- **Use Python 3.13 or 3.14.** The GitHub Actions workflow currently uses
-  3.11, which has not been re-checked here. Build in a clean virtual
-  environment so no other packages get bundled.
-- **HEIC support must come from `pi-heif`**, the decode-only reader. Do not
-  build with `pillow-heif`: its wheels include the GPL x265 encoder, which does
-  not fit AlbumMaker's noncommercial license. `tools/build_executable.py`
-  stops with an explanation if `pillow-heif` is installed or `pi-heif` is
-  missing, and the build's smoke test fails if HEIC does not load.
-- **FFmpeg is not bundled.** The app offers to install it on first start (see
-  [Installing FFmpeg](#installing-ffmpeg)).
-
-Status checked on 11 November 2026 (re-check before each release):
-
-| Python | `pi-heif` 1.4.0 wheels | Executable builds |
-|---|---|---|
-| 3.13 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported |
-| 3.14 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported; the recommended version |
-| 3.15 | None yet; pip falls back to compiling, which fails on Windows | Not supported; running from source works, see [HEIC photos and your Python version](#heic-photos-and-your-python-version) |
-
-PyInstaller 6.22 and PySide6 6.12 both list support for Python 3.14. Wheels for
-Linux ARM and Windows ARM were not checked, so those platforms are not covered
-by this table. When `pi-heif` publishes 3.15 wheels, update this
-table and remove the `pillow-heif` line and the `python_version` markers from
-`requirements.txt`.
-
-### Version number
-
-The version is defined once, as `__version__` in `albummaker/__init__.py`.
-It is shown in the desktop app (window title, header, and the Help window,
-which also lists Python, PySide6 and the platform for bug reports), printed
-at the start of the server and the site builder, and available as
-`--version` on every entry point:
-
-```bash
-python album_server.py --version
-python generate_site.py --version
-python album_gui.py --version
-python -m albummaker --version
-```
-
-Generated pages say which version made them (in the page footer), and a
-static site's build record (`.trip_site_manifest.json`) stores it as
-`app_version`; the record's own `version` field is its file format, not the
-program's. The `--version` flag prints `AlbumMaker 2.0.0` and exits; when it
-starts, the server and the site builder print the same version as their first
-line. To release: change `__version__`, commit,
-then tag that commit with the same number (`v2.1.0` for `2.1.0`). In CI,
-`python tools/check_version.py "$GITHUB_REF_NAME"` fails the build when the
-tag and `__version__` differ.
-
-### Build or publish all platform versions
-
-Push the source changes to GitHub, then either:
-
-1. Open **Actions → Build desktop executables → Run workflow** to build the
-   current branch, or
-2. Push a version tag (for example, `v1.2.0`) to start the same builds for
-   that revision:
-
-   ```bash
-   git tag v1.2.0
-   git push origin v1.2.0
-   ```
-
-The workflow builds each platform on its own native runner and uploads one
-artifact per platform. Download the artifacts from the completed workflow run;
-they are kept for 30 days. A tag starts builds but does not create a GitHub
-Release automatically.
-
-### Update dependencies for a new build
-
-The executable bundles the dependencies from all four requirements files:
-
-- `requirements.txt`: shared application libraries, including the HEIC reader.
-- `requirements-gui.txt`: PySide6 and time-zone data for the desktop GUI.
-- `requirements-packaging.txt`: includes the two files above, plus PyInstaller
-  (FFmpeg is not bundled). Build executables with a Python version for which
-  `pi-heif` has a ready-made wheel.
-
-When changing an application dependency, update its existing requirements
-file. To refresh the packaging tools, edit the PyInstaller range in
-`requirements-packaging.txt` first. Keep using `pi-heif`, not
-`pillow-heif`, whose binary wheels include a GPL encoder; `tools/build_executable.py`
-refuses to build if `pillow-heif` is installed. Then test the updated
-dependencies and produce a native build:
-
-```bash
-python -m pip install --upgrade -r requirements-packaging.txt
-python -m unittest
-python tools/build_executable.py
-```
-
-For repeatable CI builds, use the same Python version as the workflow (3.11;
-keep it at 3.14 or older until `pi-heif` publishes Python 3.15 wheels)
-and keep the dependency versions or ranges in the requirements files under
-review. Re-run the workflow after pushing the dependency changes.
+### Using the desktop app
 
 The app guides you through three steps: add trip folders, choose a workflow,
 and run it. Use **Add folders** to select several photo folders at once.
@@ -263,6 +184,10 @@ next launch:
 - Windows: `%APPDATA%\AlbumMaker\settings.json`
 - Linux: `$XDG_CONFIG_HOME/albummaker/settings.json`, or `~/.config/albummaker/settings.json`
 
+If that file is damaged or cannot be read, the app moves it aside (as
+`settings.json.bad-<date and time>` in the same folder), starts with the
+default settings and tells you where the old file went.
+
 Choose **Run a live server** to browse the trips in a browser while the app
 is running, or **Create a static site** to write a standalone website to the
 output folder you choose. Server setup is separate from site generation.
@@ -271,13 +196,27 @@ and shared trip-processing options, including the **Trip library page** title
 (default **Trips**) shown on the all-trips overview page in both workflows;
 **Live server** and **Static site** contain
 options that affect only that workflow. Choose **Help** for plain-language
-descriptions of the controls. The trip list follows the order in which folders
+descriptions of every control, of FFmpeg, and of what you can do in the
+browser. The trip list follows the order in which folders
 were added; use **Remove** and add folders again if you need to change it.
 Choose the light or dark appearance in **Options → General**; it also
 applies to the **Add folders** picker. The app's version number is shown in the
 window title and under the app name, and the **Help** window ends with a
 line giving the version, Python, PySide6 and platform (useful in a bug
 report).
+
+**Show activity** opens the Activity panel with progress, errors and server
+requests; it also opens by itself when a task starts. When it opens, the
+window grows so the panel is visible, as far as your screen allows.
+
+**FFmpeg in the app.** When FFmpeg is missing, the app asks at start-up
+whether to install it with your system's package manager (winget on
+Windows, Homebrew on macOS and Linux), and an **Install FFmpeg** button
+appears in the header. Choose **Don't ask again** to stop the start-up
+question; the button stays available. Once FFmpeg is found, the button
+disappears. Without a package manager the app offers to open the FFmpeg
+download page or copy the install command instead. See
+[Installing FFmpeg](#installing-ffmpeg).
 
 Before starting the live server in the app, set up the **Metadata cache
 folder** and the **Map tile cache folder** in **Options → Live server**. Both
@@ -323,10 +262,143 @@ other UTC times are converted to the computer's local time zone. The shared
 **Default video UTC offset** is in **Options → General** and applies to both
 workflows.
 
-When running from source, the GUI needs Python 3.9 or newer and the same
-`ffmpeg` setup as the command-line tools. PySide6 is optional and is not
-installed for CLI-only users. Download offline assets while connected to the
-internet.
+**What the app does not set.** A few things are only available from the
+command line or in `trip_content.json`: a trip's title and subtitle (edit
+them in the file; day titles, descriptions and captions can also be edited
+in the browser with the live server; see
+[Titles, descriptions and photo notes](#3-titles-descriptions-and-photo-notes-trip_contentjson)),
+the map credit for a custom map server (`--tile-attribution`),
+a `trip_content.json` stored somewhere other than the photos folder
+(`-c/--content`), and one time zone for all trips at once (`--timezone`;
+the app sets it per trip instead). The app's date range applies to every
+trip in the list and replaces any per-trip date range.
+
+### Building the apps yourself
+
+To build a standalone app locally for the current operating system, install
+the packaging dependencies and run the build script. Native platform builds
+are required; a macOS build cannot create the Windows or Linux app.
+
+```bash
+python -m pip install -r requirements-packaging.txt
+python tools/build_executable.py
+```
+
+The app is written to `dist/executable/`, with `LICENSE`,
+`THIRD_PARTY_NOTICES.md` and the generated `THIRD_PARTY_NOTICES.txt` next to
+it. The builder smoke-tests the GUI, background command runner, and HEIC
+support. To build for another operating system or architecture, run the same
+command on a native machine or use the GitHub Actions workflow described
+below.
+
+#### Notes for building executables
+
+- **Use Python 3.13 or 3.14.** The GitHub Actions workflow uses 3.14. Build in
+  a clean virtual environment so no other packages get bundled.
+- **HEIC support must come from `pi-heif`**, the decode-only reader. Do not
+  build with `pillow-heif`: its wheels include the GPL x265 encoder, which does
+  not fit AlbumMaker's noncommercial license. `tools/build_executable.py`
+  stops with an explanation if `pillow-heif` is installed or `pi-heif` is
+  missing, and the build's smoke test fails if HEIC does not load.
+- **FFmpeg is not bundled.** The app offers to install it on first start (see
+  [Installing FFmpeg](#installing-ffmpeg)).
+- **License notices.** The build writes `THIRD_PARTY_NOTICES.txt` with the
+  licenses of everything it bundles: the Python packages, Qt for Python, the
+  Python runtime and the PyInstaller bootloader, plus a pointer to this
+  release's source for the LGPL libraries. It stops if a required license
+  file cannot be found.
+
+Status checked on 11 November 2026 (re-check before each release):
+
+| Python | `pi-heif` 1.4.0 wheels | Executable builds |
+|---|---|---|
+| 3.13 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported |
+| 3.14 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported; the recommended version |
+| 3.15 | None yet; pip falls back to compiling, which fails on Windows | Not supported; running from source works, see [HEIC photos and your Python version](#heic-photos-and-your-python-version) |
+
+PyInstaller 6.22 and PySide6 6.12 both list support for Python 3.14
+(`requirements-packaging.txt` asks for PyInstaller 6.16 or newer, the first
+version that supports 3.14). Wheels for
+Linux ARM and Windows ARM were not checked, so those platforms are not covered
+by this table. When `pi-heif` publishes 3.15 wheels, update this
+table and remove the `pillow-heif` line and the `python_version` markers from
+`requirements.txt`.
+
+### Version number
+
+The version is defined once, as `__version__` in `albummaker/__init__.py`.
+It is shown in the desktop app (window title, header, and the Help window,
+which also lists Python, PySide6 and the platform for bug reports), printed
+at the start of the server and the site builder, and available as
+`--version` on every entry point:
+
+```bash
+python album_server.py --version
+python generate_site.py --version
+python album_gui.py --version
+python -m albummaker --version
+```
+
+Generated pages say which version made them (in the page footer), and a
+static site's build record (`.trip_site_manifest.json`) stores it as
+`app_version`; the record's own `version` field is its file format, not the
+program's. The `--version` flag prints `AlbumMaker 3.0.0` (the current
+version) and exits; when it starts, the server and the site builder print the
+same version as their first line. `python tools/check_version.py` prints the
+version; given a tag (`python tools/check_version.py v3.0.0`) it fails when
+the tag and `__version__` differ, which the release workflow uses.
+
+### Making a release
+
+1. Change `__version__` in `albummaker/__init__.py`, and add a section for
+   the new version to [CHANGELOG.md](./CHANGELOG.md) (`## [3.1.0] - date`).
+   The release notes are taken from that section.
+2. Commit and push to `main`.
+3. Optional but recommended: open **Actions → Build desktop executables →
+   Run workflow** to run the tests and build all four platforms without
+   publishing anything.
+4. Tag the commit with the same number and push the tag:
+
+   ```bash
+   git tag v3.1.0
+   git push origin v3.1.0
+   ```
+
+The workflow then runs the tests, checks that the tag matches
+`__version__`, builds each platform on its own native runner, and publishes a
+GitHub Release with the four downloads, `SHA256SUMS.txt` and the notes from
+`CHANGELOG.md`. If any step fails, nothing is published; fix the problem,
+delete the tag (`git push --delete origin v3.1.0` and `git tag -d v3.1.0`)
+and tag again. A run started by hand only keeps the builds as workflow
+artifacts for 30 days.
+
+### Update dependencies for a new build
+
+The executable bundles the dependencies from the three requirements files:
+
+- `requirements.txt`: shared application libraries, including the HEIC reader.
+- `requirements-gui.txt`: PySide6 and time-zone data for the desktop GUI.
+- `requirements-packaging.txt`: includes the two files above, plus PyInstaller
+  (FFmpeg is not bundled). Build executables with a Python version for which
+  `pi-heif` has a ready-made wheel.
+
+When changing an application dependency, update its existing requirements
+file. To refresh the packaging tools, edit the PyInstaller range in
+`requirements-packaging.txt` first. Keep using `pi-heif`, not
+`pillow-heif`, whose binary wheels include a GPL encoder; `tools/build_executable.py`
+refuses to build if `pillow-heif` is installed. Then test the updated
+dependencies and produce a native build:
+
+```bash
+python -m pip install --upgrade -r requirements-packaging.txt
+python -m unittest discover -s tests -t .
+python tools/build_executable.py
+```
+
+For repeatable CI builds, use the same Python version as the workflow (3.14;
+keep it at 3.14 or older until `pi-heif` publishes Python 3.15 wheels)
+and keep the dependency versions or ranges in the requirements files under
+review. Re-run the workflow after pushing the dependency changes.
 
 ## Step by step
 
@@ -349,11 +421,7 @@ the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
 
 1. Check that Python 3.9 or newer is installed: `python --version`. If
    it isn't, get it from [python.org](https://www.python.org/downloads/).
-2. Install **ffmpeg**, which handles the videos: run
-   `python -m albummaker install-ffmpeg` (see
-   [Installing FFmpeg](#installing-ffmpeg)). Without it photos work fine, but
-   videos have no date or preview.
-3. Go to the folder holding these scripts (`cd`, then drag the folder in)
+2. Go to the folder holding these scripts (`cd`, then drag the folder in)
    and install what they need:
 
    ```bash
@@ -364,6 +432,13 @@ the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
    This also installs iPhone HEIC photo support. If pip tries to compile a
    package and fails, see
    [HEIC photos and your Python version](#heic-photos-and-your-python-version).
+3. Install **ffmpeg**, which handles the videos: in the same folder, run
+   `python -m albummaker install-ffmpeg` (see
+   [Installing FFmpeg](#installing-ffmpeg)). Without it photos work fine, but
+   videos have no date or preview.
+
+If you would rather not use a terminal, the
+[desktop app](#download-a-standalone-app) does all of this with buttons.
 
 Details: [1. Install](#1-install).
 
@@ -514,8 +589,14 @@ page** and **Copy command** instead. Or install it yourself:
 
 - macOS: `brew install ffmpeg`
 - Ubuntu/Debian: `sudo apt install ffmpeg`
+- Fedora: `sudo dnf install ffmpeg-free`
+- Arch: `sudo pacman -S ffmpeg`
 - Windows: `winget install Gyan.FFmpeg`, or a build from
   [ffmpeg.org/download](https://ffmpeg.org/download.html)
+
+`install-ffmpeg` options: `--yes` installs without asking (for scripts), and
+`--print-only` only shows the command it would run. It does nothing when
+FFmpeg is already installed.
 
 If you downloaded builds by hand, copy `ffmpeg` and `ffprobe` into the
 `ffmpeg` folder inside AlbumMaker's configuration folder, and AlbumMaker will
@@ -533,7 +614,9 @@ its next start.
 python generate_site.py -i /path/to/your/photos -o /path/to/site_output
 ```
 
-Then open `site_output/index.html` in a browser. No server is needed.
+Then open `site_output/index.html` in a browser. No server is needed for
+the pages and photos; the maps do need the site to be served over http(s)
+(see [Viewing a static site](#viewing-a-static-site-maps-need-a-web-server)).
 
 Options:
 
@@ -542,6 +625,8 @@ Options:
 - `--library LIST`: build several trips at once, each into its own
   folder under `-o`, plus a page linking them. See "Several trips: a
   library" below.
+- `--library-title TEXT`: the title of the page that links the trips
+  (default `Trips`). Only used with `--library`.
 - `-o / --output`: where the website is written (default: `./site`).
   It can be inside your photos folder; it's excluded from the scan. It
   can't be the photos folder itself, or a folder that contains it.
@@ -586,6 +671,7 @@ Options:
 - `--fetch-offline-assets`: download the map library and fonts into a
   per-user `offline-assets` folder (needs internet, once), then exit. See
   "Working without internet".
+- `--version`: print the version and exit.
 
 Photos you've marked **hidden** in `trip_content.json` are left out of
 the build entirely, including their files. See "Hidden photos" below.
@@ -641,6 +727,8 @@ Options:
 - `--library LIST`: serve several trips: a page at `/` linking them all,
   each trip under its own `/<name>/`. See "Several trips: a library"
   below.
+- `--library-title TEXT`: the title of the page that links the trips
+  (default `Trips`). Only used with `--library`.
 - `-c / --content`: where titles, descriptions and photo notes are
   stored (default: `trip_content.json` in your photos folder). See
   section 3.
@@ -657,7 +745,10 @@ Options:
   an editor automatically; only a browser that has opened the editor
   link can edit. Use this when you put the server behind a reverse proxy
   or a tunnel (nginx, Tailscale Serve, cloudflared, ngrok, an SSH
-  tunnel...), since those connect from the same computer. See section 4.
+  tunnel...), since those connect from the same computer. **Port
+  forwarding counts too**: with `ssh -R`, VS Code's or another editor's port
+  forwarding, every remote visitor looks like this computer and could edit
+  unless you use this option. See section 4.
 - `--allow-host NAME`: an extra host name the server should answer to
   (repeatable). The server only responds to requests addressed to an IP
   address, `localhost`, or this computer's own name (also with
@@ -681,6 +772,12 @@ Options:
 - `--tile-url TEMPLATE`: where map tiles come from, with `{z}`, `{x}` and
   `{y}` in it (default: OpenStreetMap). For a tile provider you have an
   account with.
+- `--tile-attribution TEXT`: the credit shown in the corner of the maps,
+  as plain text, for example
+  `"Map tiles: Example Maps, data: OpenStreetMap contributors"`. Use the
+  wording your tile provider asks for. Default: the OpenStreetMap credit, or
+  `Map tiles: <host of --tile-url>` when you use `--tile-url` (the server
+  then reminds you at startup to set this).
 - `--memory-cache-mb MB`: how much memory to use for thumbnails and
   converted photos kept between requests (default 512). The limit is on
   their total size, so a few huge converted HEICs can't push the server
@@ -693,9 +790,10 @@ Options:
   trip. Off by default. Without it, metadata is still read in parallel.
 - `--verbose`: log every request. Normally only errors (other than 404)
   and requests slower than two seconds are printed.
+- `--version`: print the version and exit.
 
-The GUI's **Help** window describes each field, its units, defaults and
-effect. Map-tile, metadata-cache and allowed-host settings apply to the
+The desktop app's **Help** window describes each control (using the labels
+shown on screen), its units, defaults and effect. Map-tile, metadata-cache and allowed-host settings apply to the
 live server; the output folder and force-regeneration setting apply to
 static-site generation.
 
@@ -718,7 +816,7 @@ file, one photos folder per line:
 # trips.txt
 /Volumes/Photos/2024 Japan
 ~/Pictures/Italy 2025          | italy
-/Volumes/NAS/Family/Iceland     | iceland | --timezone Asia/Reykjavik --no-dedupe
+/Volumes/NAS/Family/Iceland     | iceland | --timezone Atlantic/Reykjavik --no-dedupe
 ```
 
 Each line is a photos folder, then optionally, after `|`, the name the
@@ -831,6 +929,11 @@ that's been filled in:
 - `days.<date>.cover`: the photo to use as that day's card on the
   homepage. Without one, the day uses its first photo (a photo rather
   than a video frame, when there is one).
+- `cover` (at the top level, next to `title`): the trip's cover photo, by
+  its path relative to the photos folder. It is shown on the trip's card on
+  the all-trips page (see "Several trips") and as the card of the day it
+  belongs to. Without one, or when that photo is hidden or no longer there,
+  the first day's cover is used. In the page, **Set trip cover** fills it in.
 - `photos`: keyed by the file's path **relative to your photos folder**,
   with forward slashes, even on Windows (`sub/IMG_0499.jpg`). Each entry
   can have:
@@ -885,7 +988,8 @@ moment you make them, and the page updates without reloading.
 - **Favorite** (or press `S`): marks the photo with a ★.
 - A **caption** box: type, then press Enter or click away to save.
 - **Set as cover**: makes this photo the day's cover on the homepage.
-- **Set trip cover**: sets this photo as the cover for the entire trip (distinct from day covers).
+- **Set trip cover**: sets this photo as the cover for the entire trip
+  (its card on the all-trips page). A hidden photo can't be the trip cover.
 - **Hide** / **Unhide**: see below.
 
 **On the day page**, **Edit title & description** opens a small form.
@@ -893,6 +997,13 @@ Saving reloads the page with your text in place. **Preview as visitor**
 reloads the page exactly as someone else would see it, with no editing
 controls and hidden photos gone. (It applies to that one page; navigating
 elsewhere puts you back in the editor.)
+
+If a day's text or a caption was changed somewhere else after you opened
+the page (in `trip_content.json`, or in another browser), saving does not
+overwrite it: the page says nothing was saved and keeps what you typed, so
+you can copy it, reload and edit the current version. Only the fields you
+changed are saved, so editing a day's title never touches its description.
+The trip's own title and subtitle are edited in `trip_content.json`.
 
 Who can edit:
 
@@ -1196,6 +1307,7 @@ of photos they can see. `--no-places` turns place names off.
 | `L` | slideshow | play a Live Photo's clip |
 | `S` | slideshow, editing | favorite / unfavorite |
 | `Esc` | slideshow | close details, then close the viewer |
+| `Esc` | trip homepage (several trips) | back to the all-trips page |
 
 Shortcuts are switched off while you're typing in a caption or title box,
 except `Esc`, which leaves the box (or cancels the title and description
@@ -1635,8 +1747,9 @@ static site and the live server alike. It lives in ordinary files in the
 - **`DAY_COLORS` in `albummaker/model.py`.** This is the palette used for
   each day on the overview map.
 - **`albummaker/templates/`.** The page layout: plain Jinja2 templates
-  (`index.html`, `day.html`, and the `head.html` and `slideshow.html`
-  parts they include).
+  (`index.html` for a trip's homepage, `day.html` for each day,
+  `library.html` for the all-trips page, and the `head.html` and
+  `slideshow.html` parts they include).
 - **`albummaker/static/world_land.json`.** The continent outline the maps
   fall back to offline (Natural Earth, public domain). The colours it's
   drawn in are in the `addBaseMap` function in `script.js`.
@@ -1658,7 +1771,8 @@ author. This is a *source-available* license, not an OSI-approved open source
 license. Any earlier version that was published under the MIT License remains MIT
 for those who received it.
 
-For commercial licensing, contact the author via the repository.
+For commercial licensing, open an issue at
+<https://github.com/pajotsetrapper/AlbumMaker/issues> asking how to reach the author.
 
 **What counts as noncommercial?** Personal and family use, hobby projects,
 research, teaching, and use by charities, schools and public bodies are fine.
@@ -1675,15 +1789,21 @@ terms.
 
 Third-party software and data are not relicensed; their licenses,
 attributions and binary-distribution notes are listed in
-[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Read the notices for the
-specific executable before redistributing it, especially the LGPL
-notes for the bundled Qt and HEIF libraries. FFmpeg is not bundled.
+[THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Each download also
+contains `THIRD_PARTY_NOTICES.txt`, with the full license texts of the
+components bundled in that build (Qt for Python, the Python runtime, the
+HEIC reader and the other Python packages) and where to get the source of
+the LGPL libraries. The desktop app's **Help** window states the license too.
+Read the notices for the specific executable before redistributing it,
+especially the LGPL notes for the bundled Qt and HEIF libraries. FFmpeg is
+not bundled.
 
-## Support the project
+## Reporting problems and changes
 
-AlbumMaker is free for noncommercial use. If it is useful to you, you can make
-an optional, voluntary donation. A donation does not buy features, support or a
-commercial license.
+Found a bug or have a question? Open an issue at
+<https://github.com/pajotsetrapper/AlbumMaker/issues>. Include the version
+line from the desktop app's **Help** window (or the output of
+`python album_server.py --version`) and what you did, what you expected and
+what happened instead.
 
-<!-- TODO: replace with your real donation link(s), e.g. GitHub Sponsors, Liberapay or Ko-fi -->
-- Donate: *(link to be added)*
+What changed in each version is listed in [CHANGELOG.md](./CHANGELOG.md).

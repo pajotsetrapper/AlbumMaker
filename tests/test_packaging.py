@@ -35,6 +35,19 @@ class ExecutableLicenseNoticeTests(unittest.TestCase):
         self.assertNotIn("Version 2, June 1991", notice)
         self.assertNotIn("x265", notice)
 
+    def test_notice_credits_qt_python_runtime_and_points_to_source(self):
+        with mock.patch.object(
+            build_executable, "_python_package_notices", return_value="Python notices"
+        ):
+            notice = build_executable._notice()
+        from albummaker import __version__
+        self.assertIn("PySide6, shiboken6 and Qt", notice)
+        self.assertIn("runtime ---", notice)
+        self.assertIn("PSF", notice)              # the Python license text itself
+        self.assertIn("PyInstaller bootloader", notice)
+        self.assertIn(f"/tree/v{__version__}", notice)
+        self.assertIn("modify or replace these libraries", notice)
+
     def test_executable_build_does_not_bundle_ffmpeg(self):
         source = Path(build_executable.__file__).read_text(encoding="utf-8")
         self.assertNotIn("static_ffmpeg", source)
