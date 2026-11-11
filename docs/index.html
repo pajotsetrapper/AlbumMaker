@@ -122,6 +122,25 @@
     pre { margin: 0 0 22px; padding: 16px 18px; overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); font: .84rem/1.7 "IBM Plex Mono", ui-monospace, Consolas, monospace; color: var(--cream); }
     pre span { color: var(--muted); }
 
+    .support { position: relative; overflow: hidden; margin-top: 90px; padding: 52px 44px; text-align: center; border: 1px solid #5c3343; border-radius: 18px; background: radial-gradient(120% 140% at 50% 0%, #3a2230 0%, #241a2c 45%, var(--bg) 100%); }
+    .support::before { content: ""; position: absolute; inset: -40% 30% auto; height: 260px; background: radial-gradient(closest-side, #e0565b33, transparent); pointer-events: none; }
+    .support .heart { display: block; margin: 0 auto 10px; width: 54px; height: 54px; color: #ff7b80; filter: drop-shadow(0 6px 18px #e0565b66); animation: beat 2.8s ease-in-out infinite; }
+    @keyframes beat { 0%, 100% { transform: scale(1); } 8% { transform: scale(1.12); } 16% { transform: scale(1); } 24% { transform: scale(1.08); } 32% { transform: scale(1); } }
+    @media (prefers-reduced-motion: reduce) { .support .heart { animation: none; } }
+    .support h2 { font-size: clamp(1.9rem, 3.6vw, 2.7rem); line-height: 1.1; letter-spacing: -.03em; margin-bottom: 14px; }
+    .support .lead { max-width: 640px; margin: 0 auto 30px; color: var(--text); }
+    .support .ways { display: flex; flex-wrap: wrap; justify-content: center; gap: 14px; }
+    .support .way { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+    .support .way small { color: var(--muted); font-size: .84rem; }
+    .btn.kofi { background: #e0565b; border-color: #e0565b; color: #fff; gap: 10px; }
+    .btn.kofi:hover { background: #ec6a6f; border-color: #ec6a6f; }
+    .btn.sponsors { background: #9d4ba6; border-color: #9d4ba6; color: #fff; gap: 10px; }
+    .btn.sponsors:hover { background: #b05cb9; border-color: #b05cb9; }
+    .btn svg { width: 20px; height: 20px; flex: none; }
+    .support .fine { max-width: 620px; margin: 28px auto 0; color: var(--muted); font-size: .88rem; }
+    .support .fine a { color: var(--cream); }
+    footer .love { color: #ff9db8; }
+
     footer { margin-top: 110px; border-top: 1px solid var(--line); padding: 34px 0 46px; color: var(--muted); font-size: .88rem; }
     footer .wrap { display: flex; flex-wrap: wrap; justify-content: space-between; gap: 14px 30px; }
     footer a:hover { color: var(--cream); }
@@ -138,8 +157,9 @@
       .row.flip .copy { order: 0; }
       .grid, .steps { grid-template-columns: 1fr; }
       .privacy { padding: 28px; }
+      .support { padding: 40px 22px; }
     }
-    @media (max-width: 480px) { .actions .btn { width: 100%; } }
+    @media (max-width: 480px) { .actions .btn, .support .way, .support .btn { width: 100%; } }
   </style>
 </head>
 <body>
@@ -151,6 +171,7 @@
         <a href="#how">How it works</a>
         <a href="#privacy">Privacy</a>
         <a href="#get">Get it</a>
+        <a href="#support">Support</a>
         <a class="btn primary" href="demo/index.html">Try the demo</a>
       </nav>
     </div>
@@ -303,6 +324,31 @@ python album_server.py -i /path/to/photos
         </article>
       </div>
     </section>
+
+    <section id="support" class="wrap">
+      <div class="support">
+        <svg class="heart" viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+        <h2>Enjoying AlbumMaker?</h2>
+        <p class="lead">AlbumMaker is made in spare time and is free for personal and other noncommercial use. If it helped you turn your trips into something you enjoy looking back on, you can say thanks with a donation. It keeps the project going: new features, fixes, and testing on Windows, macOS and Linux.</p>
+        <div class="ways">
+          <div class="way">
+            <a class="btn kofi" href="https://ko-fi.com/pietercoppens">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M4 5h13a4 4 0 0 1 0 8h-.35A6 6 0 0 1 11 17H8a6 6 0 0 1-6-6V6a1 1 0 0 1 1-1zm13 2v4a2 2 0 0 0 0-4zM3 19h15a1 1 0 0 1 0 2H3a1 1 0 0 1 0-2z"/></svg>
+              Buy me a coffee on Ko-fi
+            </a>
+            <small>One-off, no account needed</small>
+          </div>
+          <div class="way">
+            <a class="btn sponsors" href="https://github.com/sponsors/pajotsetrapper">
+              <svg viewBox="0 0 24 24" aria-hidden="true"><path fill="currentColor" d="M12 21.35l-1.45-1.32C5.4 15.36 2 12.28 2 8.5 2 5.42 4.42 3 7.5 3c1.74 0 3.41.81 4.5 2.09C13.09 3.81 14.76 3 16.5 3 19.58 3 22 5.42 22 8.5c0 3.78-3.4 6.86-8.55 11.54L12 21.35z"/></svg>
+              Sponsor on GitHub
+            </a>
+            <small>One-off or monthly, with your GitHub account</small>
+          </div>
+        </div>
+        <p class="fine">Not in a position to donate? A star on <a href="https://github.com/pajotsetrapper/AlbumMaker">GitHub</a>, a clear bug report or telling a friend who travels helps too. Donations are voluntary: they don't buy features, support or a commercial license, and AlbumMaker works exactly the same either way.</p>
+      </div>
+    </section>
   </main>
 
   <footer>
@@ -314,7 +360,8 @@ python album_server.py -i /path/to/photos
       <div>
         <a href="https://github.com/pajotsetrapper/AlbumMaker">Source code</a> &nbsp;·&nbsp;
         <a href="https://github.com/pajotsetrapper/AlbumMaker/blob/main/README.md">Documentation</a> &nbsp;·&nbsp;
-        <a href="https://github.com/pajotsetrapper/AlbumMaker/blob/main/LICENSE">License</a>
+        <a href="https://github.com/pajotsetrapper/AlbumMaker/blob/main/LICENSE">License</a> &nbsp;·&nbsp;
+        <a class="love" href="#support">&#9829; Support</a>
       </div>
     </div>
   </footer>

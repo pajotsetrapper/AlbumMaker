@@ -1,5 +1,10 @@
 # AlbumMaker
 
+[![Latest release](https://img.shields.io/github/v/release/pajotsetrapper/AlbumMaker?label=download&color=2f6fdb)](https://github.com/pajotsetrapper/AlbumMaker/releases/latest)
+[![License: PolyForm Noncommercial](https://img.shields.io/badge/license-PolyForm%20Noncommercial-6e7b91)](./LICENSE)
+[![Support on Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20coffee-e0565b?logo=kofi&logoColor=white)](https://ko-fi.com/pietercoppens)
+[![GitHub Sponsors](https://img.shields.io/badge/GitHub%20Sponsors-%E2%99%A5-9d4ba6?logo=githubsponsors&logoColor=white)](https://github.com/sponsors/pajotsetrapper)
+
 Turns a folder of trip photos and videos into a website. It has one
 chapter per day, a route map per day, an overview map and title on the
 homepage, and a full-screen slideshow you can drive with the keyboard.
@@ -39,7 +44,8 @@ sections after it are the full reference.
 [Running the tests](#running-the-tests) ·
 [Customizing the look](#customizing-the-look) ·
 [License and third-party notices](#license-and-third-party-notices) ·
-[Reporting problems](#reporting-problems-and-changes)
+[Reporting problems](#reporting-problems-and-changes) ·
+[Support the project](#support-the-project)
 
 ## Quick start
 
@@ -204,6 +210,10 @@ applies to the **Add folders** picker. The app's version number is shown in the
 window title and under the app name, and the **Help** window ends with a
 line giving the version, Python, PySide6 and platform (useful in a bug
 report).
+
+**♥ Support** in the header opens a small window with the donation links
+(Ko-fi and GitHub Sponsors; see [Support the project](#support-the-project)).
+The app never asks for a donation by itself.
 
 **Show activity** opens the Activity panel with progress, errors and server
 requests; it also opens by itself when a task starts. When it opens, the
@@ -1807,3 +1817,27 @@ line from the desktop app's **Help** window (or the output of
 what happened instead.
 
 What changed in each version is listed in [CHANGELOG.md](./CHANGELOG.md).
+
+## Support the project
+
+AlbumMaker is made in spare time and is free for personal and other
+noncommercial use. If it helped you turn your trips into something you enjoy
+looking back on, you can say thanks with a donation. It keeps the project
+going: time for new features, fixes, and testing the desktop app on Windows,
+macOS and Linux.
+
+| | |
+|---|---|
+| [![Buy me a coffee on Ko-fi](https://img.shields.io/badge/Ko--fi-buy%20me%20a%20coffee-e0565b?style=for-the-badge&logo=kofi&logoColor=white)](https://ko-fi.com/pietercoppens) | **[ko-fi.com/pietercoppens](https://ko-fi.com/pietercoppens)**: a one-off donation, no account needed. |
+| [![Sponsor on GitHub](https://img.shields.io/badge/GitHub%20Sponsors-sponsor-9d4ba6?style=for-the-badge&logo=githubsponsors&logoColor=white)](https://github.com/sponsors/pajotsetrapper) | **[github.com/sponsors/pajotsetrapper](https://github.com/sponsors/pajotsetrapper)**: one-off or monthly, with your GitHub account. |
+
+The same links are behind the **♥ Support** button in the desktop app and the
+**Sponsor** button at the top of this repository.
+
+Not in a position to donate? A ⭐ star on GitHub, a clear bug report, or
+telling a friend who travels helps too. Thank you!
+
+Donations are voluntary and always welcome, but they don't buy features,
+support or a commercial license, and AlbumMaker works exactly the same
+either way. For commercial use, see [License and third-party
+notices](#license-and-third-party-notices).
