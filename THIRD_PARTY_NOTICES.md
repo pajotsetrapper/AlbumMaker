@@ -49,3 +49,7 @@ redistribute the application.
 
 `albummaker/static/world_land.json` (land outlines for the map): the source and
 license are not yet recorded. Add them here before publishing a release.
+
+`docs/demo/media/` (sample photos for the demo site): not covered by the
+AlbumMaker license. Confirm that you own them or may publish them, and that
+they show no people or places that need permission.
