@@ -14,6 +14,8 @@ output looks like.
   (c) OpenStreetMap contributors (ODbL).
 - The photos in media/ are sample content and are not covered by the AlbumMaker
   license. Do not reuse them.
+- The trip, its story and its GPS track are fictional. They are built from
+  docs/demo-source in the AlbumMaker repository with tools/build_demo.py.
 
 Sites you generate from your own photos are yours. The license applies to the
 AlbumMaker program and its bundled assets, not to your photos or text.

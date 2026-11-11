@@ -382,6 +382,22 @@ delete the tag (`git push --delete origin v3.1.0` and `git tag -d v3.1.0`)
 and tag again. A run started by hand only keeps the builds as workflow
 artifacts for 30 days.
 
+### Updating the sample site
+
+The sample trip in `docs/demo` (shown on the product page) is built by
+AlbumMaker itself from `docs/demo-source`: its `trip_content.json` (titles,
+day stories, captions) and `lake-lucerne.gpx` (the route), plus the four
+sample photos. After changing the templates, CSS, JavaScript or those files,
+rebuild it with:
+
+```bash
+python tools/build_demo.py
+```
+
+It uses the offline map library and fonts already in `docs/demo/assets/vendor`,
+so no download is needed. Refresh the screenshots in `docs/assets/` when the
+look changes.
+
 ### Update dependencies for a new build
 
 The executable bundles the dependencies from the three requirements files:
@@ -885,6 +901,12 @@ goes back to the list.
 
 ## 3. Titles, descriptions and photo notes: `trip_content.json`
 
+A complete, filled-in example is the sample trip's
+[`docs/demo-source/trip_content.json`](./docs/demo-source/trip_content.json):
+a trip title and subtitle, a trip cover, a three-paragraph story and a cover
+for each day, and captions and favorites. You can see the result in the
+[sample site](https://pajotsetrapper.github.io/AlbumMaker/demo/).
+
 The first run of either script creates `trip_content.json` in your
 photos folder, with an entry for every day it found:
 
@@ -1208,6 +1230,12 @@ files' times) first.
 The track itself is shown as recorded, also on days where you've hidden
 photos. Leave a `.gpx` file out of the folder (or pass `--no-gpx`) if
 the way you went should stay private.
+
+**See it in the sample trip.** The [sample site](https://pajotsetrapper.github.io/AlbumMaker/demo/)
+has photos without any GPS of their own: the track in
+[`docs/demo-source/lake-lucerne.gpx`](./docs/demo-source/lake-lucerne.gpx)
+places them on the map and draws a walk through Lucerne on day 1 and the
+boat, the cog railway and the hike of day 2.
 
 ### Place names
 

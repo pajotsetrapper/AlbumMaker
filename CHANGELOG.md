@@ -54,6 +54,10 @@ you can support its development on
   app, and the app's Help window states the license.
 - The Install FFmpeg button disappears once FFmpeg is found, and the window
   grows to show the Activity panel when it opens.
+- A new sample trip, "A Weekend at Lake Lucerne", on the product page: day
+  stories, captions and favorites, and a GPS track that places the photos
+  and draws both days' routes. It is rebuilt from `docs/demo-source` with
+  `tools/build_demo.py`.
 - New **♥ Support** button in the desktop app, a support section on the
   product page and in the README, and a Sponsor button on the repository,
   all with the Ko-fi and GitHub Sponsors links. The app never asks by itself.

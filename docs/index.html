@@ -75,6 +75,7 @@
     .row.flip .copy { order: 2; }
     .row h3 { font-size: 1.9rem; line-height: 1.15; letter-spacing: -.02em; margin-bottom: 12px; }
     .row p { margin: 0; color: var(--muted); }
+    .row p + p { margin-top: 12px; }
     .row ul { margin: 18px 0 0; padding: 0; list-style: none; }
     .row li { position: relative; padding: 7px 0 7px 22px; }
     .row li::before { content: ""; position: absolute; left: 0; top: 1.05em; width: 9px; height: 2px; background: var(--amber); }
@@ -189,9 +190,9 @@
       <div class="stage">
         <div class="browser">
           <div class="bar"><b></b><b></b><b></b><span>127.0.0.1:8000</span></div>
-          <img src="assets/trip-library.png" width="1440" height="1400" alt="A Weekend in the Netherlands: the trip homepage with its title, totals, a map of the route and a card for each day">
+          <img src="assets/trip-library.png" width="1440" height="1400" alt="A Weekend at Lake Lucerne: the trip homepage with its title, totals, a map of both days' GPS routes and a card for each day">
         </div>
-        <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="A day page titled Canals and coffee, with a description, a route map and photo thumbnails" loading="lazy"></div>
+        <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="A day page titled Up the Rigi, back by boat, with the day's story, the GPS route across the lake and photo thumbnails" loading="lazy"></div>
       </div>
     </section>
 
@@ -215,7 +216,7 @@
           <h3>One overview for the whole journey</h3>
           <p>The homepage shows the trip title, how many days, photos and kilometres it covers, and a map of where you went. Each day gets its own colour and card.</p>
           <ul>
-            <li>Routes drawn from a GPX track, or from where your photos were taken</li>
+            <li>Routes drawn from a GPX track, or from where your photos were taken, with the distance you covered</li>
             <li>Card size from S to XL, so large trips stay easy to scan</li>
             <li>Several trips can share one library page</li>
           </ul>
@@ -229,18 +230,31 @@
       <div class="row flip">
         <div class="copy">
           <h3>A page for every day</h3>
-          <p>Photos and videos are grouped by when they were taken, with the place name, a short description and the day's route above the gallery.</p>
+          <p>Photos and videos are grouped by when they were taken, with the place names, your story of the day and the day's route above the gallery.</p>
           <ul>
             <li>Full-screen slideshow with keyboard, swipe and autoplay</li>
             <li>Captions, favourites and camera details for each photo</li>
             <li>Direct links to a photo, and the Back button works as you'd expect</li>
           </ul>
         </div>
-        <div class="shot crop"><a href="demo/days/2025-05-14.html"><img src="assets/trip-day.png" width="1440" height="1600" alt="Day page with description, route map and thumbnails" loading="lazy"></a></div>
+        <div class="shot crop"><a href="demo/days/2025-05-15.html"><img src="assets/trip-day.png" width="1440" height="1600" alt="Day page with the day's story, its route map and thumbnails" loading="lazy"></a></div>
+      </div>
+      <div class="row">
+        <div class="copy">
+          <h3>Tell the story, trace the route</h3>
+          <p>Give the trip a title and subtitle, and every day a title and a few paragraphs of what happened. Write them in the page while the live server runs, or in one plain <code>trip_content.json</code> file next to your photos.</p>
+          <p>Recorded a track with your watch, phone or bike computer? Drop the <code>.gpx</code> file into the trip folder. AlbumMaker draws the way you actually went, adds up the kilometres, and puts photos from a camera without GPS on the map by matching their times to the track.</p>
+          <ul>
+            <li>Paragraphs, captions and favourites, saved safely: an edit never overwrites text changed elsewhere</li>
+            <li>One GPX file or a whole folder of them, from any app that exports GPX</li>
+            <li>Place names for every day, looked up offline</li>
+          </ul>
+        </div>
+        <div class="shot crop"><a href="demo/days/2025-05-14.html"><img src="assets/trip-story.png" width="1440" height="1220" alt="Day page titled Bridges and the old town, with a three-paragraph story and the walk through Lucerne drawn from a GPX track" loading="lazy"></a></div>
       </div>
 
       <div class="grid">
-        <article><h3>Edit right in the page</h3><p>With the live server, add captions, mark favourites, hide photos and choose each day's cover without opening a file.</p></article>
+        <article><h3>Edit right in the page</h3><p>With the live server, write day titles and stories, add captions, mark favourites, hide photos and choose covers without opening a file.</p></article>
         <article><h3>Photos and video together</h3><p>Handles common photo and video formats, pairs Live Photos, and skips duplicates and system clutter on its own.</p></article>
         <article><h3>Place names built in</h3><p>Photos with GPS get a place name from a bundled database, so this step does not need the internet.</p></article>
         <article><h3>Works offline</h3><p>Save the map library, fonts and tiles you have viewed, and your sites keep working without a connection.</p></article>
@@ -253,15 +267,15 @@
       <div class="wrap">
         <div>
           <h2>Open a real AlbumMaker site.</h2>
-          <p>The sample is a finished two-day trip built by AlbumMaker itself. Zoom the map, switch the card size, open a photo and use the arrow keys.</p>
+          <p>The sample is a finished two-day trip built by AlbumMaker itself: a walk through Lucerne and a day up the Rigi, with a story for each day and the route from a GPS track. Zoom the map, switch the card size, open a photo and use the arrow keys.</p>
           <a class="btn" href="demo/index.html">Open the sample trip</a>
-          <small>The photos are generated illustrations, not a real trip. The route and details are fictional.</small>
+          <small>The photos are generated illustrations, not a real trip. The GPS track, route and story are fictional.</small>
         </div>
         <div class="photos">
-          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_4102.jpg" width="400" height="300" alt="Illustration of a city skyline at sunset" loading="lazy"></a>
-          <a href="demo/days/2025-05-14.html" aria-label="Open day 1 of the sample trip"><img src="demo/thumbs/IMG_4138.jpg" width="400" height="300" alt="Illustration of a canal at dusk" loading="lazy"></a>
-          <a href="demo/days/2025-05-15.html" aria-label="Open day 2 of the sample trip"><img src="demo/thumbs/IMG_5201.jpg" width="400" height="300" alt="Illustration of mountains under a pale sun" loading="lazy"></a>
-          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_5244.jpg" width="400" height="300" alt="Illustration of a countryside landscape" loading="lazy"></a>
+          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_4102.jpg" width="400" height="300" alt="Illustration of a lakeside town at sunrise" loading="lazy"></a>
+          <a href="demo/days/2025-05-14.html" aria-label="Open day 1 of the sample trip"><img src="demo/thumbs/IMG_4138.jpg" width="400" height="300" alt="Illustration of an old town glowing across a river" loading="lazy"></a>
+          <a href="demo/days/2025-05-15.html" aria-label="Open day 2 of the sample trip"><img src="demo/thumbs/IMG_5201.jpg" width="400" height="300" alt="Illustration of snowy peaks above a lake" loading="lazy"></a>
+          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_5244.jpg" width="400" height="300" alt="Illustration of mountains over a lake in the evening" loading="lazy"></a>
         </div>
       </div>
     </div>
