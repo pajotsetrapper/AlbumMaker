@@ -8,7 +8,7 @@
     python dist/albummaker.pyz build -i /path/to/photos -o site
 
 The .pyz contains only this project's code, templates and static files; the
-requirements (Pillow, pi-heif, Jinja2) still need to be installed.
+requirements (Pillow, Jinja2, and optionally pi-heif for HEIC) still need to be installed.
 Offline assets are stored in the user's AlbumMaker configuration directory.
 """
 

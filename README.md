@@ -68,8 +68,10 @@ python album_server.py --version
 A `.gpx` track in the photos folder is picked up by itself (see "GPS
 tracks and place names").
 
-You also need ffmpeg (see "Install"). Everything below explains the
-details.
+For videos you also need FFmpeg, which is installed separately (see
+[Installing FFmpeg](#installing-ffmpeg)); photos work without it. On
+Python 3.15, see [HEIC photos and your Python version](#heic-photos-and-your-python-version).
+Everything below explains the details.
 
 There are two scripts. Both produce the same site with the same look and
 features; they differ in how it's delivered, and in whether you can edit
@@ -195,17 +197,19 @@ Release automatically.
 
 ### Update dependencies for a new build
 
-The executable bundles the dependencies from all three requirements files:
+The executable bundles the dependencies from all four requirements files:
 
-- `requirements.txt`: shared application libraries.
+- `requirements.txt`: shared application libraries, including the HEIC reader.
 - `requirements-gui.txt`: PySide6 and time-zone data for the desktop GUI.
 - `requirements-packaging.txt`: includes the two files above, plus PyInstaller
-  (FFmpeg is not bundled).
+  (FFmpeg is not bundled). Build executables with a Python version for which
+  `pi-heif` has a ready-made wheel.
 
 When changing an application dependency, update its existing requirements
-file. To refresh the packaging tools or FFmpeg binaries, edit the PyInstaller
-range in `requirements-packaging.txt` first. Keep using `pi-heif`, not
-`pillow-heif`, whose binary wheels include a GPL encoder. Then test the updated
+file. To refresh the packaging tools, edit the PyInstaller range in
+`requirements-packaging.txt` first. Keep using `pi-heif`, not
+`pillow-heif`, whose binary wheels include a GPL encoder; `tools/build_executable.py`
+refuses to build if `pillow-heif` is installed. Then test the updated
 dependencies and produce a native build:
 
 ```bash
@@ -214,7 +218,8 @@ python -m unittest
 python tools/build_executable.py
 ```
 
-For repeatable CI builds, use the same Python version as the workflow (3.11)
+For repeatable CI builds, use the same Python version as the workflow (3.11;
+keep it at 3.14 or older until `pi-heif` publishes Python 3.15 wheels)
 and keep the dependency versions or ranges in the requirements files under
 review. Re-run the workflow after pushing the dependency changes.
 
@@ -329,6 +334,10 @@ the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
    python -m pip install -r requirements.txt
    ```
 
+   This also installs iPhone HEIC photo support. If pip tries to compile a
+   package and fails, see
+   [HEIC photos and your Python version](#heic-photos-and-your-python-version).
+
 Details: [1. Install](#1-install).
 
 ### 2. Put a trip in one folder
@@ -436,6 +445,18 @@ You need Python 3.9+, plus:
 ```bash
 pip install -r requirements.txt
 ```
+
+### HEIC photos and your Python version
+
+HEIC (iPhone) photos are supported. `requirements.txt` installs the right reader
+for your Python version:
+
+- **Python 3.9 to 3.14:** `pi-heif`, a decode-only reader with ready-made wheels.
+- **Python 3.15:** `pillow-heif`, because `pi-heif` has no 3.15 wheel yet. Pip
+  would otherwise try to compile it, which fails on Windows with "MSYS2 not
+  found". This is fine for running from source on your own computer. Do not
+  build executables with it (see the third-party notices); use Python 3.14 or
+  older for that. The build script refuses to run otherwise.
 
 Keep these together in one folder: `generate_site.py`, `album_server.py`
 and the `albummaker` folder, which holds the code both scripts share (and
@@ -1286,8 +1307,8 @@ so none of this applies there. The exceptions:
 
 - **Formats.**
   - **Photos:** jpg, png, heic/heif, tiff, bmp, webp. HEIC needs
-    `pi-heif`, which is in `requirements.txt`; without it, HEIC files
-    are skipped with a note.
+    `pi-heif` (or `pillow-heif` on Python 3.15), which `requirements.txt`
+    installs; if neither is present, HEIC files are skipped with a note.
   - **Videos:** mp4, mov, m4v, avi, mkv, 3gp. Whether a video *plays*
     inline depends on the browser supporting its container and codec.
     For example, HEVC files only play where the system has an HEVC
@@ -1628,8 +1649,8 @@ terms.
 Third-party software and data are not relicensed; their licenses,
 attributions and binary-distribution notes are listed in
 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Read the notices for the
-specific executable before redistributing it, especially the GPL source
-notes for the bundled HEIF libraries. FFmpeg is not bundled.
+specific executable before redistributing it, especially the LGPL
+notes for the bundled Qt and HEIF libraries. FFmpeg is not bundled.
 
 ## Support the project
 
