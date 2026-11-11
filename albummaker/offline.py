@@ -12,6 +12,7 @@ import re
 import sys
 import tarfile
 import tempfile
+import time
 import urllib.error
 import urllib.request
 from datetime import datetime
@@ -83,14 +84,66 @@ def vendor_ready(vendor_dir: Optional[Path] = None) -> bool:
                ("leaflet/leaflet.js", "leaflet/leaflet.css", "fonts/fonts.css", "VERSIONS.txt"))
 
 
+# A slow or stalling network must never leave the download hanging without a
+# word: each network step may take at most _DOWNLOAD_TIMEOUT seconds, a whole
+# package at most _DOWNLOAD_DEADLINE, and a failed or stalled try is repeated.
+_DOWNLOAD_TIMEOUT = 20
+_DOWNLOAD_DEADLINE = 120
+_DOWNLOAD_ATTEMPTS = 3
+_RETRY_PAUSE = 3
+_PROGRESS_EVERY = 5
+_MAX_PACKAGE_BYTES = 60_000_000
+
+
+def _read_url(url: str) -> bytes:
+    """One try at downloading `url`, in chunks, with a progress line every few
+    seconds; raises TimeoutError when it stalls or takes too long."""
+    req = urllib.request.Request(url, headers={"User-Agent": "AlbumMaker-offline-assets/1.0"})
+    start = last_report = time.monotonic()
+    with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
+        expected = int(resp.headers.get("Content-Length") or 0)
+        chunks, received = [], 0
+        while True:
+            chunk = resp.read(64 * 1024)
+            if not chunk:
+                break
+            chunks.append(chunk)
+            received += len(chunk)
+            if received > _MAX_PACKAGE_BYTES:
+                raise RuntimeError("the download is far larger than expected")
+            now = time.monotonic()
+            if now - start > _DOWNLOAD_DEADLINE:
+                raise TimeoutError(f"it took longer than {_DOWNLOAD_DEADLINE} seconds")
+            if now - last_report >= _PROGRESS_EVERY:
+                size = f" of {expected / 1024:.0f}" if expected else ""
+                print(f"  ... {received / 1024:.0f}{size} KB", flush=True)
+                last_report = now
+    if expected and received < expected:
+        raise OSError(f"the connection closed after {received} of {expected} bytes")
+    return b"".join(chunks)
+
+
+def _download(url: str) -> bytes:
+    """_read_url, tried up to _DOWNLOAD_ATTEMPTS times on network trouble."""
+    for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
+        try:
+            return _read_url(url)
+        except (urllib.error.URLError, OSError, TimeoutError) as e:   # incl. socket timeouts
+            if attempt == _DOWNLOAD_ATTEMPTS:
+                raise
+            reason = getattr(e, "reason", None) or e
+            print(f"  The download did not work ({reason}); trying again "
+                  f"({attempt + 1} of {_DOWNLOAD_ATTEMPTS}) ...", flush=True)
+            time.sleep(_RETRY_PAUSE * attempt)
+    raise AssertionError("unreachable")
+
+
 def _download_package(key: str, wanted: set) -> dict:
     """Download one pinned npm package, check it against its published
     checksum, and return {path inside the package: bytes} for the wanted files."""
     name, version, integrity = _VENDOR_PACKAGES[key]
     url = f"{_NPM_REGISTRY}/{name}/-/{name.split('/')[-1]}-{version}.tgz"
-    req = urllib.request.Request(url, headers={"User-Agent": "AlbumMaker-offline-assets/1.0"})
-    with urllib.request.urlopen(req, timeout=60) as resp:
-        data = resp.read(60_000_000)
+    data = _download(url)
     digest = "sha512-" + base64.b64encode(hashlib.sha512(data).digest()).decode("ascii")
     if digest != integrity:
         raise RuntimeError(f"{name} {version}: the download doesn't match its expected "
@@ -126,14 +179,14 @@ def fetch_offline_assets(vendor_dir: Optional[Path] = None) -> int:
     vendor_dir = Path(vendor_dir or VENDOR_DIR)
     files = {}   # path inside vendor -> bytes
     try:
-        print("Downloading Leaflet ...")
+        print("Downloading Leaflet ...", flush=True)
         package = _download_package("leaflet", set(_LEAFLET_FILES))
         for source, target in _LEAFLET_FILES.items():
             files[target] = package[source]
 
         css = ["/* Local copies of the fonts, saved by --fetch-offline-assets. */"]
         for slug, weights in _VENDOR_FONT_WEIGHTS.items():
-            print(f"Downloading the {slug} font ...")
+            print(f"Downloading the {slug} font ...", flush=True)
             wanted = {"LICENSE"}
             for weight in weights:
                 wanted.add(f"{weight}.css")

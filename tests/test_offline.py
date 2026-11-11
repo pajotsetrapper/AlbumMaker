@@ -150,6 +150,7 @@ class RegistryTestCase(TempDirMixin, unittest.TestCase):
         # Patch the module that does the work.
         with mock.patch.object(offline, "_VENDOR_PACKAGES", packages), \
              mock.patch.object(offline, "_NPM_REGISTRY", self.registry.url), \
+             mock.patch.object(offline, "_RETRY_PAUSE", 0), \
              mock.patch.multiple(offline, **patches) if patches else mock.patch.dict(os.environ, {}), \
              mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             code = tc.fetch_offline_assets(vendor)
@@ -274,6 +275,69 @@ class FetchOfflineAssetsTests(RegistryTestCase):
 
 @unittest.skipUnless(os.environ.get("TRIP_TEST_NETWORK") == "1",
                      "set TRIP_TEST_NETWORK=1 to check the real npm downloads against their pinned checksums")
+class _Response:
+    """A stand-in for urlopen's response that hands out `chunks` one by one."""
+    def __init__(self, chunks, length=None):
+        self.chunks = list(chunks)
+        size = sum(len(c) for c in chunks) if length is None else length
+        self.headers = {"Content-Length": str(size)}
+
+    def read(self, _n=-1):
+        return self.chunks.pop(0) if self.chunks else b""
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *exc):
+        return False
+
+
+class SlowNetworkTests(unittest.TestCase):
+    """A stalling or trickling connection must not hang the download silently."""
+
+    def run_download(self, responses, clock=None):
+        out = io.StringIO()
+        # (mock raises the exceptions in the list and returns everything else)
+        with mock.patch.object(offline.urllib.request, "urlopen", side_effect=responses) as urlopen, \
+                mock.patch.object(offline, "_RETRY_PAUSE", 0), mock.patch("sys.stdout", out):
+            if clock is not None:
+                with mock.patch.object(offline.time, "monotonic", side_effect=clock):
+                    result = offline._download("https://registry.example/x.tgz")
+            else:
+                result = offline._download("https://registry.example/x.tgz")
+        return result, out.getvalue(), urlopen
+
+    def test_a_stalled_try_is_repeated_and_then_succeeds(self):
+        data, out, urlopen = self.run_download([TimeoutError("timed out"), _Response([b"ab", b"cd"])])
+        self.assertEqual(data, b"abcd")
+        self.assertEqual(urlopen.call_count, 2)
+        self.assertIn("trying again (2 of 3)", out)
+        self.assertEqual(urlopen.call_args.kwargs["timeout"], offline._DOWNLOAD_TIMEOUT)
+
+    def test_it_gives_up_after_the_last_try(self):
+        with self.assertRaises(OSError):
+            self.run_download([OSError("reset")] * offline._DOWNLOAD_ATTEMPTS)
+
+    def test_a_trickling_download_is_stopped_at_the_deadline(self):
+        # every chunk "takes" 50 seconds; the third crosses the 120-second deadline
+        ticks = iter(range(0, 10_000, 50))
+        clock = lambda: next(ticks)
+        trickle = lambda: _Response([b"x"] * 10)
+        with self.assertRaises(TimeoutError):
+            self.run_download([trickle() for _ in range(offline._DOWNLOAD_ATTEMPTS)], clock=clock)
+
+    def test_progress_is_reported_while_it_downloads(self):
+        ticks = iter(range(0, 1000, 3))
+        data, out, _ = self.run_download([_Response([b"x" * 2048] * 6)], clock=lambda: next(ticks))
+        self.assertEqual(len(data), 6 * 2048)
+        self.assertIn("KB", out)
+
+    def test_a_download_cut_short_is_retried(self):
+        data, out, urlopen = self.run_download([_Response([b"ab"], length=10), _Response([b"abcd"])])
+        self.assertEqual(data, b"abcd")
+        self.assertIn("connection closed", out)
+
+
 class RealDownloadTests(TempDirMixin, unittest.TestCase):
     def test_the_pinned_packages_still_download_and_verify(self):
         vendor = self.make_tmp() / "vendor"
