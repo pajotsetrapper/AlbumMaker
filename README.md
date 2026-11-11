@@ -151,6 +151,33 @@ background command runner, and HEIC support. To build for another
 operating system or architecture, run the same command on a native machine or
 use the GitHub Actions workflow described below.
 
+#### Notes for building executables
+
+- **Use Python 3.13 or 3.14.** The GitHub Actions workflow currently uses
+  3.11, which has not been re-checked here. Build in a clean virtual
+  environment so no other packages get bundled.
+- **HEIC support must come from `pi-heif`**, the decode-only reader. Do not
+  build with `pillow-heif`: its wheels include the GPL x265 encoder, which does
+  not fit AlbumMaker's noncommercial license. `tools/build_executable.py`
+  stops with an explanation if `pillow-heif` is installed or `pi-heif` is
+  missing, and the build's smoke test fails if HEIC does not load.
+- **FFmpeg is not bundled.** The app offers to install it on first start (see
+  [Installing FFmpeg](#installing-ffmpeg)).
+
+Status checked on 11 November 2026 (re-check before each release):
+
+| Python | `pi-heif` 1.4.0 wheels | Executable builds |
+|---|---|---|
+| 3.13 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported |
+| 3.14 | Windows x64, macOS Intel and Apple Silicon, Linux x64 | Supported; the recommended version |
+| 3.15 | None yet; pip falls back to compiling, which fails on Windows | Not supported; running from source works, see [HEIC photos and your Python version](#heic-photos-and-your-python-version) |
+
+PyInstaller 6.22 and PySide6 6.12 both list support for Python 3.14. Wheels for
+Linux ARM and Windows ARM were not checked, so those platforms are not covered
+by this table. When `pi-heif` publishes 3.15 wheels, update this
+table and remove the `pillow-heif` line and the `python_version` markers from
+`requirements.txt`.
+
 ### Version number
 
 The version is defined once, as `__version__` in `albummaker/__init__.py`.
