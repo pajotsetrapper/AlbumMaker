@@ -124,6 +124,43 @@ test('the day title and description can be edited and saved', async () => {
   assert.equal(day.description, 'First.\n\nSecond.');
 });
 
+test('saving only the title leaves a description changed in the file meanwhile alone', async () => {
+  const { w } = await load(fixture.server, DAY);
+  try {
+    writeContent({ ...readContent(), days: { '2026-05-01': { title: byId(w, 'edit-title').defaultValue, description: 'Typed in the file' } } });
+    await sleep(50);
+    byId(w, 'day-edit').click();
+    byId(w, 'edit-title').value = 'Only the title';
+    byId(w, 'day-save').click();
+    await sleep(500);
+    const day = readContent().days['2026-05-01'];
+    assert.equal(day.title, 'Only the title');
+    assert.equal(day.description, 'Typed in the file');
+  } finally {
+    writeContent(fixture.initialContent);
+  }
+});
+
+test('a description changed elsewhere is not overwritten, and the typed text stays in the form', async () => {
+  const { w } = await load(fixture.server, DAY);
+  try {
+    writeContent({ ...readContent(), days: { '2026-05-01': { description: 'Typed in the file' } } });
+    await sleep(50);
+    byId(w, 'day-edit').click();
+    byId(w, 'edit-desc').value = 'Typed in the browser';
+    byId(w, 'day-save').click();
+    await sleep(500);
+    const toast = byId(w, 'toast');
+    assert.match(toast.textContent, /changed elsewhere/);
+    assert.ok(toast.classList.contains('error'));
+    assert.equal(byId(w, 'edit-desc').value, 'Typed in the browser');
+    assert.equal(byId(w, 'day-editor').hidden, false);
+    assert.equal(readContent().days['2026-05-01'].description, 'Typed in the file');
+  } finally {
+    writeContent(fixture.initialContent);
+  }
+});
+
 test('a day without a title is offered one made of its place names', async () => {
   const { w } = await load(fixture.server, '/day/2026-05-02');     // no title saved for this day
   byId(w, 'day-edit').click();

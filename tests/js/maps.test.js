@@ -47,6 +47,51 @@ test('the details-panel map in the viewer gets it as well', { skip }, async () =
   const info = w.document.getElementById('info-map');
   assert.ok(info.classList.contains('leaflet-container'));
   assert.equal(info.querySelectorAll('.leaflet-outline-pane path').length, w.eval('WORLD_LAND.length'));
+  const credit = info.querySelector('.leaflet-control-attribution');
+  assert.ok(credit, 'the small map credits its tiles too');
+  assert.match(credit.textContent, /OpenStreetMap/);
+  assert.doesNotMatch(credit.textContent, /Leaflet/, 'compact: no Leaflet prefix');
+});
+
+test('the OpenStreetMap credit links to its copyright page', { skip }, async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  const link = w.document.querySelector('#day-map .leaflet-control-attribution a[href="https://www.openstreetmap.org/copyright"]');
+  assert.ok(link);
+  assert.equal(link.textContent, 'OpenStreetMap');
+});
+
+test('a credit set with --tile-attribution is shown as plain text', { skip }, async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  w.__div = w.document.createElement('div');
+  w.document.body.appendChild(w.__div);
+  w.eval(`window.TILE_ATTRIBUTION = '<b>Acme</b> tiles & <img src=x onerror="window.__xss=1">';
+          addBaseMap(L.map(window.__div, {center: [50, 4], zoom: 5}));`);
+  await sleep(50);
+  const credit = w.__div.querySelector('.leaflet-control-attribution');
+  assert.ok(credit.textContent.includes('<b>Acme</b> tiles & <img src=x onerror="window.__xss=1">'));
+  assert.equal(credit.querySelector('b, img'), null, 'no markup was made from it');
+  assert.equal(w.__xss, undefined);
+});
+
+test('library map tooltips show trip titles as text, never as markup', { skip }, async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  const div = w.document.createElement('div');
+  div.id = 'library-test-map';
+  w.document.body.appendChild(div);
+  w.eval(`window.__tips = [];
+          const bind = L.Layer.prototype.bindTooltip;
+          L.Layer.prototype.bindTooltip = function(content, options){ window.__tips.push(content); return bind.call(this, content, options); };
+          initLibraryMap('library-test-map', [{title: '<img src=x onerror="window.__xss=1">Italy', dates: 'May 2026',
+                                               href: '#', color: '#f00', points: [[45, 9], [44, 11]]}]);`);
+  const tips = w.eval('window.__tips');
+  assert.equal(tips.length, 2, 'the line and its start point');
+  for (const tip of tips) {
+    assert.equal(typeof tip, 'object', 'a DOM node, not an HTML string');
+    assert.equal(tip.textContent, '<img src=x onerror="window.__xss=1">Italy \u2014 May 2026');
+    assert.equal(tip.children.length, 0);
+  }
+  await sleep(50);
+  assert.equal(w.__xss, undefined);
 });
 
 test('the "tiles unavailable" notice appears only while no tile has loaded', { skip }, async () => {
