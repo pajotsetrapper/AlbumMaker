@@ -86,8 +86,8 @@ def collect_candidates(root: Path, exclude_dirs=()) -> list:
         ext = path.suffix.lower()
         if ext in IMAGE_EXTS:
             if ext in (".heic", ".heif") and not HEIF_SUPPORT:
-                print(f"  ! skipping {path.name}: install pillow-heif for HEIC support "
-                      f"(pip install pillow-heif)", file=sys.stderr)
+                print(f"  ! skipping {path.name}: install pi-heif for HEIC support "
+                      f"(pip install pi-heif)", file=sys.stderr)
                 continue
             candidates.append((path, "image"))
         elif ext in VIDEO_EXTS:

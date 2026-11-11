@@ -6,7 +6,13 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from albummaker.gui.commands import _command_prefix, build_command, offline_assets_command, server_command
+from albummaker.gui.commands import (
+    _command_prefix,
+    build_command,
+    ffmpeg_install_command,
+    offline_assets_command,
+    server_command,
+)
 from albummaker.gui.settings import (
     SettingsError,
     default_settings,
@@ -241,6 +247,10 @@ class GuiCommandTests(unittest.TestCase):
         self.settings = default_settings()
         self.settings["build"]["date_range_start"] = "2024-05-01"
         self.settings["build"]["date_range_end"] = "2024-05-03"
+
+    def test_ffmpeg_install_command_asks_the_cli_to_install_without_prompting(self):
+        command = ffmpeg_install_command(sys.executable)
+        self.assertEqual(command[-2:], ["install-ffmpeg", "--yes"])
 
     def test_server_command_includes_editor_link_and_server_settings(self):
         self.settings["library"]["title"] = "Family Holidays"

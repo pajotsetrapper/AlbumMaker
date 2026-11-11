@@ -106,19 +106,19 @@ repository to deploy from the `main` branch's `/docs` folder.
 Tagged builds and manually started **Build desktop executables** runs in
 GitHub Actions produce downloadable bundles for Windows x64, macOS Intel,
 macOS Apple Silicon, and Linux x64. Each bundle contains the GUI, its
-background command runner, the Python and GUI dependencies, and FFmpeg plus
-ffprobe; installing Python or FFmpeg separately is not required. Download
-the platform artifact from the corresponding run in the repository's
+background command runner, and the Python and GUI dependencies; installing
+Python is not required. **FFmpeg is not included**: it is separate software
+used for video dates and previews, and the app offers to install it for you on
+first start (see [Installing FFmpeg](#installing-ffmpeg)). Photos work without
+it. Download the platform artifact from the corresponding run in the repository's
 **Actions** tab; artifacts are retained for 30 days.
 
 The app source is licensed under the PolyForm Noncommercial License 1.0.0,
 and bundled components keep their own terms.
 The executable carries the project `LICENSE`, a third-party inventory, and
 build-generated notices with exact component versions and license text.
-FFmpeg and the codecs bundled with `pillow-heif` include GPL-licensed code.
-Before redistributing binaries, verify the complete corresponding source and
-build materials for those exact components; see
-[Third-party notices](./THIRD_PARTY_NOTICES.md). These builds are not
+The bundled HEIC reader (`pi-heif`) is decode-only and contains LGPL
+libraries, not GPL codecs. See [Third-party notices](./THIRD_PARTY_NOTICES.md). These builds are not
 code-signed or notarized, so Windows or macOS may display a security warning
 when you first open one. Linux builds are made on Ubuntu 22.04 and require a
 compatible Linux system with glibc.
@@ -145,7 +145,7 @@ python tools/build_executable.py
 ```
 
 The app is written to `dist/executable/`. The builder smoke-tests the GUI,
-background command runner, and bundled FFmpeg tools. To build for another
+background command runner, and HEIC support. To build for another
 operating system or architecture, run the same command on a native machine or
 use the GitHub Actions workflow described below.
 
@@ -200,13 +200,12 @@ The executable bundles the dependencies from all three requirements files:
 - `requirements.txt`: shared application libraries.
 - `requirements-gui.txt`: PySide6 and time-zone data for the desktop GUI.
 - `requirements-packaging.txt`: includes the two files above, plus PyInstaller
-  and the FFmpeg/ffprobe binary provider.
+  (FFmpeg is not bundled).
 
 When changing an application dependency, update its existing requirements
 file. To refresh the packaging tools or FFmpeg binaries, edit the PyInstaller
-range or `static-ffmpeg` version in `requirements-packaging.txt` first. The
-FFmpeg build must enable GPL codecs without non-free codecs; the build script
-checks this and generates the matching license notice. Then test the updated
+range in `requirements-packaging.txt` first. Keep using `pi-heif`, not
+`pillow-heif`, whose binary wheels include a GPL encoder. Then test the updated
 dependencies and produce a native build:
 
 ```bash
@@ -318,9 +317,10 @@ the *Terminal* app (Applications → Utilities), on Windows *Terminal* or
 
 1. Check that Python 3.9 or newer is installed: `python --version`. If
    it isn't, get it from [python.org](https://www.python.org/downloads/).
-2. Install **ffmpeg**, which handles the videos: `brew install ffmpeg` on
-   a Mac, `winget install ffmpeg` on Windows, `sudo apt install ffmpeg` on
-   Ubuntu. Without it photos work fine, but videos have no date or preview.
+2. Install **ffmpeg**, which handles the videos: run
+   `python -m albummaker install-ffmpeg` (see
+   [Installing FFmpeg](#installing-ffmpeg)). Without it photos work fine, but
+   videos have no date or preview.
 3. Go to the folder holding these scripts (`cd`, then drag the folder in)
    and install what they need:
 
@@ -450,12 +450,27 @@ into `dist/albummaker.pyz`, which you can copy anywhere and run with
 photos -o site`. The requirements still need to be installed; offline assets
 are read from the platform-specific AlbumMaker configuration directory.
 
-You also need **ffmpeg** installed and on your PATH. It's used to read
-video metadata and grab a thumbnail frame from each video:
+You also need **ffmpeg**. It's used to read video metadata and grab a
+thumbnail frame from each video.
+
+### Installing FFmpeg
+
+AlbumMaker does not include or download FFmpeg itself. FFmpeg is separate
+software with its own license (LGPL or GPL, depending on the build; see
+[ffmpeg.org/legal](https://ffmpeg.org/legal.html)). The easiest way is
+`python -m albummaker install-ffmpeg`, which asks first and then runs your
+system's package manager (`winget` on Windows, Homebrew on macOS and Linux).
+The desktop app offers the same on first start, and has an **Install FFmpeg**
+button. Or install it yourself:
 
 - macOS: `brew install ffmpeg`
 - Ubuntu/Debian: `sudo apt install ffmpeg`
-- Windows: [ffmpeg.org/download](https://ffmpeg.org/download.html), or `winget install ffmpeg`
+- Windows: `winget install Gyan.FFmpeg`, or a build from
+  [ffmpeg.org/download](https://ffmpeg.org/download.html)
+
+If you downloaded builds by hand, copy `ffmpeg` and `ffprobe` into the
+`ffmpeg` folder inside AlbumMaker's configuration folder, and AlbumMaker will
+find them.
 
 Without ffmpeg, videos still appear, but with no date (so they land
 on the "Unsorted" page), no location, and a plain placeholder tile
@@ -1270,7 +1285,7 @@ so none of this applies there. The exceptions:
 
 - **Formats.**
   - **Photos:** jpg, png, heic/heif, tiff, bmp, webp. HEIC needs
-    `pillow-heif`, which is in `requirements.txt`; without it, HEIC files
+    `pi-heif`, which is in `requirements.txt`; without it, HEIC files
     are skipped with a note.
   - **Videos:** mp4, mov, m4v, avi, mkv, 3gp. Whether a video *plays*
     inline depends on the browser supporting its container and codec.
@@ -1558,7 +1573,7 @@ What's covered:
 
 What isn't covered: a real browser (jsdom approximates one, with a few
 stand-ins for what Leaflet needs), the real OpenStreetMap and npm
-servers, and HEIC conversion, which needs `pillow-heif`.
+servers, and HEIC conversion, which needs `pi-heif`.
 
 ## Customizing the look
 
@@ -1600,7 +1615,7 @@ Third-party software and data are not relicensed; their licenses,
 attributions and binary-distribution notes are listed in
 [THIRD_PARTY_NOTICES.md](./THIRD_PARTY_NOTICES.md). Read the notices for the
 specific executable before redistributing it, especially the GPL source
-availability notes for bundled FFmpeg and HEIF codecs.
+notes for the bundled HEIF libraries. FFmpeg is not bundled.
 
 ## Support the project
 
