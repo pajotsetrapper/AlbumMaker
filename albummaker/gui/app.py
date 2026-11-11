@@ -4,8 +4,10 @@
 
 from __future__ import annotations
 
+import os
 import platform
 import re
+import signal
 import socket
 import subprocess
 import sys
@@ -58,8 +60,9 @@ from .commands import (
     offline_assets_command,
     server_command,
 )
-from .settings import (SettingsError, default_settings, load_settings, prepare_metadata_cache,
-                       prepare_tile_cache, save_settings, settings_path, write_library_file)
+from .settings import (LoadedSettings, SettingsError, default_settings, load_settings_or_recover,
+                       prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
+                       validate_settings, write_library_file)
 from ..timezones import timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
@@ -227,32 +230,63 @@ HELP_HTML = """
 <h2>AlbumMaker help</h2>
 <p>Follow the three steps in the main window: add trip folders, choose whether to run a live server
 or create a static site, then start. Your choices are saved automatically. Most people can use the
-defaults; less common settings are under <b>Options</b>. General options apply to both workflows;
-Live server and Static site options apply only to their named workflow. The version number is shown
-under the app name and at the bottom of this window; please include it when reporting a problem.</p>
-<h3>Trip library</h3>
+defaults; less common settings are under <b>Options</b>. The General tab applies to both workflows;
+the Live server and Static site tabs apply only to their named workflow. The version number is shown
+under the app name and at the bottom of this window; please include it when reporting a problem
+(see <b>Reporting a problem</b> at the end).</p>
+
+<h3>Main window</h3>
 <ul>
-<li><b>Add folders:</b> choose multiple trip folders in the folder picker.
-Existing entries are skipped.</li>
-<li><b>Time zone:</b> choose a zone from that trip's Time zone column, such as
-<code>Europe/Paris</code>. It is saved with the folder and handles daylight-saving changes.
+<li><b>Options:</b> opens the settings described below.</li>
+<li><b>Help:</b> opens this window.</li>
+<li><b>Install FFmpeg:</b> only shown while FFmpeg cannot be found; see <b>FFmpeg</b> below.</li>
+<li><b>Status</b> (top right): what AlbumMaker is doing, such as <i>Ready</i>, <i>Server running</i>
+or <i>Completed</i>.</li>
+</ul>
+
+<h3>Step 1: Choose your trip folders</h3>
+<ul>
+<li><b>Add folders:</b> choose one or more trip folders in the folder picker
+(Ctrl/Command- or Shift-click to select several). Folders already in the list are skipped.
+Each row is one trip.</li>
+<li><b>Trip folder</b> column: the folder's name; hover over it to see the full path, or
+<i>Folder not found</i> if it is missing.</li>
+<li><b>Time zone</b> column: search by typing a region or city, or open the list, and choose a zone
+such as <code>Europe/Paris</code>. It is saved with the folder and handles daylight-saving changes.
 <b>Automatic</b> does not guess the trip's location. Photo EXIF times stay as recorded. For videos,
-the shared Default video UTC offset is used if set; otherwise iPhone local timestamps are kept as
-recorded and other UTC capture times use this computer's time zone. Choose a named zone when you
-want a consistent trip-local time, especially for video. For GPS-track matching, AlbumMaker uses
-offsets recorded in the files first, then the same day's media, then the trip zone or default
-offset, and finally the trip's overall media offsets when available.</li>
-<li><b>Remove:</b> removes selected folders from the library; it never
-deletes photos or generated files.</li>
+the <b>Default video UTC offset</b> (Options &rarr; General) is used if set; otherwise iPhone local
+timestamps are kept as recorded and other UTC capture times use this computer's time zone. Choose a
+named zone when you want a consistent trip-local time, especially for video. For GPS-track matching,
+AlbumMaker uses offsets recorded in the files first, then the same day's media, then the trip zone or
+default offset, and finally the trip's overall media offsets when available.</li>
+<li><b>Remove:</b> removes the selected folders from the list; it never deletes photos or
+generated files.</li>
 </ul>
-<h3>Choose a workflow</h3>
+
+<h3>Step 2: Choose what to do</h3>
 <ul>
-<li><b>Live server:</b> scans your trips and opens the site in a browser. The server stays running
-until you stop it. Required setup is in Options → Live server.</li>
-<li><b>Static site:</b> creates a standalone copy you can share. Pick its output folder in the main
-window; it does not require the live-server setup. Its maps need the site to be served over
-http(s); see the note below.</li>
+<li><b>Live server:</b> scans your trips and serves the site to your web browser, where you can also
+edit it (see <b>In the browser</b>). The server keeps running until you stop it or close AlbumMaker.
+Its required setup is in Options &rarr; Live server.</li>
+<li><b>Static site:</b> creates a standalone website folder you can copy, share or publish.
+<b>Save site to</b> is the folder it is created in; <b>Browse&hellip;</b> chooses it. It does not
+need the live-server setup. Its maps need the site to be served over http(s); see the note below.</li>
 </ul>
+
+<h3>Step 3: Run</h3>
+<ul>
+<li>The button says <b>Start live server</b> or <b>Create static site</b>, depending on Step 2. The text
+next to it says what is still missing, if anything.</li>
+<li>While a task runs, the button becomes <b>Stop server</b> (live server) or <b>Stop task</b> (anything
+else, such as creating a site or downloading offline assets). Only one task runs at a time.</li>
+<li>When the live server is ready, <b>Open trip site</b> opens it in your browser. When editing is
+enabled, <b>Open editing link (private)</b> opens the private editor link, which lets any browser
+edit, for example on another computer. Do not share that link: it grants editing access. It changes
+every time the server starts.</li>
+<li><b>Show activity</b> / <b>Hide activity</b> shows or hides the Activity log: progress, errors, the
+commands AlbumMaker runs, and server requests. It opens by itself when a task starts.</li>
+</ul>
+
 <h3>Viewing a static site: maps need a web server</h3>
 <p>Static sites load map tiles straight from OpenStreetMap. OpenStreetMap refuses tile requests that
 carry no <code>Referer</code> header (its tile usage policy), and a browser sends none for a page opened
@@ -271,95 +305,218 @@ limitation.</li>
 </ul>
 <p>OpenStreetMap's policy also expects light traffic. A heavily visited site should use a commercial
 tile provider instead.</p>
-<h3>Options → Live server</h3>
-<p>These settings only affect the live server. It requires the metadata cache folder and map tile
-cache folder, which are created if needed. Missing offline assets are downloaded automatically when
-you start the server; an internet connection is required. You can also download or refresh them
-here. Offline assets are stored in <code>offline-assets</code> beside AlbumMaker's settings file.</p>
+
+<h3>Options &rarr; General</h3>
+<p>These settings apply to both the live server and static sites.</p>
 <ul>
-<li><b>Metadata cache folder:</b> required. Stores a small JSON index per trip with each media
-file's size and modification time plus metadata read from it, including capture date, GPS
-coordinates, dimensions, camera details and video information. On a later server start, unchanged
-files can reuse these results instead of being read again. It does not store photo or video copies.
-By default this is a <code>metadata-cache</code> folder next to AlbumMaker's settings file.</li>
-<li><b>Offline assets:</b> downloads local copies
-of the map library and fonts once, so those interface assets are served locally. Map backgrounds
-(tiles) are separate: they come from the configured map provider unless you use a tile cache.
-If these assets are available, static-site generation also bundles them into the site; they are
-not a static-site prerequisite.</li>
-<li><b>Map tile cache folder:</b> required. Stores map tiles as they are viewed, preventing repeat
-downloads and allowing previously viewed map areas to work offline. By default this is a
-<code>tile-cache</code> folder next to AlbumMaker's settings file.</li>
+<li><b>Appearance &rarr; Color theme:</b> light or dark, for this app.</li>
+<li><b>Trip library page &rarr; Overview page title:</b> the heading and browser-tab title of the
+page listing all trips. Defaults to <code>Trips</code>.</li>
+<li><b>Video time handling &rarr; Default video UTC offset:</b> optional fixed fallback for videos in
+trips whose time zone is Automatic. Enter hours east of UTC, such as <code>2</code> or
+<code>-5.5</code>. A time zone chosen for a trip takes precedence. Leave blank to use automatic
+handling.</li>
+<li><b>Shared trip processing &rarr; Thumbnail size:</b> base thumbnail size in pixels (16&ndash;4096;
+default 400).</li>
+<li><b>Shared trip processing &rarr; Optional date range:</b> the first and last date (YYYY-MM-DD)
+your files should fall between. Both dates are required, and the end must be on or after the start.
+The same range is used for <b>every trip</b> in the list. Files outside it are treated as having a
+suspicious date and are put under Unsorted. Leave both blank to use the normal date checks. Different
+ranges per trip are only possible from the command line. Ignored (and greyed out) while
+<b>Trust all captured dates</b> is on.</li>
+<li><b>Shared import behavior:</b>
+<ul>
+<li><b>Keep exact duplicate files:</b> includes byte-identical copies that are otherwise
+skipped.</li>
+<li><b>Show Live Photo video clips separately:</b> lists paired clips as individual videos
+instead of attaching them to their photos.</li>
+<li><b>Trust all captured dates:</b> skips the suspicious-date checks; the optional date range is
+ignored while this is on.</li>
+<li><b>Ignore GPS tracks:</b> disables matching media to GPX tracks and drawing GPS routes.</li>
+<li><b>Hide offline place names:</b> leaves out nearest-town names everywhere they appear: under
+each day's date, on day and trip cards, in the photo details panel, and as suggested day titles
+in the editor.</li>
+</ul></li>
+<li><b>Additional GPS tracks &rarr; GPX paths:</b> optional .gpx files or folders, one per line.
+Tracks inside each trip folder are found automatically. Ignored (and greyed out) while
+<b>Ignore GPS tracks</b> is on.</li>
 </ul>
-<p>Other live server settings:</p>
+
+<h3>Options &rarr; Live server</h3>
+<p>These settings only affect the live server.</p>
+<p><b>One-time server setup.</b> The two cache folders are required and are created if needed.
+Each has a <b>Browse&hellip;</b> button to choose it.</p>
 <ul>
-<li><b>Port:</b> local web-server port (1–65535; default 8000); open the shown URL in a browser.</li>
-<li><b>Image cache:</b> maximum memory for generated thumbnails and converted photos (16–65536 MB;
+<li><b>Metadata cache folder:</b> stores a small JSON index per trip with each media file's size and
+modification time plus metadata read from it, including capture date, GPS coordinates, dimensions,
+camera details and video information. On a later server start, unchanged files can reuse these
+results instead of being read again. It does not store photo or video copies. By default this is a
+<code>metadata-cache</code> folder next to AlbumMaker's settings file.</li>
+<li><b>Map tile cache folder:</b> stores map tiles as they are viewed, preventing repeat downloads
+and allowing previously viewed map areas to work offline. By default this is a
+<code>tile-cache</code> folder next to AlbumMaker's settings file.</li>
+<li><b>Download offline assets</b> (<b>Refresh offline assets</b> once they are there): downloads local
+copies of the map library and fonts, so those parts of the page work without internet. Missing
+offline assets are also downloaded automatically when you start the server; an internet connection
+is needed for that. They are stored in <code>offline-assets</code> beside AlbumMaker's settings file.
+Map backgrounds (tiles) are separate: they come from the map provider unless they are in the tile
+cache. If the offline assets are available, static sites also include them; they are not required
+for static sites.</li>
+</ul>
+<p><b>Live server options.</b></p>
+<ul>
+<li><b>Port:</b> local web-server port (1&ndash;65535; default 8000).</li>
+<li><b>Image cache:</b> maximum memory for generated thumbnails and converted photos (16&ndash;65536 MB;
 default 512 MB).</li>
 <li><b>High-resolution thumbnail:</b> a larger preview used for large gallery tiles and trip cards on
 high-pixel-density screens, so small thumbnails do not look soft when enlarged. It is measured by its
 longest side in pixels. The live-server default is 2400 pixels, a good choice for Full HD and 4K displays;
-the server creates these previews on demand. It must exceed the normal thumbnail size. Larger images
+the server creates these previews on demand. It must be larger than the thumbnail size. Larger images
 need more processing and memory; Off disables them.</li>
-<li><b>Allow other devices on my network:</b> lets devices on the local network view the site.
-Off by default. There is no password, so use only a trusted network.</li>
+<li><b>Allow other devices on my network to connect:</b> lets devices on the local network view the
+site. Off by default. There is no password, so use it only on a trusted network. Other devices can
+look but not edit, unless they open the editor link.</li>
 <li><b>Disable all in-page editing:</b> prevents edits to captions, favorites, hidden photos,
-covers, titles and descriptions. Off by default.</li>
-<li><b>Require the editor link:</b> editing is allowed only in a browser opened with the
-private editor link printed in the activity log. Off by default; useful behind a proxy or tunnel.</li>
-<li><b>Show every request:</b> adds all HTTP requests to the activity log; otherwise errors
-and slow requests are shown. On by default in the desktop app.</li>
+covers, titles and descriptions, for everyone. Off by default.</li>
+<li><b>Require the editor link for editing:</b> editing is allowed only in a browser opened with the
+private editor link (<b>Open editing link (private)</b>, also printed in Activity). Off by default;
+useful behind a reverse proxy or tunnel.</li>
+<li><b>Show every request in the activity log:</b> adds all HTTP requests to Activity; otherwise only
+errors and slow requests are shown. On by default in the desktop app.</li>
 </ul>
-<h3>Options → Static site</h3>
-<p>These settings only affect static-site generation.</p>
+<p><b>Maps and network (optional).</b></p>
+<ul>
+<li><b>Custom map URL:</b> an optional map-tile provider URL starting with <code>http://</code> or
+<code>https://</code> and containing <code>{z}</code>, <code>{x}</code> and <code>{y}</code>. Blank by
+default, which uses OpenStreetMap. Static sites always use OpenStreetMap.</li>
+<li><b>Extra allowed host names:</b> additional host names the server may answer to, one per line.
+Blank by default; use only for a trusted custom local DNS name.</li>
+</ul>
+
+<h3>Options &rarr; Static site</h3>
+<p>These settings only affect static-site generation (<b>Static site media</b>).</p>
 <ul>
 <li><b>High-resolution thumbnail:</b> optional larger version for large gallery tiles and trip cards on
 high-pixel-density screens, so small thumbnails do not look soft when enlarged. It is measured by its
 longest side in pixels. 2400 pixels is a good choice for Full HD and 4K displays; Off is the default for
-generated sites, and any enabled value must be larger than the normal thumbnail size. Larger images
+static sites, and any other value must be larger than the thumbnail size. Larger images
 increase build time and site size.</li>
-<li><b>Parallel workers:</b> number of files processed simultaneously. Automatic uses
-available CPU cores and is the default.</li>
-<li><b>Regenerate all media:</b> rebuilds every thumbnail and media copy instead of reusing
+<li><b>Parallel workers:</b> number of files processed at the same time. Automatic, the default, uses
+the available CPU cores.</li>
+<li><b>Regenerate all static site media:</b> rebuilds every thumbnail and media copy instead of reusing
 unchanged generated files. Off by default.</li>
 </ul>
-<h3>Options → General</h3>
+
+<h3>FFmpeg</h3>
+<p>AlbumMaker uses FFmpeg, a separate program, to read video dates and locations and to make video
+previews. AlbumMaker does not include FFmpeg. Without it, photos work normally, but videos have no date
+(so they end up under Unsorted), no location and a plain placeholder instead of a preview. Once FFmpeg
+is installed, the missing previews are made the next time you start the server or create the site.</p>
 <ul>
-<li><b>Appearance:</b> choose the light or dark color theme.</li>
-<li><b>Trip overview page title:</b> under <b>Options → General → Trip library page</b>, set the
-heading and browser-tab title for the page listing all trips, for both live and static sites.
-Defaults to <code>Trips</code>.</li>
-<li><b>Default video UTC offset:</b> optional fixed fallback for videos in trips set to Automatic,
-shared by the live server and static sites. Enter hours east of UTC, such as <code>2</code> or
-<code>-5.5</code>. Leave blank to use automatic handling.</li>
-<li><b>Thumbnail size:</b> base thumbnail dimension in pixels (16–4096; default 400), used by both workflows.</li>
-<li><b>Optional date range:</b> include the start and end dates (YYYY-MM-DD) for every trip;
-both dates are required, and the end must be on or after the start. Files outside this inclusive range are put
-under Unsorted. Leave both blank to use date checks.</li>
-<li><b>Keep exact duplicate files:</b> includes byte-identical copies that are otherwise skipped.</li>
-<li><b>Show Live Photo video clips separately:</b> lists paired clips as individual videos
-instead of attaching them to their photos.</li>
-<li><b>Trust all captured dates:</b> skips suspicious-date checks; the optional date range
-is ignored when enabled.</li>
-<li><b>Ignore GPS tracks:</b> disables GPX track matching and route drawing.</li>
-<li><b>Hide offline place names:</b> omits nearest-town names.</li>
-<li><b>GPX paths:</b> optional .gpx files or folders, one per line. Tracks inside each trip folder
-are found automatically. These paths are ignored when GPS tracks are disabled.</li>
+<li><b>When AlbumMaker starts</b> and cannot find FFmpeg, it offers to install it. If your system has a
+package manager AlbumMaker can use (<code>winget</code> on Windows, Homebrew on macOS and Linux), the
+<b>Install FFmpeg</b> button there runs it and shows the progress in Activity. Otherwise the dialog
+offers <b>Open download page</b> and <b>Copy command</b>.</li>
+<li><b>Not now</b> asks again at the next start. <b>Don't ask again</b> stops the question at
+startup; the <b>Install FFmpeg</b> button in the main window still works.</li>
+<li>The <b>Install FFmpeg</b> button in the main window is only shown while FFmpeg is missing. It
+disappears once FFmpeg is found, including when you installed it some other way (AlbumMaker checks
+again when you switch back to its window).</li>
+<li><b>Install it yourself</b> instead, then restart AlbumMaker:
+<code>winget install Gyan.FFmpeg</code> (Windows), <code>brew install ffmpeg</code> (macOS),
+<code>sudo apt install ffmpeg</code> (Debian/Ubuntu), <code>sudo dnf install ffmpeg-free</code>
+(Fedora) or <code>sudo pacman -S ffmpeg</code> (Arch). Or download a build from
+<a href="https://ffmpeg.org/download.html">ffmpeg.org</a> and copy both <code>ffmpeg</code> and
+<code>ffprobe</code> into this folder: <code>@FFMPEG_DIR@</code></li>
 </ul>
-<h3>Activity</h3>
-<p>Open <b>Show activity</b> to see progress, errors, and server requests. When the live server is
-ready, the main window shows an <b>Open trip site</b> button and, when editing is enabled, a private
-editing-link button. Do not share that link: it grants editing access. The Run button changes to
-<b>Stop server</b> while it runs.</p>
-<h3>Additional live server settings</h3>
+<p>FFmpeg is made by the FFmpeg project and licensed by them (LGPL or GPL, depending on the build).</p>
+
+<h3>In the browser</h3>
+<p>What you can do on the site itself. Editing needs the live server; everything else works on both
+the live server and a static site.</p>
 <ul>
-<li><b>Tile URL template:</b> for the live server, an optional map-tile provider URL containing <code>{z}</code>,
-<code>{x}</code> and <code>{y}</code>. Blank by default; the provider is OpenStreetMap. Static sites
-always use OpenStreetMap and must be served over http(s) for the maps to load.</li>
-<li><b>Allowed host names:</b> for the live server, additional host names the server may answer to, one per line.
-Blank by default; use only for a trusted custom local DNS name.</li>
+<li><b>Pages:</b> the trip list, with a card per trip and a map of all trips; each trip's
+homepage, with an overview map and a card per day; and a page per day with its map and photos. Click a map point or a card to open it. Files without a usable date are on the
+<i>Unsorted</i> page.</li>
+<li><b>Sizes:</b> the <b>Card size</b> and <b>Thumbnail size</b> controls (<b>S</b>, <b>M</b>, <b>L</b>,
+<b>XL</b>) make cards and thumbnails bigger or smaller. The browser remembers each choice.</li>
+<li><b>Slideshow:</b> click a photo to open it full-screen. <b>Play</b> (or Space) advances by itself;
+the speed button next to it changes the time per photo. The <b>Live</b> button plays a Live Photo's
+clip.</li>
+<li><b>Favorites:</b> once a photo is a favorite (&#9733;), a <b>&#9733; Favorites</b> button above the
+thumbnails shows only the favorites, and the slideshow then steps through favorites only.</li>
+<li><b>Locations:</b> each geotagged photo is a point on the maps, and <b>I</b> in the slideshow opens a
+details panel with camera settings, the place, a small map of where it was taken, and a link to
+download the original file. GPS tracks, if any, are drawn on the maps.</li>
+<li><b>Links to one photo:</b> opening a photo adds <code>#p=&hellip;</code> to the address. Copy
+the address to share a link that opens that photo; the browser's Back button closes the
+viewer.</li>
 </ul>
+<p><b>Keyboard shortcuts.</b> On a day page: <b>&larr;</b> / <b>&rarr;</b> previous / next day,
+<b>Esc</b> back to the trip homepage (it closes anything open first; on a trip's homepage it goes back
+to the trip list). In the slideshow: <b>&larr;</b> / <b>&rarr;</b> previous / next photo, <b>Space</b>
+play / pause, <b>+</b> / <b>-</b> / <b>0</b> zoom in / out / reset, <b>I</b> details panel, <b>F</b>
+true full-screen, <b>L</b> play a Live Photo's clip, <b>S</b> favorite (when editing), <b>Esc</b> close
+the details panel, then the viewer. Shortcuts are off while you type in a caption or title box.</p>
+<p><b>Editing</b> (live server; on this computer, or in a browser opened with the editor link).
+Changes are saved immediately to <code>trip_content.json</code> in the trip's photos folder.</p>
+<ul>
+<li><b>Day title and description:</b> <b>Edit title &amp; description</b> on a day page. A day without
+a title offers its towns as a suggested title. <b>Preview as visitor</b> shows that page as others
+see it.</li>
+<li><b>Captions:</b> type in the caption box under a photo in the slideshow, then press Enter or click
+away.</li>
+<li><b>Favorite</b> (or <b>S</b>) marks a photo with &#9733;.</li>
+<li><b>Set as cover</b> makes the photo that day's card on the trip homepage; <b>Set trip cover</b>
+makes it the cover of the whole trip in the trip list.</li>
+<li><b>Hide</b> / <b>Unhide:</b> hidden photos are never shown to visitors and are left out of a
+static site entirely; you still see them, dimmed, so you can unhide them. Your files are never
+changed or deleted.</li>
+</ul>
+<p><b>Trip title and subtitle</b> cannot be edited in the browser. They are stored, together with the
+day texts, captions, favorites, hidden photos and covers, in <code>trip_content.json</code> in the
+trip's photos folder. A new file starts with the folder's name as the title; edit the
+<code>"title"</code> and <code>"subtitle"</code> lines with a text editor, then refresh the live
+page or create the static site again.</p>
+
+<h3>Only from the command line</h3>
+<p>The app covers the common settings. These need the command-line scripts (see the README):</p>
+<ul>
+<li>Serving or building one trip folder on its own, without the trip list page (<code>-i</code>).</li>
+<li>A different <code>trip_content.json</code> file (<code>-c</code> / <code>--content</code>).</li>
+<li>One time zone for every trip at once (<code>--timezone</code>); in the app, choose it per trip.</li>
+<li>Per-trip settings in a trip list (<code>--library</code>): the name a trip gets in web addresses,
+and per-trip date ranges, UTC offsets, GPX tracks or import options.</li>
+<li>The credit shown on the maps when you use a <b>Custom map URL</b> (<code>--tile-attribution</code>);
+without it the maps credit the tile server's host name.</li>
+</ul>
+
+<h3>Settings file</h3>
+<p>Your settings are saved automatically in <code>@SETTINGS_PATH@</code>. If that file is damaged,
+AlbumMaker starts with the default settings, renames the damaged file to
+<code>settings.json.bad-</code><i>date-time</i> in the same folder, and tells you what was wrong.</p>
+
+<h3>Reporting a problem</h3>
+<p>Report problems and suggestions at
+<a href="https://github.com/pajotsetrapper/AlbumMaker/issues">github.com/pajotsetrapper/AlbumMaker/issues</a>.
+Please include the version line at the bottom of this window and, if possible, the messages from
+Activity. The packaged app also saves unexpected errors to <code>albummaker-gui-error.log</code> next to
+the settings file.</p>
+
+<h3>License</h3>
+<p>AlbumMaker is licensed under the PolyForm Noncommercial License 1.0.0. It uses Qt (LGPL-3.0) and
+other third-party software, which keep their own licenses. See the <code>LICENSE</code> and
+<code>THIRD_PARTY_NOTICES</code> files next to the app in the download, or in the
+<a href="https://github.com/pajotsetrapper/AlbumMaker">source repository</a>.</p>
 """
+
+
+def _help_html() -> str:
+    """HELP_HTML with this computer's folders filled in."""
+    from ..ffmpeg_setup import user_tool_dir
+    return (HELP_HTML
+            .replace("@FFMPEG_DIR@", _escape_html(str(user_tool_dir())))
+            .replace("@SETTINGS_PATH@", _escape_html(str(settings_path()))))
 
 
 def _label(text: str, object_name: Optional[str] = None) -> QLabel:
@@ -369,15 +526,37 @@ def _label(text: str, object_name: Optional[str] = None) -> QLabel:
     return label
 
 
+LICENSE_TEXT = (
+    "Licensed under PolyForm Noncommercial 1.0.0. Uses Qt (LGPL-3.0) and other "
+    "third-party software; see THIRD_PARTY_NOTICES."
+)
+
+
 def _about_text() -> str:
-    """One line naming the app version and what it runs on (handy in bug reports)."""
+    """The app version and what it runs on (handy in bug reports), then the license."""
     try:
         import PySide6
         qt = f"PySide6 {PySide6.__version__}"
     except Exception:  # pragma: no cover
         qt = "PySide6"
     return (f"AlbumMaker {__version__} \u00b7 Python {platform.python_version()} \u00b7 "
-            f"{qt} \u00b7 {platform.platform()}")
+            f"{qt} \u00b7 {platform.platform()}\n{LICENSE_TEXT}")
+
+
+# How a kind of background task is written in the status line and Activity,
+# where it differs from the kind string itself (which the code compares against).
+TASK_LABELS = {"ffmpeg setup": "FFmpeg setup"}
+
+
+def _task_label(kind: str) -> str:
+    """The task's name in the middle of a sentence."""
+    return TASK_LABELS.get(kind, kind)
+
+
+def _task_name(kind: str) -> str:
+    """The task's name at the start of a sentence."""
+    label = _task_label(kind)
+    return label[:1].upper() + label[1:]
 
 
 def _group(title: str) -> tuple[QGroupBox, QFormLayout]:
@@ -412,11 +591,55 @@ def _application_icon() -> QIcon:
     return QIcon(image)
 
 
+def _start_in_own_session(process: QProcess) -> bool:
+    """On macOS and Linux, start the task as the leader of a new session (and so
+    of its own process group), so stopping it can signal everything it started:
+    the packaged helper is a PyInstaller launcher plus the real program, and a
+    build runs worker processes. Needs PySide6 6.7 or later; returns False if
+    that is not available, and the task then starts as before."""
+    if sys.platform == "win32":
+        return False
+    flags = getattr(QProcess, "UnixProcessFlag", None)
+    flag = getattr(flags, "CreateNewSession", None)
+    if flag is None or not hasattr(process, "setUnixProcessParameters"):
+        return False
+    try:
+        process.setUnixProcessParameters(flag)
+    except (TypeError, ValueError, RuntimeError):  # pragma: no cover - older bindings
+        return False
+    return True
+
+
+def settings_recovery_message(loaded: LoadedSettings) -> str:
+    """What to tell the user when the settings file could not be used."""
+    text = (
+        "AlbumMaker could not use its settings file, so it started with the default "
+        f"settings.\n\nWhat was wrong:\n{loaded.problem}\n\n"
+    )
+    if loaded.moved_to is not None:
+        return text + (
+            f"The old file was moved to:\n{loaded.moved_to}\n\n"
+            "Your trip folders and other choices are still in that file; open it in a text "
+            "editor if you want to copy them back. New settings are saved as usual."
+        )
+    return text + (
+        f"The old file could not be moved aside ({loaded.move_error}), so it was left "
+        f"unchanged at:\n{loaded.path}\n\n"
+        "To avoid overwriting it, changes you make now will not be saved. Move, fix or "
+        "delete that file, then restart AlbumMaker."
+    )
+
+
 class MainWindow(QMainWindow):
-    def __init__(self, settings: dict):
+    def __init__(self, settings: dict, save_blocked_reason: str = ""):
         super().__init__()
         self.settings = settings
+        # Set when a damaged settings file could not be moved aside: saving would
+        # overwrite it, so settings are kept in memory only.
+        self._save_blocked_reason = save_blocked_reason
+        self._startup_settings = validate_settings(settings)
         self._process: Optional[QProcess] = None
+        self._process_group = False
         self._process_kind = ""
         self._log_remainder = ""
         self._offline_asset_error = ""
@@ -439,6 +662,12 @@ class MainWindow(QMainWindow):
         self._connect_persistence()
         self._apply_theme()
         self._update_actions()
+        if save_blocked_reason:
+            self.status_label.setText("Settings are not being saved")
+            self.status_label.setToolTip(
+                "The damaged settings file could not be moved aside, so it is not overwritten: "
+                + save_blocked_reason
+            )
 
     def _build_ui(self) -> None:
         root = QWidget()
@@ -767,7 +996,10 @@ class MainWindow(QMainWindow):
         self.no_gpx.setToolTip("Disable matching media to GPX tracks and drawing GPS routes.")
         behavior_form.addRow("", self.no_gpx)
         self.no_places = QCheckBox("Hide offline place names")
-        self.no_places.setToolTip("Do not show nearest-town names on the trip maps.")
+        self.no_places.setToolTip(
+            "Leave out nearest-town names: under day dates, on day and trip cards, in the "
+            "photo details panel and in suggested day titles."
+        )
         behavior_form.addRow("", self.no_places)
 
         gpx_box, gpx_form = _group("Additional GPS tracks")
@@ -1215,7 +1447,7 @@ class MainWindow(QMainWindow):
                     else "Waiting for the live server to become ready…"
                 )
             else:
-                status = f"{self._process_kind.capitalize()} is in progress."
+                status = f"{_task_name(self._process_kind)} is in progress."
             self.workflow_status.setText(status)
             return
 
@@ -1336,8 +1568,10 @@ class MainWindow(QMainWindow):
             "padding: 2px 4px; border-radius: 3px; } "
             f".muted {{ color: {muted}; }}"
             "</style></head><body>"
-            + HELP_HTML
-            + f'<p class="muted"><small>{_escape_html(_about_text())}</small></p>'
+            + _help_html()
+            + '<p class="muted"><small>'
+            + _escape_html(_about_text()).replace("\n", "<br>")
+            + "</small></p>"
             + "</body></html>"
         )
         content.setOpenExternalLinks(True)
@@ -1426,7 +1660,11 @@ class MainWindow(QMainWindow):
     def _save_from_ui(self) -> bool:
         settings = self._settings_from_ui()
         try:
-            save_settings(settings)
+            if self._save_blocked_reason:
+                # check them as saving would, but leave the damaged file alone
+                validate_settings(settings)
+            else:
+                save_settings(settings)
         except SettingsError as exc:
             self.log_view.appendPlainText(f"Settings error: {exc}")
             self.status_label.setText("Settings could not be saved")
@@ -1463,8 +1701,18 @@ class MainWindow(QMainWindow):
                 if name.startswith("_PYI_") or name == "_MEIPASS2":
                     environment.remove(name)
             environment.insert("PYINSTALLER_RESET_ENVIRONMENT", "1")
+            if sys.platform.startswith("linux"):
+                # Give the helper the library path this app was started with,
+                # not the one PyInstaller set up for the app's own libraries.
+                original = environment.value("LD_LIBRARY_PATH_ORIG", "")
+                environment.remove("LD_LIBRARY_PATH_ORIG")
+                if original:
+                    environment.insert("LD_LIBRARY_PATH", original)
+                else:
+                    environment.remove("LD_LIBRARY_PATH")
         process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        self._process_group = _start_in_own_session(process)
         process.readyReadStandardOutput.connect(self._read_process_output)
         process.started.connect(lambda: self._on_started(kind))
         process.errorOccurred.connect(self._on_process_error)
@@ -1479,8 +1727,8 @@ class MainWindow(QMainWindow):
         self.editor_link_button.hide()
         self.server_links.hide()
         self._log_remainder = ""
-        self._append_log(f"Starting {kind}: {self._display_command(arguments)}")
-        self.status_label.setText(f"Starting {kind}…")
+        self._append_log(f"Starting {_task_label(kind)}: {self._display_command(arguments)}")
+        self.status_label.setText(f"Starting {_task_label(kind)}…")
         self._update_actions()
         process.start(arguments[0], arguments[1:])
 
@@ -1584,7 +1832,7 @@ class MainWindow(QMainWindow):
             "build": "Generating site",
             "offline assets": "Downloading assets",
         }
-        self.status_label.setText(states.get(kind, f"{kind.capitalize()} running"))
+        self.status_label.setText(states.get(kind, f"{_task_name(kind)} running"))
         self._update_actions()
 
     def _on_process_error(self, error: QProcess.ProcessError) -> None:
@@ -1639,7 +1887,7 @@ class MainWindow(QMainWindow):
             self._update_server_setup()
         if kind == "ffmpeg setup":
             self._update_ffmpeg_button()
-        self._append_log(f"{kind.capitalize()} finished with exit code {exit_code}.")
+        self._append_log(f"{_task_name(kind)} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
         if resume_server:
@@ -1659,6 +1907,7 @@ class MainWindow(QMainWindow):
         if self._process:
             self._process.deleteLater()
         self._process = None
+        self._process_group = False
         self._process_kind = ""
 
     def _stop_process(self) -> None:
@@ -1666,12 +1915,7 @@ class MainWindow(QMainWindow):
             self._stopping = True
             self.status_label.setText("Stopping…")
             self._append_log("Requesting process shutdown…")
-            if sys.platform == "win32":
-                # terminate() does nothing to a program without a window, so end the
-                # whole process tree at once (the helper runs as a launcher + child).
-                self._kill_process_tree()
-            else:
-                self._process.terminate()
+            self._terminate_process()
             QTimer.singleShot(3000, self._kill_if_running)
             self._update_actions()
 
@@ -1680,6 +1924,35 @@ class MainWindow(QMainWindow):
             self._append_log("Process did not stop in time; terminating it.")
             self._kill_process_tree()
 
+    def _signal_process_group(self, signal_number: int) -> bool:
+        """Send a signal to the task's whole process group (macOS and Linux, when
+        the task was started in its own session). False if that was not possible."""
+        process = self._process
+        if not self._process_group or process is None:
+            return False
+        if process.state() == QProcess.ProcessState.NotRunning:
+            return False
+        pid = process.processId()
+        if pid <= 0:
+            return False
+        try:
+            # the task is its session's leader, so its process group id is its pid
+            os.killpg(pid, signal_number)
+        except OSError:
+            return False
+        return True
+
+    def _terminate_process(self) -> None:
+        """Ask the running task, and everything it started, to stop."""
+        if self._process is None:
+            return
+        if sys.platform == "win32":
+            # terminate() does nothing to a program without a window, so end the
+            # whole process tree at once (the helper runs as a launcher + child).
+            self._kill_process_tree()
+        elif not self._signal_process_group(signal.SIGTERM):
+            self._process.terminate()
+
     def _kill_process_tree(self) -> None:
         """Kill the running task and everything it started. The packaged helper is a
         PyInstaller launcher plus a child; killing only the launcher would leave the
@@ -1687,7 +1960,10 @@ class MainWindow(QMainWindow):
         process = self._process
         if process is None:
             return
-        if sys.platform == "win32" and process.processId():
+        if sys.platform != "win32":
+            # SIGKILL cannot be passed on by the launcher, so kill the whole group
+            self._signal_process_group(signal.SIGKILL)
+        elif process.processId():
             try:
                 subprocess.run(
                     ["taskkill", "/PID", str(process.processId()), "/T", "/F"],
@@ -1736,9 +2012,29 @@ class MainWindow(QMainWindow):
             self.server_setup_status.setText(status)
         self._update_workflow()
 
+    def _unsaved_changes(self) -> bool:
+        """True when saving is blocked and the settings differ from those at startup."""
+        if not self._save_blocked_reason:
+            return False
+        try:
+            return validate_settings(self._settings_from_ui()) != self._startup_settings
+        except SettingsError:
+            return True
+
     def closeEvent(self, event) -> None:
         self._save_timer.stop()
-        if not self._save_from_ui():
+        if self._unsaved_changes():
+            answer = QMessageBox.question(
+                self, "Settings not saved",
+                "Your changes to the settings were not saved, because the damaged settings "
+                f"file could not be moved aside:\n{self._save_blocked_reason}\n\nClose anyway?",
+                QMessageBox.StandardButton.Close | QMessageBox.StandardButton.Cancel,
+                QMessageBox.StandardButton.Cancel,
+            )
+            if answer != QMessageBox.StandardButton.Close:
+                event.ignore()
+                return
+        elif not self._save_from_ui():
             answer = QMessageBox.question(
                 self, "Settings not saved",
                 "The latest settings could not be saved. Close anyway?",
@@ -1749,10 +2045,7 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
-            if sys.platform == "win32":
-                self._kill_process_tree()
-            else:
-                self._process.terminate()
+            self._terminate_process()
             if not self._process.waitForFinished(2500):
                 self._kill_process_tree()
                 self._process.waitForFinished(1000)
@@ -1800,13 +2093,19 @@ def main() -> int:
     app.setApplicationName("AlbumMaker")
     app.setOrganizationName("AlbumMaker")
     app.setWindowIcon(_application_icon())
-    try:
-        settings = load_settings()
-    except SettingsError as exc:
-        QMessageBox.critical(None, "AlbumMaker settings error", str(exc))
-        return 1
-    window = MainWindow(settings)
+    loaded = load_settings_or_recover()
+    blocked = "" if loaded.can_save else (loaded.move_error or "unknown error")
+    window = MainWindow(loaded.settings, save_blocked_reason=blocked)
     window.show()
-    window._fit_to_screen()
-    QTimer.singleShot(600, window._offer_ffmpeg_install)
+
+    def after_show() -> None:
+        # Only now is the window frame known (on X11 it is not right after show()).
+        window._fit_to_screen()
+        if loaded.recovered:
+            message = settings_recovery_message(loaded)
+            window._append_log("Settings problem: " + message.replace("\n\n", " ").replace("\n", " "))
+            QMessageBox.warning(window, "AlbumMaker settings were reset", message)
+        QTimer.singleShot(600, window._offer_ffmpeg_install)
+
+    QTimer.singleShot(0, after_show)
     return app.exec()

@@ -8,8 +8,9 @@ import json
 import os
 import shlex
 import tempfile
+from datetime import datetime
 from pathlib import Path
-from typing import Optional
+from typing import NamedTuple, Optional
 from ..app_paths import config_dir, settings_path
 from ..timezones import get_timezone
 
@@ -165,6 +166,63 @@ def load_settings(path: Optional[Path] = None) -> dict:
         return _merge_defaults(json.loads(path.read_text(encoding="utf-8")))
     except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
         raise SettingsError(f"Could not read settings from {path}: {exc}") from exc
+
+
+class LoadedSettings(NamedTuple):
+    """Result of load_settings_or_recover()."""
+
+    settings: dict
+    path: Path
+    #: What was wrong with the settings file, or "" when it loaded fine.
+    problem: str = ""
+    #: Where the damaged file was moved, or None.
+    moved_to: Optional[Path] = None
+    #: Why the damaged file could not be moved aside, or "" when it was moved.
+    move_error: str = ""
+
+    @property
+    def recovered(self) -> bool:
+        return bool(self.problem)
+
+    @property
+    def can_save(self) -> bool:
+        """False when saving would overwrite a damaged file that is still in place."""
+        return not self.problem or self.moved_to is not None
+
+
+def move_aside(path: Path, now: Optional[datetime] = None) -> Path:
+    """Rename a damaged settings file to `<name>.bad-YYYYmmdd-HHMMSS` in the
+    same folder, without overwriting an earlier backup. Raises OSError."""
+    stamp = (now or datetime.now()).strftime("%Y%m%d-%H%M%S")
+    base = path.with_name(f"{path.name}.bad-{stamp}")
+    target, number = base, 1
+    while os.path.lexists(target):
+        target = base.with_name(f"{base.name}-{number}")
+        number += 1
+    os.rename(path, target)
+    return target
+
+
+def load_settings_or_recover(path: Optional[Path] = None,
+                             now: Optional[datetime] = None) -> LoadedSettings:
+    """Like load_settings(), but a damaged file does not stop the app: it is
+    moved aside and the defaults are used. If it cannot be moved, the defaults
+    are still used and `can_save` is False, so the caller does not overwrite it."""
+    path = Path(path or settings_path())
+    try:
+        return LoadedSettings(load_settings(path), path)
+    except SettingsError as exc:
+        problem = str(exc)
+    try:
+        moved_to = move_aside(path, now)
+    except OSError as exc:
+        return LoadedSettings(default_settings(), path, problem, None, str(exc))
+    return LoadedSettings(default_settings(), path, problem, moved_to)
+
+
+def validate_settings(settings: dict) -> dict:
+    """Check settings and fill in defaults, as save_settings() does, without writing."""
+    return _merge_defaults(settings)
 
 
 def save_settings(settings: dict, path: Optional[Path] = None) -> None:

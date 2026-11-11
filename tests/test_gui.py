@@ -1,8 +1,13 @@
 # SPDX-License-Identifier: PolyForm-Noncommercial-1.0.0
 # Copyright (c) 2026 Pieter Remi Coppens
+import html
+import json
+import os
+import re
 import sys
 import tempfile
 import unittest
+from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
@@ -17,6 +22,7 @@ from albummaker.gui.settings import (
     SettingsError,
     default_settings,
     load_settings,
+    load_settings_or_recover,
     prepare_metadata_cache,
     prepare_tile_cache,
     save_settings,
@@ -379,6 +385,172 @@ class GuiCommandTests(unittest.TestCase):
         self.assertIn("--no-gpx", command)
         self.assertNotIn("--date-range", command)
         self.assertNotIn("--gpx", command)
+
+
+class SettingsRecoveryTests(unittest.TestCase):
+    """A damaged settings file must not stop the desktop app."""
+
+    NOW = datetime(2026, 11, 11, 9, 30, 5)
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.folder = Path(tmp.name)
+        self.path = self.folder / "settings.json"
+
+    def test_missing_file_gives_defaults_without_a_warning(self):
+        loaded = load_settings_or_recover(self.path)
+        self.assertEqual(loaded.settings, default_settings())
+        self.assertFalse(loaded.recovered)
+        self.assertTrue(loaded.can_save)
+
+    def test_valid_file_loads_normally(self):
+        settings = default_settings()
+        settings["library"]["title"] = "Holidays"
+        save_settings(settings, self.path)
+        loaded = load_settings_or_recover(self.path)
+        self.assertFalse(loaded.recovered)
+        self.assertEqual(loaded.settings["library"]["title"], "Holidays")
+        self.assertTrue(self.path.exists())
+
+    def test_damaged_file_is_moved_aside_and_defaults_are_used(self):
+        self.path.write_text('{"version": 1, "trips": [', encoding="utf-8")
+        loaded = load_settings_or_recover(self.path, now=self.NOW)
+        backup = self.folder / "settings.json.bad-20261111-093005"
+        self.assertTrue(loaded.recovered)
+        self.assertTrue(loaded.can_save)
+        self.assertEqual(loaded.moved_to, backup)
+        self.assertEqual(loaded.settings, default_settings())
+        self.assertIn("Could not read settings", loaded.problem)
+        self.assertFalse(self.path.exists())
+        self.assertEqual(backup.read_text(encoding="utf-8"), '{"version": 1, "trips": [')
+        # the defaults can now be saved where the damaged file was
+        save_settings(loaded.settings, self.path)
+        self.assertEqual(load_settings(self.path), default_settings())
+
+    def test_invalid_values_are_reported_and_an_earlier_backup_is_kept(self):
+        earlier = self.folder / "settings.json.bad-20261111-093005"
+        earlier.write_text("earlier", encoding="utf-8")
+        self.path.write_text(json.dumps({"version": 99}), encoding="utf-8")
+        loaded = load_settings_or_recover(self.path, now=self.NOW)
+        self.assertIn("Unsupported settings version", loaded.problem)
+        self.assertEqual(loaded.moved_to, self.folder / "settings.json.bad-20261111-093005-1")
+        self.assertEqual(earlier.read_text(encoding="utf-8"), "earlier")
+        self.assertEqual(json.loads(loaded.moved_to.read_text(encoding="utf-8")), {"version": 99})
+
+    def test_file_that_cannot_be_moved_is_left_alone_and_saving_is_blocked(self):
+        self.path.write_text("not json", encoding="utf-8")
+        with mock.patch("albummaker.gui.settings.os.rename", side_effect=PermissionError("denied")):
+            loaded = load_settings_or_recover(self.path, now=self.NOW)
+        self.assertTrue(loaded.recovered)
+        self.assertIsNone(loaded.moved_to)
+        self.assertFalse(loaded.can_save)
+        self.assertIn("denied", loaded.move_error)
+        self.assertEqual(loaded.settings, default_settings())
+        self.assertEqual(self.path.read_text(encoding="utf-8"), "not json")
+
+
+try:
+    os.environ.setdefault("QT_QPA_PLATFORM", "offscreen")
+    from PySide6.QtWidgets import QApplication
+except Exception:  # PySide6 is optional; the GUI tests above do not need it
+    QApplication = None
+
+
+@unittest.skipIf(QApplication is None, "PySide6 is not installed")
+class MainWindowTests(unittest.TestCase):
+    @classmethod
+    def setUpClass(cls):
+        cls.app = QApplication.instance() or QApplication([])
+
+    def make_window(self, **kwargs):
+        from albummaker.gui.app import MainWindow
+        window = MainWindow(default_settings(), **kwargs)
+        self.addCleanup(window.deleteLater)
+        return window
+
+    def test_settings_are_not_written_while_the_damaged_file_is_in_place(self):
+        window = self.make_window(save_blocked_reason="denied")
+        with mock.patch("albummaker.gui.app.save_settings") as save:
+            window.library_title.setText("Changed")
+            self.assertTrue(window._save_from_ui())
+            save.assert_not_called()
+        self.assertEqual(window.settings["library"]["title"], "Changed")
+        self.assertTrue(window._unsaved_changes())
+        self.assertEqual(window.status_label.text(), "Settings are not being saved")
+
+    def test_settings_are_saved_normally(self):
+        window = self.make_window()
+        with mock.patch("albummaker.gui.app.save_settings") as save:
+            self.assertTrue(window._save_from_ui())
+            save.assert_called_once()
+        self.assertFalse(window._unsaved_changes())
+
+    def test_recovery_message_says_what_was_wrong_and_where_the_file_went(self):
+        from albummaker.gui.app import settings_recovery_message
+        from albummaker.gui.settings import LoadedSettings
+        moved = LoadedSettings(default_settings(), Path("/cfg/settings.json"), "bad JSON",
+                               Path("/cfg/settings.json.bad-20261111-093005"))
+        text = settings_recovery_message(moved)
+        self.assertIn("bad JSON", text)
+        self.assertIn(str(Path("/cfg/settings.json.bad-20261111-093005")), text)
+        kept = LoadedSettings(default_settings(), Path("/cfg/settings.json"), "bad JSON",
+                              None, "denied")
+        text = settings_recovery_message(kept)
+        self.assertIn("denied", text)
+        self.assertIn("will not be saved", text)
+
+    def test_task_names_are_written_properly(self):
+        from albummaker.gui.app import _task_label, _task_name
+        self.assertEqual(_task_name("ffmpeg setup"), "FFmpeg setup")
+        self.assertEqual(_task_label("ffmpeg setup"), "FFmpeg setup")
+        self.assertEqual(_task_name("offline assets"), "Offline assets")
+        self.assertEqual(_task_label("build"), "build")
+
+    def test_help_names_every_control_by_its_on_screen_label(self):
+        from PySide6.QtWidgets import QAbstractButton, QDialogButtonBox, QFormLayout, QLabel
+        from albummaker.gui.app import _about_text, _help_html
+        window = self.make_window()
+        text = html.unescape(re.sub(r"<[^>]+>", "", _help_html()))
+        text = re.sub(r"\s+", " ", text)
+        labels = set()
+        for root in (window, window.options_dialog):
+            for button in root.findChildren(QAbstractButton):
+                # (not the dialog's standard Close button)
+                if button.text() and not isinstance(button.parent(), QDialogButtonBox):
+                    labels.add(button.text())
+            for form in root.findChildren(QFormLayout):
+                for row in range(form.rowCount()):
+                    item = form.itemAt(row, QFormLayout.ItemRole.LabelRole)
+                    if item is not None and isinstance(item.widget(), QLabel) and item.widget().text():
+                        labels.add(item.widget().text())
+        labels |= {"Refresh offline assets", "Hide activity", "Stop server", "Stop task",
+                   "Create static site", "Open trip site", "Open editing link (private)"}
+        labels |= {window.options_tabs.tabText(i) for i in range(window.options_tabs.count())}
+        missing = sorted(label for label in labels
+                         if label.replace("&", "").replace("\u2026", "&hellip;") not in text
+                         and label.replace("&", "") not in text)
+        self.assertEqual(missing, [])
+        self.assertIn("https://github.com/pajotsetrapper/AlbumMaker/issues", _help_html())
+        self.assertIn("PolyForm Noncommercial 1.0.0", _about_text())
+
+    def test_every_input_control_has_a_tooltip(self):
+        from PySide6.QtWidgets import (QAbstractButton, QAbstractSpinBox, QComboBox, QLineEdit,
+                                       QPlainTextEdit, QSpinBox)
+        window = self.make_window()
+        window._add_trip_item(str(Path.home()))
+        missing = []
+        for root in (window, window.options_dialog):
+            for kind in (QAbstractButton, QComboBox, QPlainTextEdit, QSpinBox):
+                for widget in root.findChildren(kind):
+                    if not widget.toolTip():
+                        missing.append(f"{type(widget).__name__} {getattr(widget, 'text', lambda: '')()}")
+            for widget in root.findChildren(QLineEdit):
+                # a combo or spin box's own line edit uses that box's tooltip
+                if not widget.toolTip() and not isinstance(widget.parent(),
+                                                           (QComboBox, QAbstractSpinBox)):
+                    missing.append(f"QLineEdit {widget.placeholderText()}")
+        self.assertEqual(missing, [])
 
 
 if __name__ == "__main__":
