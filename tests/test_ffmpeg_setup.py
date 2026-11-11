@@ -43,6 +43,22 @@ class InstallPlanTests(unittest.TestCase):
             return ffmpeg_setup.manual_instructions()
 
 
+class SuggestedCommandTests(unittest.TestCase):
+    def test_one_pasteable_command_per_platform(self):
+        with mock.patch.object(ffmpeg_setup.sys, "platform", "win32"):
+            self.assertEqual(ffmpeg_setup.suggested_command(), "winget install Gyan.FFmpeg")
+        with mock.patch.object(ffmpeg_setup.sys, "platform", "darwin"):
+            self.assertEqual(ffmpeg_setup.suggested_command(), "brew install ffmpeg")
+        with mock.patch.object(ffmpeg_setup.sys, "platform", "linux"), mock.patch.object(
+            ffmpeg_setup.shutil, "which", side_effect=lambda name: "/bin/dnf" if name == "dnf" else None
+        ):
+            self.assertEqual(ffmpeg_setup.suggested_command(), "sudo dnf install ffmpeg-free")
+        with mock.patch.object(ffmpeg_setup.sys, "platform", "linux"), mock.patch.object(
+            ffmpeg_setup.shutil, "which", return_value=None
+        ):
+            self.assertEqual(ffmpeg_setup.suggested_command(), "sudo apt install ffmpeg")
+
+
 class InstallCommandTests(unittest.TestCase):
     def run_main(self, argv, **patches):
         out = io.StringIO()

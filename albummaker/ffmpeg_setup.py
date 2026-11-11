@@ -110,6 +110,19 @@ def install_plan() -> Optional[list[str]]:
     return None
 
 
+def suggested_command() -> str:
+    """One command the user can paste into a terminal to install FFmpeg."""
+    if sys.platform == "win32":
+        return f"winget install {WINGET_PACKAGE_ID}"
+    if sys.platform == "darwin":
+        return "brew install ffmpeg"
+    if shutil.which("dnf"):
+        return "sudo dnf install ffmpeg-free"
+    if shutil.which("pacman"):
+        return "sudo pacman -S ffmpeg"
+    return "sudo apt install ffmpeg"
+
+
 def manual_instructions() -> str:
     folder = user_tool_dir()
     lines = ["FFmpeg could not be installed automatically. Install it yourself:"]
