@@ -15,6 +15,10 @@ import tempfile
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
+# Run as a script (python tools/build_executable.py), Python only looks for
+# imports next to this file; the notices need albummaker.__version__.
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))
 DEFAULT_OUTPUT = ROOT / "dist" / "executable"
 LICENSES_DIR = ROOT / "licenses"
 GPL_V3_LICENSE_FILE = LICENSES_DIR / "GPL-3.0.txt"

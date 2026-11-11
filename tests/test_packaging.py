@@ -48,6 +48,18 @@ class ExecutableLicenseNoticeTests(unittest.TestCase):
         self.assertIn(f"/tree/v{__version__}", notice)
         self.assertIn("modify or replace these libraries", notice)
 
+    def test_albummaker_is_importable_when_run_as_a_script(self):
+        # "python build_executable.py" in tools/ (or python tools/...) only puts
+        # tools/ on the import path, yet the notice imports albummaker.
+        import subprocess
+        import sys
+        script = Path(build_executable.__file__).resolve()
+        code = ("import runpy; runpy.run_path(%r, run_name='build'); "
+                "import albummaker; print(albummaker.__version__)") % str(script)
+        result = subprocess.run([sys.executable, "-I", "-c", code], cwd=script.parent,
+                                capture_output=True, text=True)
+        self.assertEqual(result.returncode, 0, result.stderr)
+
     def test_executable_build_does_not_bundle_ffmpeg(self):
         source = Path(build_executable.__file__).read_text(encoding="utf-8")
         self.assertNotIn("static_ffmpeg", source)
