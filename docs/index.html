@@ -242,12 +242,12 @@
       <div class="row">
         <div class="copy">
           <h3>Tell the story, trace the route</h3>
-          <p>Give the trip a title and subtitle, and every day a title and a few paragraphs of what happened. Write them in the page while the live server runs, or in one plain <code>trip_content.json</code> file next to your photos.</p>
+          <p>Give every day a title and a few paragraphs of what happened, right in the page while the live server runs. Everything is kept in one plain <code>trip_content.json</code> file next to your photos, where you also set the trip's title and subtitle and can edit any text by hand.</p>
           <p>Recorded a track with your watch, phone or bike computer? Drop the <code>.gpx</code> file into the trip folder. AlbumMaker draws the way you actually went, adds up the kilometres, and puts photos from a camera without GPS on the map by matching their times to the track.</p>
           <ul>
             <li>Paragraphs, captions and favourites, saved safely: an edit never overwrites text changed elsewhere</li>
-            <li>One GPX file or a whole folder of them, from any app that exports GPX</li>
-            <li>Place names for every day, looked up offline</li>
+            <li>One GPX file or several, from any watch or app that records GPX tracks with times</li>
+            <li>Place names for every day with a location, looked up offline</li>
           </ul>
         </div>
         <div class="shot crop"><a href="demo/days/2025-05-14.html"><img src="assets/trip-story.png" width="1440" height="1220" alt="Day page titled Bridges and the old town, with a three-paragraph story and the walk through Lucerne drawn from a GPX track" loading="lazy"></a></div>
@@ -257,8 +257,8 @@
         <article><h3>Edit right in the page</h3><p>With the live server, write day titles and stories, add captions, mark favourites, hide photos and choose covers without opening a file.</p></article>
         <article><h3>Photos and video together</h3><p>Handles common photo and video formats, pairs Live Photos, and skips duplicates and system clutter on its own.</p></article>
         <article><h3>Place names built in</h3><p>Photos with GPS get a place name from a bundled database, so this step does not need the internet.</p></article>
-        <article><h3>Works offline</h3><p>Save the map library, fonts and tiles you have viewed, and your sites keep working without a connection.</p></article>
-        <article><h3>Right time zone</h3><p>Pick a time zone for each trip so photos from different cameras and countries land on the correct day.</p></article>
+        <article><h3>Works offline</h3><p>Keep the map library and fonts on your computer, and the live server keeps the map tiles you have viewed, so your sites keep working without a connection.</p></article>
+        <article><h3>Right time zone</h3><p>Pick a time zone for each trip, so videos that record UTC land on the correct day and photos match the right point on your GPS track.</p></article>
         <article><h3>A site you can keep</h3><p>Build a static folder to copy to a USB drive or any web host. Hidden photos stay out of it.</p></article>
       </div>
     </section>
@@ -288,10 +288,10 @@
       <ol class="steps">
         <li><h3>Choose your trip folders</h3><p>Add one folder, or several to build a library. Set a time zone for each trip if you need to.</p></li>
         <li><h3>Pick live or static</h3><p>Browse and edit on a live server, or create a standalone site to share or publish.</p></li>
-        <li><h3>Press start</h3><p>AlbumMaker reads your files, makes the thumbnails and opens the result.</p></li>
+        <li><h3>Press start</h3><p>AlbumMaker reads your files and makes the thumbnails. Open the live site with one button, or find the static site in the folder you chose.</p></li>
       </ol>
       <div class="app">
-        <div class="shot"><img src="assets/desktop-app.png" width="1160" height="900" alt="The AlbumMaker desktop app showing a trip folder, the live server and static site choices, and a Start live server button" loading="lazy"></div>
+        <div class="shot"><img src="assets/desktop-app.png" width="1160" height="900" alt="The AlbumMaker desktop app showing a trip folder with its time zone, the live server and static site choices, and a Start live server button" loading="lazy"></div>
         <p class="caption">The desktop app also has a dark theme.</p>
       </div>
     </section>
@@ -317,7 +317,7 @@
           <h3>Desktop app</h3>
           <ul>
             <li>Windows x64, macOS (Intel and Apple Silicon) and Linux x64</li>
-            <li>Python is included, so there is nothing else to install (FFmpeg for videos is a separate, optional one-click install)</li>
+            <li>Python is included, so there is nothing else to install (FFmpeg for videos is separate and optional; the app can install it for you with winget on Windows or Homebrew on macOS and Linux)</li>
             <li>Linux builds target Ubuntu 22.04 and need a compatible glibc</li>
             <li>Builds are not signed, so the first time macOS asks you to allow it (System Settings → Privacy &amp; Security → Open Anyway) and Windows shows SmartScreen (More info → Run anyway)</li>
           </ul>
@@ -330,7 +330,7 @@ pip install -r requirements.txt
 python album_server.py -i /path/to/photos
 <span># then open http://127.0.0.1:8000/</span></pre>
           <ul>
-            <li>Install FFmpeg (the app offers to, in one click) for video details and previews</li>
+            <li>Install FFmpeg for video details and previews (<code>python -m albummaker install-ffmpeg</code> does it with winget or Homebrew)</li>
             <li>Add <code>requirements-gui.txt</code> for the desktop interface</li>
             <li>Check your version with <code>--version</code></li>
           </ul>
