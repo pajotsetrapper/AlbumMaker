@@ -14,6 +14,7 @@ from typing import Iterable, Optional
 from PIL import Image, ImageOps
 
 from .metadata import ffmpeg_input, multimedia_tool
+from .util import external_tool_env
 
 THUMB_QUALITY = 82
 DISPLAY_QUALITY = 97
@@ -55,6 +56,10 @@ def open_upright(path: Path, draft_to: int = 0) -> tuple:
             img.draft("RGB", (draft_to, draft_to))
         img.load()
         ImageOps.exif_transpose(img, in_place=True)   # a no-op when already upright
+        if img.mode in ("I;16", "I;16B", "I;16L", "I"):
+            # 16- or 32-bit greyscale: a straight conversion clips every
+            # value above 255 to white, so scale down to 8 bits first
+            img = _integer_grey_to_8bit(img)
         if img.mode != "RGB":
             rgb = img.convert("RGB")
             img.close()
@@ -63,6 +68,27 @@ def open_upright(path: Path, draft_to: int = 0) -> tuple:
     except Exception:
         img.close()
         raise
+
+
+def _integer_grey_to_8bit(img: Image.Image) -> Image.Image:
+    """An "L" (8-bit greyscale) copy of a 16- or 32-bit greyscale image;
+    closes the original. 16-bit values (0-65535) are divided by 256; 32-bit
+    ones outside that range are stretched to fit between their own lowest
+    and highest value."""
+    wide = img if img.mode == "I" else img.convert("I")
+    lo, hi = wide.getextrema()
+    if img.mode == "I" and 0 <= lo and hi <= 255:
+        scale, offset = 1.0, 0.0            # already 8-bit values
+    elif img.mode != "I" or (0 <= lo and hi <= 65535):
+        scale, offset = 1 / 256, 0.0
+    else:
+        scale = 255 / (hi - lo) if hi > lo else 1.0
+        offset = -lo * scale
+    grey = wide.point(lambda v: v * scale + offset).convert("L")
+    if wide is not img:
+        wide.close()
+    img.close()
+    return grey
 
 
 def thumbnails_from(img: Image.Image, sizes: Iterable[int]) -> dict:
@@ -120,7 +146,7 @@ def video_frame(path: Path, size: int, timeout: int = 30) -> Optional[Image.Imag
                  "-frames:v", "1",
                  "-vf", f"scale={size}:{size}:force_original_aspect_ratio=decrease",
                  "-f", "image2pipe", "-vcodec", "mjpeg", "pipe:1"],
-                capture_output=True, timeout=timeout,
+                capture_output=True, timeout=timeout, env=external_tool_env(),
             )
         except (OSError, subprocess.SubprocessError):
             continue

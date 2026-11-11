@@ -34,72 +34,10 @@ def _load_template(name: str):
 _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
 
 
-def _resolve_template_names(content: dict) -> tuple[str, str]:
-    """Normalize the template config accepted by the project.
-
-    Supported forms are:
-      - {"template": "modern"}
-      - {"templates": {"index": "modern", "day": "modern"}}
-      - {"trip_content": {"templates": {...}}}
-
-    The legacy single-name form applies to both pages. A `default` theme is
-    resolved to the built-in split default theme: index uses `index.html`, day
-    uses `day.html`.
-    """
-    templates = content.get("templates") if isinstance(content.get("templates"), dict) else {}
-    trip_content = content.get("trip_content")
-    if isinstance(trip_content, dict):
-        trip_templates = trip_content.get("templates")
-        if isinstance(trip_templates, dict):
-            templates = {**trip_templates, **templates}
-
-    legacy = content.get("template")
-    if isinstance(legacy, str):
-        if not templates.get("index"):
-            templates["index"] = legacy
-        if not templates.get("day"):
-            templates["day"] = legacy
-
-    index_name = templates.get("index") or "index"
-    day_name = templates.get("day") or templates.get("index") or "day"
-
-    if index_name == "default":
-        index_name = "index"
-    if day_name == "default":
-        day_name = "day"
-
-    return index_name, day_name
-
-
-def get_template_name(content: dict, template_type: str) -> str:
-    """Return the configured template name for one page type."""
-    index_name, day_name = _resolve_template_names(content)
-    return {"index": index_name, "day": day_name}[template_type]
-
-
-def get_template(template_name: str):
-    """Get a Jinja template by name."""
-    try:
-        return _JINJA.get_template(f"{template_name}.html")
-    except Exception:
-        # Fall back to default template if requested template doesn't exist
-        return _JINJA.get_template("default.html")
-
-
-# Default templates for the project itself. Individual trips may override
-# these through trip_content.json with templates['index'] / templates['day'].
+# One layout per page type: index.html is the trip homepage, day.html a day page.
 INDEX_TEMPLATE = _JINJA.get_template("index.html")
 DAY_TEMPLATE = _JINJA.get_template("day.html")
 LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
-
-
-def get_templates_for_content(content: dict):
-    """Get the appropriate templates for a given trip content."""
-    index_template_name, day_template_name = _resolve_template_names(content)
-    return {
-        "index": get_template(index_template_name),
-        "day": get_template(day_template_name),
-    }
 
 
 class SiteUrls:
@@ -157,34 +95,17 @@ class SiteUrls:
 
 def pick_cover(d: DayGroup, content: dict) -> MediaItem:
     """The day's cover: the one chosen in trip_content.json, else the first
-    photo (not a video frame), else the first item."""
-    # Check for day-specific cover first
+    photo (not a video frame), else the first item. A chosen cover must match
+    one of the item's paths exactly, so "IMG_1.jpg" never picks
+    "phone/IMG_1.jpg"."""
     entry = content.get("days", {}).get(d.date_key)
     want = entry.get("cover") if isinstance(entry, dict) else None
-    if isinstance(want, str):
-        # Try exact match first, then check if want is contained in any content key
-        for it in d.items:
-            # Check for exact match (most reliable)
-            if want in it.content_keys:
-                return it
-            # Also check if the wanted path matches any of the item's content keys
-            # This handles cases where paths might be stored differently
-            for key in it.content_keys:
-                if key.endswith(want):
+    # no cover chosen for this day: the trip's cover, if it was taken that day
+    for chosen in (want, content.get("cover")):
+        if isinstance(chosen, str):
+            for it in d.items:
+                if chosen in it.content_keys:
                     return it
-    
-    # If no day-specific cover, check for trip-level cover
-    trip_cover = content.get("cover")
-    if isinstance(trip_cover, str):
-        # Try to find the trip cover photo among all items in this day
-        for it in d.items:
-            if trip_cover in it.content_keys:
-                return it
-            for key in it.content_keys:
-                if key.endswith(trip_cover):
-                    return it
-    
-    # Fall back to first image, or first item
     for it in d.items:
         if it.media_type == "image":
             return it
@@ -242,10 +163,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "is_unknown": d.is_unknown,
             "day_number": rank,
         })
-    
-    # Get the appropriate template for this trip
-    templates = get_templates_for_content(content)
-    
+
     return dict(
         page_title=trip_title(content),
         library_href=urls.library_href(from_index=True),
@@ -266,7 +184,6 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         days=summaries,
         days_json=script_json(summaries),
         places_credit=_places_credit(days),
-        template=templates['index'],  # Pass the template to use
     )
 
 
@@ -276,7 +193,6 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
     ranks = _day_ranks(days)
     d = days[i]
     title, desc = _day_title(d, content, ranks)
-    templates = get_templates_for_content(content)
 
     items_ctx, slides, route_thumbs, route_slide_indices = [], [], [], []
     for idx, it in enumerate(d.items):
@@ -367,5 +283,4 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         next_href=next_href,
         next_href_json=script_json(next_href),
         next_label=next_day.date_key if next_day else "",
-        template=templates['day'],  # Pass the template to use
     )

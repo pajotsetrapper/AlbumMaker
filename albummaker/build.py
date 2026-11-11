@@ -46,7 +46,7 @@ from .library import (TripListError, build_library_context, check_library_args, 
                       read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
-                     build_day_context, build_index_context, get_templates_for_content)
+                     build_day_context, build_index_context)
 from .scan import (LIBRARY_MARKER, SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, drop_hidden_groups, group_by_day, no_dedupe_groups, pair_live_photos)
 from .util import atomic_write_bytes, atomic_write_text
@@ -392,6 +392,9 @@ def make_video_derivatives(src: Path, out: StaticOutputs, output_dir: Path, thum
     return placeholder
 
 
+WINDOWS_MAX_WORKERS = 61   # ProcessPoolExecutor refuses more on Windows
+
+
 def _process_one_file(path: Path, media_type: str, output_dir: Path, thumb_size: int,
                       tz_offset: Optional[float], base: str, regen_thumb: bool, regen_converted: bool,
                       force_copy: bool, large_thumb_size: int = 0,
@@ -456,7 +459,10 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     # the output folder is excluded explicitly too: on the very first run
     # it doesn't hold a build record yet
-    candidates = collect_candidates(input_dir, exclude_dirs=(output_dir, *exclude_dirs))
+    # without pi-heif, HEIC files built by an earlier run stay in: their
+    # existing outputs are reused (or at least kept) instead of being deleted
+    candidates = collect_candidates(input_dir, exclude_dirs=(output_dir, *exclude_dirs),
+                                    built_before=set(previous))
     # Duplicates first, THEN hidden photos: a set of identical files is left
     # out as a whole if any of them is hidden (see drop_hidden_groups).
     groups = dedupe_groups(candidates) if dedupe else no_dedupe_groups(candidates)
@@ -511,13 +517,21 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                      and not prev.get("retry"))  # e.g. a video preview that failed last time
         regen_converted = force or not unchanged
         regen_thumb = regen_converted or thumb_size_changed
-        changed += not unchanged
         meta = video_meta_seen.get(path) or (cached_meta(path, media_type, st) if unchanged else None)
         if meta is not None and not (regen_thumb or force):
             out = planned_outputs(path, media_type, bases[path], bool(meta.get("is_mpo")))
             if _outputs_present(path, out, output_dir, bool(large_thumb_size)):
                 ready.append((path, media_type, dups, meta, out))   # nothing to do at all
                 continue
+        if not HEIF_SUPPORT and path.suffix.lower() in (".heic", ".heif"):
+            # it needs redoing but can't be read without pi-heif: keep what the
+            # last build made of it rather than deleting it
+            print(f"  ! skipping {path.name}: install pi-heif for HEIC support "
+                  f"(pip install pi-heif); its files from the last build are kept", file=sys.stderr)
+            total -= 1
+            carry(path)
+            continue
+        changed += not unchanged
         jobs.append((path, media_type, dups, (regen_thumb, regen_converted, force), meta))
     if manifest and not force:
         print(f"{total - changed} file(s) unchanged since the last run, "
@@ -539,7 +553,8 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                 timezone_name if media_type == "video" else None,
             ),
         }
-        if out.thumb_is_placeholder:
+        if out.thumb_is_placeholder or meta.get("probe_failed"):
+            # try again next run (e.g. once ffmpeg is installed)
             records[rel_paths[path]]["retry"] = True
 
     for path, media_type, dups, meta, out in ready:
@@ -551,6 +566,9 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     if jobs:
         workers = max(1, workers or min(os.cpu_count() or 1, len(jobs)))
+        if sys.platform == "win32":
+            # Windows can't run more than 61 worker processes in one pool
+            workers = min(workers, WINDOWS_MAX_WORKERS)
         print(f"Processing {len(jobs)} file(s) with {workers} worker process(es)...")
         done = 0
         try:
@@ -662,13 +680,11 @@ def write_assets(folder: Path, has_vendor: bool):
 
 def render_site(days: list, content: dict, output_dir: Path, urls: StaticUrls) -> list:
     """Write all pages. Returns the day pages written (relative paths)."""
-    index_template = get_templates_for_content(content)['index']
     atomic_write_text(output_dir / "index.html",
-                      index_template.render(**build_index_context(days, content, urls)))
+                      INDEX_TEMPLATE.render(**build_index_context(days, content, urls)))
     pages = []
     for i, d in enumerate(days):
-        day_template = get_templates_for_content(content)['day']
-        html = day_template.render(**build_day_context(days, i, content, urls))
+        html = DAY_TEMPLATE.render(**build_day_context(days, i, content, urls))
         atomic_write_text(output_dir / "days" / f"{d.date_key}.html", html)
         pages.append(f"days/{d.date_key}.html")
     write_assets(output_dir, urls.has_vendor)
@@ -848,6 +864,11 @@ def print_finish(output: Path):
     if vendor_ready():
         print("The map library and fonts are bundled in the site (assets/vendor), so it works without internet; "
               "only the map tiles need a connection.")
+    elif getattr(sys, "frozen", False):
+        # the packaged app has no generate_site.py to run
+        print("Tip: the site loads its map library and fonts from the internet. To bundle them so it works "
+              "offline, use Download offline assets in the desktop app (or run once with --fetch-offline-assets) "
+              "and build again.")
     else:
         print("Tip: the site loads its map library and fonts from the internet. To bundle them so it works "
               "offline, run once:  python generate_site.py --fetch-offline-assets  and build again.")

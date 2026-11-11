@@ -8,12 +8,30 @@ from __future__ import annotations
 
 import json
 import os
+import sys
 import tempfile
 import time
 from importlib import resources
 from pathlib import Path
 
 from markupsafe import Markup
+
+
+def external_tool_env():
+    """The environment for running another program (ffprobe, ffmpeg, brew).
+    The packaged Linux app points LD_LIBRARY_PATH at its own bundled libraries,
+    which can break programs installed on the system; PyInstaller keeps the
+    original value in LD_LIBRARY_PATH_ORIG, so put that back (or drop the
+    variable when there was none). Elsewhere: None, i.e. inherit as usual."""
+    if not (getattr(sys, "frozen", False) and sys.platform.startswith("linux")):
+        return None
+    env = dict(os.environ)
+    original = env.pop("LD_LIBRARY_PATH_ORIG", None)
+    if original is not None:
+        env["LD_LIBRARY_PATH"] = original
+    else:
+        env.pop("LD_LIBRARY_PATH", None)
+    return env
 
 
 def _write_atomically(path: Path, data: bytes, fsync: bool):
