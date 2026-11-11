@@ -34,6 +34,9 @@ function showToast(msg, isError){
 
 // Saves an edit through album_server.py. Returns the parsed reply, or null
 // (after showing why) if it didn't work.
+// A 409 reply means the text was changed elsewhere (trip_content.json edited by
+// hand, another browser) since this page was loaded: nothing was saved, and the
+// reply says so. Callers keep what was typed in the box either way.
 async function apiPost(path, body){
   try {
     const r = await fetch((window.API_BASE || '') + path, {
@@ -171,7 +174,7 @@ function initHomeNav(libraryHref){
 // The library page: every trip as a line on one map; clicking one opens it.
 function initLibraryMap(elId, trips){
   const map = L.map(elId, {scrollWheelZoom:false});
-  addBaseMap(map, {attribution: '&copy; OpenStreetMap contributors'});
+  addBaseMap(map);
   const all = [];
   trips.forEach(trip => {
     if(!trip.points.length) return;
@@ -180,10 +183,10 @@ function initLibraryMap(elId, trips){
     const label = trip.title + ' \u2014 ' + trip.dates;
     if(trip.points.length > 1){
       L.polyline(trip.points, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
-        .bindTooltip(label, {sticky: true}).on('click', go);
+        .bindTooltip(textNode(label), {sticky: true}).on('click', go);
     }
     L.circleMarker(trip.points[0], {radius: 6, color: trip.color, fillColor: trip.color, fillOpacity: 1, weight: 1})
-      .addTo(map).bindTooltip(label).on('click', go);
+      .addTo(map).bindTooltip(textNode(label)).on('click', go);
   });
   // (a cap: one trip with a single place would otherwise zoom in to one street)
   if(all.length) map.fitBounds(all, {padding: [30, 30], maxZoom: 9});
@@ -295,6 +298,27 @@ function watchTiles(map, layer){
   layer.on('tileerror', () => { failed++; refresh(); });
 }
 
+// Map tooltips get a DOM node, never a string: Leaflet would insert a string as
+// HTML, and trip titles and folder names are the user's text, not markup.
+function textNode(text){
+  const span = document.createElement('span');
+  span.textContent = text;
+  return span;
+}
+
+function escapeHtml(text){
+  return String(text).replace(/[&<>"']/g, c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
+// The credit shown in the corner of every map. Leaflet's attribution control
+// only takes HTML, so the server's text (album_server.py --tile-attribution, plain
+// text) is escaped; the default OpenStreetMap credit links to its copyright page.
+const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap</a> contributors';
+function tileAttribution(){
+  const custom = window.TILE_ATTRIBUTION;
+  return (typeof custom === 'string' && custom) ? escapeHtml(custom) : OSM_ATTRIBUTION;
+}
+
 function addBaseMap(map, options){
   const pane = map.createPane('outline');
   pane.style.zIndex = 150;   // under the tiles (200), which hide it wherever they load
@@ -303,7 +327,7 @@ function addBaseMap(map, options){
                      weight: 1, fillColor: '#1b2a45', fillOpacity: 1}).addTo(map);
   });
   const layer = L.tileLayer(window.TILE_URL || DEFAULT_TILE_URL, Object.assign({
-    maxZoom: 19, className: 'dark-tiles', errorTileUrl: BLANK_TILE
+    maxZoom: 19, className: 'dark-tiles', errorTileUrl: BLANK_TILE, attribution: tileAttribution()
   }, options || {})).addTo(map);
   watchTiles(map, layer);
   return layer;
@@ -311,7 +335,7 @@ function addBaseMap(map, options){
 
 function initOverviewMap(elId, days){
   const map = L.map(elId, {scrollWheelZoom:false});
-  addBaseMap(map, {attribution: '&copy; OpenStreetMap contributors'});
+  addBaseMap(map);
 
   const allPts = [];
   days.forEach(day => {
@@ -324,7 +348,7 @@ function initOverviewMap(elId, days){
       allPts.push(p);
       L.circleMarker(p, {radius:4, color: day.color, fillColor: day.color, fillOpacity:1, weight:1})
         .addTo(map)
-        .bindTooltip(day.label, {sticky:true})
+        .bindTooltip(textNode(day.label), {sticky:true})
         .on('click', () => { navigateTo(day.href); });
     });
   });
@@ -337,7 +361,7 @@ function initOverviewMap(elId, days){
 
 function initDayMap(elId, route, thumbs, slideIndices, track){
   const map = L.map(elId, {scrollWheelZoom:false});
-  addBaseMap(map, {attribution: '&copy; OpenStreetMap contributors'});
+  addBaseMap(map);
 
   // the way travelled (GPX track), under the photo markers
   const trackPts = [];
@@ -807,7 +831,9 @@ function renderInfoPanel(){
     noGps.style.display = 'none';
     try {
       if(!infoMap){
+        // a small map, so a compact credit: no "Leaflet" prefix, smaller type (style.css)
         infoMap = L.map('info-map', {zoomControl:false, attributionControl:false, scrollWheelZoom:false});
+        L.control.attribution({prefix: false}).addTo(infoMap);
         addBaseMap(infoMap);
       }
       const latlng = [item.lat, item.lon];
@@ -895,7 +921,11 @@ async function saveSlide(fields, idx){
   if(idx === undefined) idx = currentSlide;
   const item = SLIDES[idx];
   if(!item || !item.rel) return null;
-  const res = await apiPost('/api/photo', Object.assign({rel: item.rel}, fields));
+  const body = Object.assign({rel: item.rel}, fields);
+  // a caption is saved only over the one this page showed: if it was changed
+  // elsewhere meanwhile, the server refuses (409) rather than overwrite it
+  if('caption' in fields) body.original_caption = item.caption || '';
+  const res = await apiPost('/api/photo', body);
   if(res){
     Object.assign(item, res.photo);
     applyThumbState(idx);
@@ -977,8 +1007,19 @@ function initDayEditor(dateKey){
     openBtn.hidden = false;
   });
   document.getElementById('day-save').addEventListener('click', async () => {
-    const res = await apiPost('/api/day', {date: dateKey, title: title.value, description: desc.value});
-    if(res) location.reload();
+    // only what was changed is sent, with the text the form started from: the
+    // server refuses (409) if that text was changed elsewhere meanwhile, so an
+    // untouched field can never overwrite a hand edit in trip_content.json
+    const body = {date: dateKey};
+    if(title.value !== title.defaultValue){ body.title = title.value; body.original_title = title.defaultValue; }
+    if(desc.value !== desc.defaultValue){ body.description = desc.value; body.original_description = desc.defaultValue; }
+    if(!('title' in body) && !('description' in body)){
+      box.hidden = true;
+      openBtn.hidden = false;
+      return;
+    }
+    const res = await apiPost('/api/day', body);
+    if(res) location.reload();      // not saved: the toast says why, and the typed text stays in the form
   });
 }
 

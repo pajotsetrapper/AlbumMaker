@@ -27,6 +27,10 @@ def _run(
     return subprocess.run(command, cwd=cwd, env=env, check=True)
 
 
+REPOSITORY_URL = "https://github.com/pajotsetrapper/AlbumMaker"
+NOTICE_FILES = ("LICENSE", "THIRD_PARTY_NOTICES.md")
+
+
 def _notice() -> str:
     """License notices shipped inside the app.
 
@@ -34,18 +38,98 @@ def _notice() -> str:
     (see albummaker/ffmpeg_setup.py), so no FFmpeg or GPL codec notices are
     needed here. The bundled HEIF decoder (pi-heif) contains LGPL libraries only.
     """
+    from albummaker import __version__
+
     lgpl_v3_license = _read_license_text(LGPL_V3_LICENSE_FILE, "GNU LGPL version 3")
     gpl_v3_license = _read_license_text(GPL_V3_LICENSE_FILE, "GNU GPL version 3")
     return (
-        "AlbumMaker is licensed under the PolyForm Noncommercial License 1.0.0 (see LICENSE).\n"
+        f"AlbumMaker {__version__} is licensed under the PolyForm Noncommercial\n"
+        "License 1.0.0 (see LICENSE). That license covers AlbumMaker's own code only;\n"
+        "the components below keep their own licenses.\n\n"
         "AlbumMaker does not include FFmpeg. If you install FFmpeg separately, it is\n"
         "licensed by its authors; see https://ffmpeg.org/legal.html.\n\n"
+        f"{_lgpl_source_notice(__version__)}\n\n"
+        f"{_qt_notice()}\n\n"
+        f"{_python_runtime_notice()}\n\n"
+        "--- PyInstaller bootloader ---\n"
+        "The program that starts this app is the PyInstaller bootloader, licensed\n"
+        "under the GNU GPL version 2 or later with the PyInstaller bootloader\n"
+        "exception, which allows it to be used with programs under any license.\n"
+        "See https://github.com/pyinstaller/pyinstaller/blob/develop/COPYING.txt.\n\n"
         f"{_python_package_notices()}\n\n"
         "GNU LGPL version 3 license text (relevant to bundled Qt and HEIF libraries):\n"
         f"{lgpl_v3_license}\n\n"
         "GNU GPL version 3 license text (the LGPL version 3 is an additional\n"
         "permission on top of it):\n"
         f"{gpl_v3_license}\n"
+    )
+
+
+def _lgpl_source_notice(version: str) -> str:
+    return (
+        "--- LGPL libraries: your rights ---\n"
+        "This app contains Qt (PySide6, shiboken6) and libheif and libde265 (inside\n"
+        "pi-heif), used under the GNU LGPL version 3. Nothing in AlbumMaker's license\n"
+        "restricts your rights under the LGPL to modify or replace these libraries,\n"
+        "or to reverse-engineer AlbumMaker to debug such changes.\n"
+        "The complete source of this AlbumMaker release and the script that built\n"
+        f"this app are at {REPOSITORY_URL}/tree/v{version}\n"
+        "(tools/build_executable.py), so you can rebuild it with modified versions\n"
+        "of these libraries. Library sources:\n"
+        "  Qt and Qt for Python: https://download.qt.io/official_releases/qt/ and\n"
+        "    https://download.qt.io/official_releases/QtForPython/\n"
+        "  libheif and libde265: see the pi-heif LICENSES_bundled.txt section below\n"
+        "    and https://github.com/bigcat88/pi_heif"
+    )
+
+
+def _qt_notice() -> str:
+    from importlib.metadata import PackageNotFoundError, version
+
+    try:
+        qt_version = version("PySide6")
+    except PackageNotFoundError:
+        qt_version = "(version unknown)"
+    return (
+        f"--- PySide6, shiboken6 and Qt {qt_version} ---\n"
+        "Copyright (C) The Qt Company Ltd. and other contributors.\n"
+        "Used under the GNU LGPL version 3 (text below). See\n"
+        "https://doc.qt.io/qtforpython-6/licenses.html.\n"
+        "Qt itself includes third-party code under permissive licenses, such as\n"
+        "FreeType (FreeType License), HarfBuzz (MIT), libpng (libpng License),\n"
+        "zlib (zlib License), PCRE2 (BSD-3-Clause), md4c (MIT), double-conversion\n"
+        "(BSD-3-Clause) and, on Linux, ICU (Unicode License). Their copyright\n"
+        f"notices are listed at https://doc.qt.io/qt-6/licenses-used-in-qt.html\n"
+        "for this Qt version."
+    )
+
+
+def _python_license_file() -> Path:
+    import sysconfig
+
+    candidates = [
+        Path(sysconfig.get_paths()["stdlib"]) / "LICENSE.txt",
+        Path(sys.base_prefix) / "LICENSE.txt",
+        Path(sys.base_prefix) / "LICENSE",
+    ]
+    for candidate in candidates:
+        if candidate.is_file():
+            return candidate
+    raise RuntimeError(
+        "Could not find the Python license file (looked in: "
+        + ", ".join(str(c) for c in candidates)
+        + "); refusing to build without the Python runtime's license notice."
+    )
+
+
+def _python_runtime_notice() -> str:
+    path = _python_license_file()
+    return (
+        f"--- Python {sys.version.split()[0]} runtime ---\n"
+        "The app includes the Python interpreter and standard library, with the\n"
+        "libraries it uses (such as OpenSSL, libffi, zlib, expat, bzip2, xz,\n"
+        "SQLite and mpdecimal). Their licenses follow.\n\n"
+        f"{path.read_text(encoding='utf-8', errors='replace').strip()}"
     )
 
 
@@ -213,6 +297,11 @@ def _build(output: Path) -> Path:
             shutil.copytree(built, target)
         else:
             shutil.copy2(built, target)
+        # Put the license files next to the app as well, where people see them
+        # when they unpack the download (inside the app they are hard to find).
+        shutil.copy2(notice_file, output / notice_file.name)
+        for name in NOTICE_FILES:
+            shutil.copy2(ROOT / name, output / name)
 
     return target
 
