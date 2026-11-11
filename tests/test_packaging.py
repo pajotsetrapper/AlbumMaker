@@ -60,6 +60,26 @@ class ExecutableLicenseNoticeTests(unittest.TestCase):
                                 capture_output=True, text=True)
         self.assertEqual(result.returncode, 0, result.stderr)
 
+    def test_notice_includes_the_licenses_of_the_bundled_map_library_and_fonts(self):
+        with tempfile.TemporaryDirectory() as folder:
+            assets = Path(folder)
+            (assets / "licenses").mkdir()
+            (assets / "VERSIONS.txt").write_text("leaflet 1.9.4  (checked against its published SHA-512)")
+            (assets / "licenses" / "leaflet-LICENSE.txt").write_text("BSD 2-Clause License")
+            (assets / "licenses" / "fraunces-LICENSE.txt").write_text("SIL OPEN FONT LICENSE")
+            with mock.patch.object(build_executable, "_python_package_notices", return_value="P"):
+                notice = build_executable._notice(assets)
+        self.assertIn("Map library and fonts", notice)
+        self.assertIn("leaflet 1.9.4", notice)
+        self.assertIn("BSD 2-Clause License", notice)
+        self.assertIn("SIL OPEN FONT LICENSE", notice)
+
+    def test_the_app_carries_the_offline_assets(self):
+        source = Path(build_executable.__file__).read_text(encoding="utf-8")
+        self.assertIn("_data_argument(assets_dir, assets_dir.name)", source)
+        gui_entry = (build_executable.ROOT / "album_gui.py").read_text(encoding="utf-8")
+        self.assertIn("bundled_assets_dir()", gui_entry)      # the smoke test fails without them
+
     def test_executable_build_does_not_bundle_ffmpeg(self):
         source = Path(build_executable.__file__).read_text(encoding="utf-8")
         self.assertNotIn("static_ffmpeg", source)

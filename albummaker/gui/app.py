@@ -376,9 +376,10 @@ results instead of being read again. It does not store photo or video copies. By
 and allowing previously viewed map areas to work offline. By default this is a
 <code>tile-cache</code> folder next to AlbumMaker's settings file.</li>
 <li><b>Download offline assets</b> (<b>Refresh offline assets</b> once they are there): downloads local
-copies of the map library and fonts, so those parts of the page work without internet. Missing
-offline assets are also downloaded automatically when you start the server; an internet connection
-is needed for that. They are stored in <code>offline-assets</code> beside AlbumMaker's settings file.
+copies of the map library and fonts, so those parts of the page work without internet. The
+downloadable app already includes them and puts them in place on its first start; when running from
+source, missing offline assets are downloaded automatically when you start the server (this needs an
+internet connection). They are stored in <code>offline-assets</code> beside AlbumMaker's settings file.
 Map backgrounds (tiles) are separate: they come from the map provider unless they are in the tile
 cache. If the offline assets are available, static sites also include them; they are not required
 for static sites.</li>
@@ -1066,7 +1067,8 @@ class MainWindow(QMainWindow):
         setup_layout = QVBoxLayout(setup_box)
         setup_intro = _label(
             "The two cache folders are required for the live server and are created if needed. "
-            "Missing offline assets download automatically the first time you start the server. "
+            "The downloadable app includes the offline assets; otherwise they download "
+            "automatically the first time you start the server. "
             "Static sites do not require these server setup steps.",
             "muted",
         )
@@ -2216,7 +2218,13 @@ def main() -> int:
     app.setWindowIcon(_application_icon())
     loaded = load_settings_or_recover()
     blocked = "" if loaded.can_save else (loaded.move_error or "unknown error")
+    # The packaged app includes the map library and fonts: put them in place
+    # before the window checks whether the live server is ready to start.
+    from ..offline import install_bundled_assets
+    bundled = install_bundled_assets()
     window = MainWindow(loaded.settings, save_blocked_reason=blocked)
+    if bundled:
+        window._append_log("Installed the map library and fonts included with the app.")
     window.show()
 
     def after_show() -> None:
