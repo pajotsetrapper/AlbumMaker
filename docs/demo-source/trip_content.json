@@ -1,0 +1,23 @@
+{
+  "title": "A Weekend at Lake Lucerne",
+  "subtitle": "Old bridges, a mountain railway and the slow boat home",
+  "cover": "IMG_5201.jpg",
+  "days": {
+    "2025-05-14": {
+      "title": "Bridges & the old town",
+      "description": "We started early, before the tour groups, with the sun coming up over the lake and the old town still half asleep across the water.\n\nFrom the Lion Monument we climbed onto the Musegg Wall for the view over the rooftops, crossed the river on the Spreuer Bridge and took far too long over lunch on the Kornmarkt.\n\nIn the afternoon the light turned warm and orange along the Reuss. We finished on the Chapel Bridge, of course.",
+      "cover": "IMG_4138.jpg"
+    },
+    "2025-05-15": {
+      "title": "Up the Rigi, back by boat",
+      "description": "The first boat of the morning took us across the lake to Vitznau, where the little red cog railway climbs all the way to Rigi Kulm.\n\nAt the top the clouds lifted just long enough to show the snow on the Alps. We walked down past Rigi Staffel to Kaltbad, then followed the Felsenweg along the cliffs to Rigi First.\n\nA cable car brought us down to Weggis for one last look at the water, and the evening boat carried us home to Lucerne.",
+      "cover": "IMG_5201.jpg"
+    }
+  },
+  "photos": {
+    "IMG_4102.jpg": { "caption": "Sunrise over the lakefront, the old town still asleep" },
+    "IMG_4138.jpg": { "caption": "The old town glowing across the Reuss", "favorite": true },
+    "IMG_5201.jpg": { "caption": "Snow on the peaks, seen from the top of the Rigi", "favorite": true },
+    "IMG_5244.jpg": { "caption": "Evening calm by the water at Weggis" }
+  }
+}

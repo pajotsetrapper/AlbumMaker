@@ -70,6 +70,8 @@ above).
 `docs/demo/media/` (sample photos for the demo site): taken by the author,
 Pieter Remi Coppens, and published with the demo; see
 [`docs/demo/NOTICE.txt`](./docs/demo/NOTICE.txt).
+The sample trip's texts and GPS track in `docs/demo-source/` are fictional and
+written by the author.
 
 `albummaker/gui/assets/albummaker.ico` (the app icon): its origin and license
 are not yet recorded here.
