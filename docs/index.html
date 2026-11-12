@@ -234,7 +234,6 @@
           <ul>
             <li>Full-screen slideshow with keyboard, swipe and autoplay</li>
             <li>Captions, favourites and camera details for each photo</li>
-            <li>Direct links to a photo, and the Back button works as you'd expect</li>
           </ul>
         </div>
         <div class="shot crop"><a href="demo/days/2025-05-15.html"><img src="assets/trip-day.png" width="1440" height="1600" alt="Day page with the day's story, its route map and thumbnails" loading="lazy"></a></div>
@@ -259,7 +258,7 @@
         <article><h3>Place names built in</h3><p>Photos with GPS get a place name from a bundled database, so this step does not need the internet.</p></article>
         <article><h3>Works offline</h3><p>Keep the map library and fonts on your computer, so pages and photos work without a connection. The live server also keeps the map tiles you have viewed; elsewhere the maps fall back to a simple land outline.</p></article>
         <article><h3>Right time zone</h3><p>Pick a time zone for each trip, so videos that record UTC land on the correct day and photos match the right point on your GPS track.</p></article>
-        <article><h3>A site you can keep</h3><p>Build a static folder and publish it on any web host, such as GitHub Pages. Opened straight from disk or a USB stick, everything works except the map tiles, which OpenStreetMap only serves to sites on a web address. Hidden photos stay out of it.</p></article>
+        <article><h3>A site you can keep</h3><p>Use AlbumMaker to create a static website that can be hosted on virtually any web server, such as GitHub Pages or Apache. Hidden photos remain private, and location details can be excluded for added privacy.</p></article>
       </div>
     </section>
 
@@ -316,9 +315,8 @@
         <article class="card">
           <h3>Desktop app</h3>
           <ul>
-            <li>Windows x64, macOS (Intel and Apple Silicon) and Linux x64</li>
+            <li>A pre-built Desktop App is available for Windows x64 and macOS (Intel and Apple Silicon)</li>
             <li>Python is included, so there is nothing else to install (FFmpeg for videos is separate and optional; the app can install it for you with winget on Windows or Homebrew on macOS and Linux)</li>
-            <li>Linux builds target Ubuntu 22.04 and need a compatible glibc</li>
             <li>Builds are not signed, so the first time macOS asks you to allow it (System Settings → Privacy &amp; Security → Open Anyway) and Windows shows SmartScreen (More info → Run anyway)</li>
           </ul>
           <a class="btn primary" href="https://github.com/pajotsetrapper/AlbumMaker/releases/latest">Download the latest release</a>
