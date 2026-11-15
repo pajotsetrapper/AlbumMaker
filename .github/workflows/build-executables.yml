@@ -13,8 +13,18 @@ permissions:
 
 jobs:
   test:
-    name: Tests (Windows)
-    runs-on: windows-latest
+    name: Tests (${{ matrix.os }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: Windows
+            runner: windows-latest
+          - os: macOS
+            runner: macos-15
+          - os: Linux
+            runner: ubuntu-latest
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -51,6 +61,8 @@ jobs:
             platform: macos-intel
           - runner: macos-15
             platform: macos-arm64
+          - runner: ubuntu-latest
+            platform: linux-x64
     env:
       # Lets the GUI --packaging-smoke-test run without a display.
       QT_QPA_PLATFORM: offscreen
@@ -77,6 +89,9 @@ jobs:
       - name: Archive macOS app
         if: runner.os == 'macOS'
         run: ditto -c -k --sequesterRsrc --keepParent "dist/$PACKAGE" "$PACKAGE.zip"
+      - name: Archive Linux app
+        if: runner.os == 'Linux'
+        run: tar -czf "$PACKAGE.tar.gz" -C dist "$PACKAGE"
       - uses: actions/upload-artifact@v7
         with:
           name: ${{ env.PACKAGE }}
