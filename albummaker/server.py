@@ -43,7 +43,7 @@ from markupsafe import Markup
 
 from . import __version__
 
-from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_template_arg, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, hidden_rels, is_hidden,
                       load_or_init_content, photo_entry, parse_content_file, report_unknown_photo_keys,
@@ -56,8 +56,7 @@ from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_
 from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
                       read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
-from .render import (ASSET_VERSION, CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
-                     build_day_context, build_index_context)
+from .render import ASSET_VERSION, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
 from .util import atomic_write_bytes, script_json
@@ -490,6 +489,7 @@ class Shared:
         # plain text for the maps' corner credit; None: the pages' own OpenStreetMap credit
         self.tile_attribution = tile_attribution
         self.vendor = vendor
+        self.template = get_template(getattr(args, "template", None))   # the look of every page (--template)
         self.allowed_hostnames = allowed_hostnames or {"localhost"}
         self.editor_token = editor_token or secrets.token_urlsafe(32)
         total_mb = max(16, getattr(args, "memory_cache_mb", 512) or 512)
@@ -545,8 +545,8 @@ class App:
     def render_homepage(self, editable: bool = False) -> str:
         content = self.content.get()
         days = visible_days(self.days, content, editable)
-        template = INDEX_TEMPLATE
-        return template.render(**build_index_context(days, content, self.urls()), **self.page_extras())
+        urls = self.urls()
+        return self.template.index.render(**build_index_context(days, content, urls), **self.page_extras())
 
     def render_day(self, date_key: str, editable: bool = False) -> Optional[str]:
         content = self.content.get()
@@ -554,9 +554,8 @@ class App:
         idx = next((i for i, d in enumerate(days) if d.date_key == date_key), None)
         if idx is None:
             return None
-        template = DAY_TEMPLATE
-        return template.render(**build_day_context(days, idx, content, self.urls(), editable=editable),
-                               **self.page_extras())
+        return self.template.day.render(**build_day_context(days, idx, content, self.urls(), editable=editable),
+                                        **self.page_extras())
 
     # -- image work, cached and limited -------------------------------------
 
@@ -610,7 +609,7 @@ class Library:
     def render(self) -> str:
         summaries = [s for s in (self.summary(name) for name in self.trips) if s is not None]
         first = next(iter(self.trips.values()))
-        return LIBRARY_TEMPLATE.render(**build_library_context(
+        return first.template.library.render(**build_library_context(
             summaries, first.urls(), footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION,
             title=self.library_title), **first.page_extras())
 
@@ -626,6 +625,7 @@ class LiveUrls(SiteUrls):
         self.app = app
         self._versions = {}
         self.tile_url = app.tile_client_url
+        self.template = app.template
         self.prefix = app.prefix           # "/italy" for a trip in a library
         self.api_base = app.prefix
 
@@ -650,7 +650,7 @@ class LiveUrls(SiteUrls):
         return "/"
 
     def asset(self, name, from_index):
-        return f"/assets/{name}?v={ASSET_VERSION}"
+        return f"/assets/{name}?v={self.template.asset_version}"
 
     def day(self, date_key, from_index):
         return f"{self.prefix}/day/{date_key}"
@@ -1259,9 +1259,12 @@ class RequestHandler(BaseHTTPRequestHandler):
             elif raw_path.startswith("/vendor/"):
                 self._serve_vendor(raw_path)
             elif raw_path == "/assets/style.css":
-                self._send_text(CSS, "text/css", cache_control=self._cache_control(ASSET_VERSION))
+                template = self.app.template
+                self._send_text(template.css, "text/css", cache_control=self._cache_control(template.asset_version))
             elif raw_path == "/assets/script.js":
-                self._send_text(JS, "application/javascript", cache_control=self._cache_control(ASSET_VERSION))
+                template = self.app.template
+                self._send_text(template.js, "application/javascript",
+                                cache_control=self._cache_control(template.asset_version))
             else:
                 self.send_error(404, "Not found")
         except (BrokenPipeError, ConnectionResetError):
@@ -1403,6 +1406,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "attaching them to their photos.")
     add_date_check_args(parser)
     add_location_args(parser)
+    add_template_arg(parser)
     add_offline_args(parser)
     parser.add_argument("--large-thumb-size", type=large_thumb_size_arg, default=None, metavar="PIXELS",
                         help="Size of the larger thumbnails that are loaded only where the screen can use "

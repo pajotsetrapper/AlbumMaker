@@ -33,7 +33,7 @@ from typing import Optional
 from urllib.parse import quote
 
 from . import __version__
-from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_timezone_arg,
+from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_template_arg, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (ContentFileError, hidden_rels, load_or_init_content, parse_content_file,
                       report_unknown_photo_keys, resolve_content_path)
@@ -45,8 +45,7 @@ from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
 from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
                       read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
-from .render import (CSS, DAY_TEMPLATE, INDEX_TEMPLATE, JS, LIBRARY_TEMPLATE, SiteUrls,
-                     build_day_context, build_index_context)
+from .render import SiteUrls, build_day_context, build_index_context, get_template
 from .scan import (LIBRARY_MARKER, SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, drop_hidden_groups, group_by_day, no_dedupe_groups, pair_live_photos)
 from .util import atomic_write_bytes, atomic_write_text
@@ -648,6 +647,16 @@ class StaticUrls(SiteUrls):
             return None
         return ("" if from_index else "../") + f"thumbs_large/{quote(item.outputs.thumb_file)}"
 
+    def hero(self, item, from_index):
+        hi = self.hi_thumb(item, from_index)
+        if hi:
+            return hi
+        if item.media_type == "image" and item.outputs is not None:
+            # a banner stretches the small thumbnail over the whole screen: use the
+            # full-size picture the site holds anyway (a browser-ready copy)
+            return ("" if from_index else "../") + f"media/{quote(item.outputs.display_file)}"
+        return self.thumb(item, from_index)
+
     def display(self, item):
         return f"../media/{quote(item.outputs.display_file)}"
 
@@ -660,19 +669,22 @@ class StaticUrls(SiteUrls):
         return f"../media/{quote(item.live_clip.outputs.display_file)}"
 
 
-def site_urls(large_thumbs: bool = False, in_library: bool = False) -> StaticUrls:
+def site_urls(large_thumbs: bool = False, in_library: bool = False, template: str = None) -> StaticUrls:
     urls = StaticUrls()
     urls.has_vendor = vendor_ready()
     urls.large_thumbs = large_thumbs
     urls.in_library = in_library
+    urls.template = get_template(template)
     return urls
 
 
-def write_assets(folder: Path, has_vendor: bool):
-    """The stylesheet and script, and the local map library and fonts if any."""
+def write_assets(folder: Path, has_vendor: bool, template=None):
+    """The stylesheet and script of the template (the default one if none is given),
+    and the local map library and fonts if any."""
+    template = template or get_template()
     assets_dir = folder / "assets"
-    atomic_write_text(assets_dir / "style.css", CSS)
-    atomic_write_text(assets_dir / "script.js", JS)
+    atomic_write_text(assets_dir / "style.css", template.css)
+    atomic_write_text(assets_dir / "script.js", template.js)
     if has_vendor:
         # the map library and fonts travel with the site, so it needs no internet for them
         shutil.copytree(VENDOR_DIR, assets_dir / "vendor", dirs_exist_ok=True)
@@ -681,13 +693,13 @@ def write_assets(folder: Path, has_vendor: bool):
 def render_site(days: list, content: dict, output_dir: Path, urls: StaticUrls) -> list:
     """Write all pages. Returns the day pages written (relative paths)."""
     atomic_write_text(output_dir / "index.html",
-                      INDEX_TEMPLATE.render(**build_index_context(days, content, urls)))
+                      urls.template.index.render(**build_index_context(days, content, urls)))
     pages = []
     for i, d in enumerate(days):
-        html = DAY_TEMPLATE.render(**build_day_context(days, i, content, urls))
+        html = urls.template.day.render(**build_day_context(days, i, content, urls))
         atomic_write_text(output_dir / "days" / f"{d.date_key}.html", html)
         pages.append(f"days/{d.date_key}.html")
-    write_assets(output_dir, urls.has_vendor)
+    write_assets(output_dir, urls.has_vendor, urls.template)
     return pages
 
 
@@ -737,6 +749,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "attaching them to their photos.")
     add_date_check_args(parser)
     add_location_args(parser)
+    add_template_arg(parser)
     add_offline_args(parser)
     return parser
 
@@ -845,7 +858,8 @@ def build_trip(args, date_range, library_root: Optional[Path] = None,
 
     known = {k for it in items for k in it.content_keys}
     report_unknown_photo_keys(content, known | skip_rels)
-    urls = site_urls(large_thumbs=bool(args.large_thumb_size), in_library=library_root is not None)
+    urls = site_urls(large_thumbs=bool(args.large_thumb_size), in_library=library_root is not None,
+                     template=getattr(args, "template", None))
     pages = render_site(days, content, args.output, urls)
 
     # only after the site was written successfully: drop outputs nothing
@@ -938,12 +952,12 @@ def build_library(args) -> int:
             print(f"  The library keeps showing the version of this trip built earlier.")
 
     gone = sorted(set(previous) - {e.name for e in entries})
-    urls = site_urls()
+    urls = site_urls(template=getattr(args, "template", None))
     root.mkdir(parents=True, exist_ok=True)
-    write_assets(root, urls.has_vendor)
+    write_assets(root, urls.has_vendor, urls.template)
     context = build_library_context(list(summaries.values()), urls, footer=StaticUrls.footer,
                                     places_credit=PLACES_ATTRIBUTION, title=args.library_title)
-    atomic_write_text(root / "index.html", LIBRARY_TEMPLATE.render(**context))
+    atomic_write_text(root / "index.html", urls.template.library.render(**context))
     atomic_write_text(root / LIBRARY_MARKER, json.dumps(
         {"version": 1, "note": "Record of a generate_site.py --library build.", "trips": summaries},
         indent=1, ensure_ascii=False) + "\n")

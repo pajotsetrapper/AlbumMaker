@@ -131,6 +131,7 @@ def server_command(python: str, library_file: Path, settings: dict) -> list[str]
     library = _library_with_date_range(library_file, date_range)
     args = _command_prefix(python, "serve") + ["--library", str(library)]
     args.extend(("--library-title", settings["library"]["title"].strip() or "Trips"))
+    args.extend(("--template", settings["library"].get("template") or "classic"))
     args.extend(("--port", str(server["port"])))
     args.extend(_shared_options(build))
     _append_value(args, "--thumb-size", build.get("thumb_size", "400"))
@@ -160,6 +161,7 @@ def build_command(python: str, library_file: Path, output_dir: str, settings: di
         "--library", str(library), "--output", str(Path(output_dir).expanduser())
     ]
     args.extend(("--library-title", settings["library"]["title"].strip() or "Trips"))
+    args.extend(("--template", settings["library"].get("template") or "classic"))
     args.extend(_shared_options(build))
     _append_value(args, "--thumb-size", build.get("thumb_size", "400"))
     _append_value(args, "--large-thumb-size", build.get("large_thumb_size", "1600"))

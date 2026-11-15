@@ -57,6 +57,9 @@ python generate_site.py --library trips.txt -o ~/AlbumMakerSites
 python -m pip install -r requirements-gui.txt
 python album_gui.py
 
+# Give the site another look (see "Templates"):
+python generate_site.py -i /path/to/your/photos -o site --template journal
+
 # Which version is this? (works with every script; see "Version number"):
 python album_server.py --version
 ```
@@ -158,6 +161,22 @@ List photos folders one per line in a text file to build or serve multiple trips
 
 ### 3. `trip_content.json` & Editing
 Saves titles, day descriptions, captions (`photos`), favorites (`favorite: true`), and hidden states (`hidden: true`) safely in plain JSON.
+
+### 3b. Templates (`--template NAME`)
+Both scripts, the library builds and the desktop app (*Site template*) take a template. All templates show the same content and keep the viewer, maps and in-page editing; only the look changes.
+
+| Template | Look |
+|---|---|
+| `classic` (default) | Dark navy pages, parchment text panels, a card per day. |
+| `journal` | A light travel-journal look: full-width cover photo, a floating statistics card, a timeline of numbered steps (one per day, with a photo collage) beside a sticky map that follows your scrolling, and a story page per day with a photo grid. Use `--large-thumb-size 1600` for a crisp cover. |
+
+```bash
+python generate_site.py -i photos -o site --template journal
+python album_server.py -i photos --template journal
+```
+With `--library`, one template applies to the whole library.
+
+**Adding your own:** put `index.html`, `day.html` and `library.html` in `albummaker/templates/<name>/` (reuse `slideshow.html` with `{% include "slideshow.html" %}`; the existing templates show which element ids the viewer and editor need), optional `<name>.css` / `<name>.js` in `albummaker/static/` (added after the shared `style.css` / `script.js`), and register it in `albummaker/site_templates.py`. The journal colours are variables at the top of `journal.css`.
 
 ### 4. Offline Assets & Caching
 * Run `python album_server.py --fetch-offline-assets` once to download Leaflet maps and fonts locally.

@@ -12,6 +12,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import NamedTuple, Optional
 from ..app_paths import config_dir, settings_path
+from ..site_templates import template_info
 from ..timezones import get_timezone
 
 SETTINGS_VERSION = 1
@@ -27,7 +28,7 @@ def default_settings() -> dict:
         "trips": [],
         "output_dir": str(Path.home() / "AlbumMakerSites"),
         "appearance": {"theme": "light"},
-        "library": {"title": "Trips"},
+        "library": {"title": "Trips", "template": "classic"},
         "server": {
             "port": 8000,
             "large_thumb_size": 2400,
@@ -112,6 +113,10 @@ def _merge_defaults(saved: object) -> dict:
     title = merged["library"]["title"]
     if not isinstance(title, str) or not title.strip() or len(title) > 200:
         raise SettingsError("'library.title' must be non-empty text of at most 200 characters.")
+    try:
+        merged["library"]["template"] = template_info(merged["library"].get("template")).name
+    except ValueError as exc:
+        raise SettingsError(f"'library.template': {exc}") from exc
     for key in ("port", "large_thumb_size", "memory_cache_mb"):
         value = merged["server"][key]
         if not isinstance(value, int) or isinstance(value, bool):

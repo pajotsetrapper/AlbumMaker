@@ -6,6 +6,7 @@ scripts render the same pages; a SiteUrls subclass decides where links point."""
 
 from __future__ import annotations
 
+import functools
 import hashlib
 from typing import Optional
 
@@ -17,6 +18,7 @@ from .model import DAY_COLORS, UNKNOWN_DAY_COLOR, DayGroup, MediaItem
 from .offline import DEFAULT_TILE_URL
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .scan import format_long_date
+from .site_templates import DEFAULT_TEMPLATE, template_info
 from .util import read_resource, script_json
 
 CSS = read_resource("static", "style.css")
@@ -28,16 +30,47 @@ ASSET_VERSION = hashlib.sha1((CSS + "\0" + JS).encode("utf-8")).hexdigest()[:12]
 
 
 def _load_template(name: str):
-    return read_resource("templates", name)
+    # "journal/day.html" is a file in a sub-folder of albummaker/templates
+    return read_resource("templates", *name.split("/"))
 
 
 _JINJA = Environment(loader=FunctionLoader(_load_template), autoescape=True)
 
 
 # One layout per page type: index.html is the trip homepage, day.html a day page.
+# (These three, CSS and JS above, and ASSET_VERSION are the "classic" template;
+# get_template() gives the others.)
 INDEX_TEMPLATE = _JINJA.get_template("index.html")
 DAY_TEMPLATE = _JINJA.get_template("day.html")
 LIBRARY_TEMPLATE = _JINJA.get_template("library.html")
+
+
+class Template:
+    """A site template, loaded: its three page layouts, and the stylesheet and
+    script it serves (the shared ones plus the template's own additions).
+    See albummaker/site_templates.py."""
+
+    def __init__(self, name: str):
+        self.info = template_info(name)
+        self.name = self.info.name
+        self.css = CSS
+        self.js = JS
+        for extra in self.info.css:
+            self.css = self.css.rstrip("\n") + "\n\n" + read_resource("static", extra)
+        for extra in self.info.js:
+            self.js = self.js.rstrip("\n") + "\n\n" + read_resource("static", extra)
+        self.asset_version = ASSET_VERSION if self.name == DEFAULT_TEMPLATE else hashlib.sha1(
+            (self.css + "\0" + self.js).encode("utf-8")).hexdigest()[:12]
+        prefix = self.info.folder + "/" if self.info.folder else ""
+        self.index = _JINJA.get_template(prefix + "index.html")
+        self.day = _JINJA.get_template(prefix + "day.html")
+        self.library = _JINJA.get_template(prefix + "library.html")
+
+
+@functools.lru_cache(maxsize=None)
+def get_template(name: Optional[str] = None) -> Template:
+    """The template called `name` (None: the default, "classic")."""
+    return Template(name or DEFAULT_TEMPLATE)
 
 
 class SiteUrls:
@@ -49,6 +82,7 @@ class SiteUrls:
     edit_hint = ""  # completes "add one for <date> in trip_content.json..."
     tile_url = DEFAULT_TILE_URL   # what the maps ask for; {z}/{x}/{y} are filled in by Leaflet
     api_base = ""                 # put before /api/... when the pages save an edit
+    template = get_template(DEFAULT_TEMPLATE)   # the look of the pages (see site_templates.py)
 
     def library_href(self, from_index: bool) -> Optional[str]:
         """The page listing every trip, when this trip is part of a library."""
@@ -64,6 +98,11 @@ class SiteUrls:
         more pixels (L/XL sizes, high-resolution displays), or None when
         there is no larger version."""
         return None
+
+    def hero(self, item: MediaItem, from_index: bool) -> str:
+        """A picture for a full-width banner: the large thumbnail if there is
+        one, else the normal thumbnail (subclasses may do better)."""
+        return self.hi_thumb(item, from_index) or self.thumb(item, from_index)
 
     def home(self, from_index: bool) -> str:
         raise NotImplementedError
@@ -138,9 +177,56 @@ def _day_title(d, content: dict, ranks: dict) -> tuple:
     return title or ("Unsorted" if d.is_unknown else f"Day {ranks[d.date_key]}"), description
 
 
+def trip_cover_item(days: list, content: dict) -> Optional[MediaItem]:
+    """The trip's cover photo: the one chosen in trip_content.json, wherever it
+    was taken, else the first day's cover. None for a trip without files."""
+    real = [d for d in days if not d.is_unknown] or days
+    want = content.get("cover")
+    if isinstance(want, str) and want:
+        for d in real:
+            for it in d.items:
+                if want in it.content_keys:
+                    return it
+    for d in real:
+        if d.items:
+            return pick_cover(d, content)
+    return None
+
+
+def _preview_items(d: DayGroup, cover: MediaItem, content: dict, count: int) -> list:
+    """Up to `count` files for a day's card on the homepage: the cover first,
+    then favorites, then photos spread over the rest of the day (hidden ones
+    never; photos before videos)."""
+    if count <= 0 or cover is None:
+        return []
+    rest = [it for it in d.items if it is not cover and not photo_entry(content, it)["hidden"]]
+    rest = [it for it in rest if it.media_type == "image"] or rest
+    want = count - 1
+    chosen = [it for it in rest if photo_entry(content, it)["favorite"]][:want]
+    others = [it for it in rest if not any(it is c for c in chosen)]
+    need = min(want - len(chosen), len(others))
+    if need > 0:
+        step = len(others) / need
+        chosen += [others[int(i * step + step / 2)] for i in range(need)]
+    chosen.sort(key=lambda it: next(i for i, x in enumerate(d.items) if x is it))   # keep the day's order
+    return [cover] + chosen
+
+
+def _time_range(d: DayGroup) -> str:
+    """'08:12 \u2013 19:40' from the day's first to last capture time ('' when unknown)."""
+    if d.is_unknown or not d.items:
+        return ""
+    times = [it.dt for it in d.items if not it.dt_is_fallback]
+    if not times:
+        return ""
+    first, last = min(times).strftime("%H:%M"), max(times).strftime("%H:%M")
+    return first if first == last else f"{first} \u2013 {last}"
+
+
 def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
-    """Template variables for INDEX_TEMPLATE."""
+    """Template variables for the template's index page."""
     ranks = _day_ranks(days)
+    previews = urls.template.info.previews
     summaries = []
     for d in days:
         title, desc = _day_title(d, content, ranks)
@@ -162,8 +248,15 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
             "label": ("Unsorted" if d.is_unknown else f"Day {rank}") + f" \u2014 {d.date_key}",
             "is_unknown": d.is_unknown,
             "day_number": rank,
+            "previews": [{"thumb": urls.thumb(it, from_index=True), "hi": urls.hi_thumb(it, from_index=True),
+                          "video": it.media_type == "video"}
+                         for it in _preview_items(d, cover, content, previews)],
+            "time_range": _time_range(d),
         })
 
+    from .library import format_date_span     # (library imports this module, so not at the top)
+    real = [d for d in days if not d.is_unknown]
+    trip_cover = trip_cover_item(days, content)
     return dict(
         page_title=trip_title(content),
         library_href=urls.library_href(from_index=True),
@@ -182,8 +275,12 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         video_count=sum(d.video_count for d in days),
         distance_km=round(sum(d.distance_km for d in days), 1),
         days=summaries,
-        days_json=script_json(summaries),
+        # (the maps don't need the homepage cards' extra photos)
+        days_json=script_json([{k: v for k, v in s.items() if k not in ("previews", "time_range")} for s in summaries]),
         places_credit=_places_credit(days),
+        date_span=format_date_span(real[0].date_obj, real[-1].date_obj) if real else "",
+        place_count=len({p for d in days for p in d.places}),
+        hero=urls.hero(trip_cover, from_index=True) if trip_cover else None,
     )
 
 
@@ -240,6 +337,16 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
     prev_href = urls.day(prev_day.date_key, from_index=False) if prev_day else None
     next_href = urls.day(next_day.date_key, from_index=False) if next_day else None
 
+    def neighbour(day):
+        """Title and cover of the previous/next day, for templates that show them."""
+        if day is None:
+            return "", None
+        cover = pick_cover(day, content) if day.items else None
+        return _day_title(day, content, ranks)[0], urls.thumb(cover, from_index=False) if cover else None
+    prev_title, prev_cover = neighbour(prev_day)
+    next_title, next_cover = neighbour(next_day)
+    day_cover = pick_cover(d, content) if d.items else None
+
     return dict(
         page_title=f"{title} \u2014 {trip_title(content)}",
         library_href=urls.library_href(from_index=False),
@@ -283,4 +390,11 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         next_href=next_href,
         next_href_json=script_json(next_href),
         next_label=next_day.date_key if next_day else "",
+        prev_title=prev_title, prev_cover=prev_cover,
+        next_title=next_title, next_cover=next_cover,
+        hero=urls.hero(day_cover, from_index=False) if day_cover else None,
+        photo_count=d.photo_count,
+        video_count=d.video_count,
+        distance_km=round(d.distance_km, 1),
+        time_range=_time_range(d),
     )

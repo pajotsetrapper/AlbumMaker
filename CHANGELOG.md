@@ -3,6 +3,13 @@
 All notable changes to AlbumMaker are listed here. The release workflow uses
 the section for a version as that GitHub Release's notes.
 
+## [Unreleased]
+
+### Added
+
+- **Site templates.** `--template NAME` on `generate_site.py` and `album_server.py` (and a *Site template* setting in the desktop app) chooses the look of the pages; `classic` is the default and unchanged.
+- **`journal` template**: a light travel-journal trip page with a cover photo, statistics card, step timeline with photo collages beside a map that follows your scrolling, day pages with a photo grid, and a matching all-trips page.
+
 ## [3.0.0] - 2026-11-11
 
 The first public release with ready-to-run desktop apps for Windows, macOS

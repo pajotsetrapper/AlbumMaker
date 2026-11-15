@@ -63,6 +63,7 @@ from .commands import (
 from .settings import (LoadedSettings, SettingsError, default_settings, load_settings_or_recover,
                        prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
                        validate_settings, write_library_file)
+from ..site_templates import TEMPLATES
 from ..timezones import timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
@@ -987,6 +988,15 @@ class MainWindow(QMainWindow):
         )
         self.library_title.setPlaceholderText("Trips")
         library_form.addRow("Overview page title", self.library_title)
+        self.template_combo = QComboBox()
+        for info in TEMPLATES.values():
+            self.template_combo.addItem(info.label, info.name)
+        self.template_combo.setToolTip(
+            "The look of the generated pages, in both the live server and static sites.\n"
+            + "\n".join(f"{info.label}: {info.description}" for info in TEMPLATES.values())
+        )
+        self.template_combo.currentIndexChanged.connect(self._schedule_save)
+        library_form.addRow("Site template", self.template_combo)
         library_help = _label(
             "Shown as the heading and browser-tab title when the trip library is displayed.",
             "muted",
@@ -1214,6 +1224,8 @@ class MainWindow(QMainWindow):
             max(0, self.theme_combo.findData(self.settings["appearance"]["theme"]))
         )
         self.library_title.setText(self.settings["library"]["title"])
+        self.template_combo.setCurrentIndex(
+            max(0, self.template_combo.findData(self.settings["library"].get("template", "classic"))))
         server = self.settings["server"]
         self.port.setValue(int(server["port"]))
         self.memory_cache.setValue(int(server["memory_cache_mb"]))
@@ -1556,7 +1568,8 @@ class MainWindow(QMainWindow):
         settings = {
             "version": self.settings["version"],
             "appearance": {"theme": self.theme_combo.currentData()},
-            "library": {"title": self.library_title.text().strip() or "Trips"},
+            "library": {"title": self.library_title.text().strip() or "Trips",
+                        "template": self.template_combo.currentData() or "classic"},
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),

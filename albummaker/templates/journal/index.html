@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+{% include "journal/head.html" %}
+<body class="tpl-journal">
+<header class="jr-nav">
+  <div class="jr-nav-inner">
+    {% if library_href %}<a class="jr-nav-back" href="{{ library_href }}" aria-label="All trips"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>All trips</span></a>{% endif %}
+    <a class="jr-brand" href="{{ home_href }}">{{ title }}</a>
+  </div>
+</header>
+
+<section class="jr-hero"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}>
+  <div class="jr-hero-shade"></div>
+  <div class="jr-hero-inner">
+    {% if date_span %}<div class="jr-pill">{{ date_span }}</div>{% endif %}
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<p class="jr-hero-sub">{{ subtitle }}</p>{% endif %}
+  </div>
+</section>
+
+<section class="jr-stats" aria-label="Trip statistics">
+  <div class="jr-stat"><div class="n">{{ day_count }}</div><div class="l">Day{{ 's' if day_count != 1 else '' }}</div></div>
+  {% if place_count %}<div class="jr-stat"><div class="n">{{ place_count }}</div><div class="l">Place{{ 's' if place_count != 1 else '' }}</div></div>{% endif %}
+  <div class="jr-stat"><div class="n">{{ photo_count }}</div><div class="l">Photo{{ 's' if photo_count != 1 else '' }}</div></div>
+  {% if video_count %}<div class="jr-stat"><div class="n">{{ video_count }}</div><div class="l">Video{{ 's' if video_count != 1 else '' }}</div></div>{% endif %}
+  {% if distance_km %}<div class="jr-stat"><div class="n">{{ distance_km|int if distance_km == distance_km|int else distance_km }}</div><div class="l">Km</div></div>{% endif %}
+</section>
+
+<main class="jr-split">
+  <aside class="jr-mapcol">
+    <div class="jr-map" id="overview-map" role="region" aria-label="Map of the trip"></div>
+  </aside>
+
+  <div class="jr-timeline" id="day-list">
+    {% for d in days %}
+    <article class="jr-step" id="step-{{ loop.index0 }}" data-index="{{ loop.index0 }}">
+      <div class="jr-rail"><span class="jr-dot{{ ' is-unknown' if d.is_unknown else '' }}">{{ d.day_number if d.day_number else '?' }}</span></div>
+      <a class="jr-step-body" href="{{ d.href }}">
+        <header class="jr-step-head">
+          {% if d.places %}<div class="jr-step-place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ d.places | join(' · ') }}</div>{% endif %}
+          <h2>{{ d.title }}</h2>
+          <div class="jr-step-date">{{ d.date_display }}{% if d.time_range %} &middot; {{ d.time_range }}{% endif %}</div>
+        </header>
+        {% if d.excerpt %}<p class="jr-step-text">{{ d.excerpt }}</p>{% endif %}
+        {% if d.previews %}
+        <div class="jr-mosaic n{{ d.previews | length }}">
+          {% for p in d.previews %}
+          <div class="jr-tile"><img class="cover" src="{{ p.thumb }}" alt="" loading="lazy"{% if p.hi %} data-hi="{{ p.hi }}"{% endif %}>{% if p.video %}<span class="jr-play" aria-hidden="true"><svg viewBox="0 0 24 24"><path d="M9 7l8 5-8 5z"/></svg></span>{% endif %}</div>
+          {% endfor %}
+          {% if d.photo_count + d.video_count > d.previews | length %}<span class="jr-more">+{{ d.photo_count + d.video_count - (d.previews | length) }}</span>{% endif %}
+        </div>
+        {% endif %}
+        <footer class="jr-step-meta">{{ d.photo_count }} photo{{ 's' if d.photo_count != 1 else '' }}{% if d.video_count %} &middot; {{ d.video_count }} video{{ 's' if d.video_count != 1 else '' }}{% endif %}</footer>
+      </a>
+    </article>
+    {% endfor %}
+  </div>
+</main>
+
+<footer class="site-footer jr-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+{% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
+try { initJournalOverviewMap('overview-map', {{ days_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>

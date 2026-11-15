@@ -1,0 +1,123 @@
+<!doctype html>
+<html lang="en">
+{% include "journal/head.html" %}
+<body class="tpl-journal jr-day-page">
+<header class="jr-nav">
+  <div class="jr-nav-inner">
+    <a class="jr-nav-back" href="{{ home_href }}" aria-label="Back to {{ trip_title }}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg><span>{{ trip_title }}</span></a>
+    <span class="jr-nav-spacer"></span>
+    <span class="jr-crumb">{{ 'Unsorted' if is_unknown else 'Day ' ~ day_number ~ ' of ' ~ day_total }}</span>
+    <a class="jr-nav-arrow{{ '' if prev_href else ' is-off' }}"{% if prev_href %} href="{{ prev_href }}"{% endif %} aria-label="Previous day"{% if not prev_href %} aria-disabled="true" tabindex="-1"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></a>
+    <a class="jr-nav-arrow{{ '' if next_href else ' is-off' }}"{% if next_href %} href="{{ next_href }}"{% endif %} aria-label="Next day"{% if not next_href %} aria-disabled="true" tabindex="-1"{% endif %}><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 5l7 7-7 7"/></svg></a>
+  </div>
+</header>
+
+<section class="jr-hero jr-hero-day"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}>
+  <div class="jr-hero-shade"></div>
+  <div class="jr-hero-inner">
+    <div class="jr-pill">{{ date_display }}</div>
+    <h1>{{ day_title }}</h1>
+    {% if places %}<div class="jr-hero-place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ places | join(' · ') }}</div>{% endif %}
+  </div>
+</section>
+
+<main class="jr-split jr-split-day{{ '' if (route or track) else ' no-map' }}">
+  <div class="jr-story">
+    <div class="jr-facts">
+      <span class="jr-fact"><b>{{ photo_count }}</b> photo{{ 's' if photo_count != 1 else '' }}</span>
+      {% if video_count %}<span class="jr-fact"><b>{{ video_count }}</b> video{{ 's' if video_count != 1 else '' }}</span>{% endif %}
+      {% if time_range %}<span class="jr-fact">{{ time_range }}</span>{% endif %}
+      {% if distance_km %}<span class="jr-fact"><b>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</b> km</span>{% endif %}
+    </div>
+
+    {% if editable %}
+    <div class="jr-edit-row"><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+    <div class="day-editor" id="day-editor" hidden>
+      <label for="edit-title">Title</label>
+      <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="{{ title_suggestion or 'Day title' }}">
+      {% if title_suggestion %}<button type="button" class="suggestion" id="use-suggestion" data-title="{{ title_suggestion }}">Use &ldquo;{{ title_suggestion }}&rdquo;</button>{% endif %}
+      <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
+      <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
+      <div class="day-editor-actions">
+        <button type="button" class="editor-btn" id="day-save">Save</button>
+        <button type="button" class="editor-btn secondary" id="day-cancel">Cancel</button>
+      </div>
+    </div>
+    {% endif %}
+
+    {% if description %}
+    <div class="jr-text">
+      {% for para in description %}<p>{{ para }}</p>{% endfor %}
+    </div>
+    {% elif editable %}
+    <div class="jr-text empty"><p>No description yet. Use &ldquo;Edit title &amp; description&rdquo; to write the story of this day.</p></div>
+    {% endif %}
+
+    {% if items %}
+    <div class="jr-grid-head">
+      <h2>Photos</h2>
+      <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+    </div>
+    {% endif %}
+    <div class="jr-photos" id="thumb-grid">
+      {% for item in items %}
+      <div class="thumb{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
+        <img class="cover" src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}"{% if item.hi_url %} data-hi="{{ item.hi_url }}"{% endif %}>
+        {% if item.media_type == 'video' %}
+        <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(14,23,41,.55)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
+        {% endif %}
+        {% if item.live %}<span class="live-badge" title="Live Photo">LIVE</span>{% endif %}
+        {% if item.time_display %}<span class="badge">{{ item.time_display }}</span>{% endif %}
+        {% if item.caption %}<span class="jr-caption">{{ item.caption }}</span>{% endif %}
+        <span class="fav-badge" title="Favorite">&#9733;</span>
+        <span class="hidden-badge">HIDDEN</span>
+      </div>
+      {% endfor %}
+    </div>
+
+    {% if prev_href or next_href %}
+    <nav class="jr-pager" aria-label="Other days">
+      {% if prev_href %}
+      <a class="jr-pager-card prev" href="{{ prev_href }}">
+        {% if prev_cover %}<span class="jr-pager-img" style="background-image:url('{{ prev_cover }}')"></span>{% endif %}
+        <span class="jr-pager-txt"><small>&larr; Previous &middot; {{ prev_label }}</small><b>{{ prev_title }}</b></span>
+      </a>
+      {% else %}<span></span>{% endif %}
+      {% if next_href %}
+      <a class="jr-pager-card next" href="{{ next_href }}">
+        <span class="jr-pager-txt"><small>Next &middot; {{ next_label }} &rarr;</small><b>{{ next_title }}</b></span>
+        {% if next_cover %}<span class="jr-pager-img" style="background-image:url('{{ next_cover }}')"></span>{% endif %}
+      </a>
+      {% endif %}
+    </nav>
+    <div class="jr-hint">{% if prev_href or next_href %}&larr; &rarr; keys or swipe change day &middot; {% endif %}Esc returns to the trip</div>
+    {% endif %}
+  </div>
+
+  {% if route or track %}
+  <aside class="jr-mapcol">
+    <div class="jr-map" id="day-map" role="region" aria-label="Map of this day"></div>
+  </aside>
+  {% endif %}
+</main>
+
+<footer class="site-footer jr-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% include "slideshow.html" %}
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+// slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
+initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
+openSlideshowFromHash();
+initSharpThumbs();
+initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
+{% if editable %}initDayEditor({{ date_key_json }});{% endif %}
+{% if route or track %}
+try { initJournalDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}, {{ track_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+{% endif %}
+</script>
+</body>
+</html>

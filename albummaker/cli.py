@@ -10,6 +10,7 @@ from pathlib import Path
 from typing import Optional
 
 from .offline import add_offline_args  # noqa: F401  (re-exported for the scripts)
+from .site_templates import add_template_arg  # noqa: F401  (re-exported for the scripts)
 from .timezones import get_timezone
 
 

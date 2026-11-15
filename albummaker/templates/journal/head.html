@@ -1,0 +1,14 @@
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#ffffff">
+<title>{{ page_title }}</title>
+{% if vendor %}
+<link rel="stylesheet" href="{{ vendor }}leaflet/leaflet.css">
+{% else %}
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css">
+{% endif %}
+<link rel="stylesheet" href="{{ css_href }}">
+<script>window.TILE_URL = {{ tile_url_json }};</script>
+{% if tile_attribution_json is defined %}<script>window.TILE_ATTRIBUTION = {{ tile_attribution_json }};</script>{% endif %}
+</head>

@@ -1,0 +1,55 @@
+<!doctype html>
+<html lang="en">
+{% include "journal/head.html" %}
+<body class="tpl-journal jr-library-page">
+<header class="jr-nav">
+  <div class="jr-nav-inner">
+    <span class="jr-brand">{{ library_title }}</span>
+  </div>
+</header>
+
+<section class="jr-library-head">
+  <div class="jr-pill">{{ trip_count }} trip{{ 's' if trip_count != 1 else '' }}</div>
+  <h1>{{ library_title }}</h1>
+</section>
+
+<section class="jr-stats jr-stats-flat" aria-label="Statistics">
+  <div class="jr-stat"><div class="n">{{ trip_count }}</div><div class="l">Trip{{ 's' if trip_count != 1 else '' }}</div></div>
+  <div class="jr-stat"><div class="n">{{ day_count }}</div><div class="l">Day{{ 's' if day_count != 1 else '' }}</div></div>
+  <div class="jr-stat"><div class="n">{{ photo_count }}</div><div class="l">Photo{{ 's' if photo_count != 1 else '' }}</div></div>
+  {% if distance_km %}<div class="jr-stat"><div class="n">{{ distance_km|int if distance_km == distance_km|int else distance_km }}</div><div class="l">Km</div></div>{% endif %}
+</section>
+
+<div class="jr-library-map">
+  <div class="jr-map" id="library-map" role="region" aria-label="Map of all trips"></div>
+</div>
+
+<div class="jr-trips" id="trip-list">
+  {% for t in trips %}
+  <a class="jr-trip" href="{{ t.href }}">
+    <div class="jr-trip-cover cover" {% if t.cover %}style="background-image:url('{{ t.cover }}')" data-lo="{{ t.cover }}"{% if t.cover_hi %} data-hi="{{ t.cover_hi }}"{% endif %}{% endif %}>
+      <span class="jr-pill jr-pill-on-photo">{{ t.dates }}</span>
+    </div>
+    <div class="jr-trip-body">
+      <h2>{{ t.title }}</h2>
+      {% if t.places %}<div class="jr-step-place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ t.places | join(' · ') }}</div>{% endif %}
+      {% if t.subtitle %}<p>{{ t.subtitle }}</p>{% endif %}
+      <div class="jr-step-meta">{{ t.day_count }} day{{ 's' if t.day_count != 1 else '' }} &middot; {{ t.photo_count }} photo{{ 's' if t.photo_count != 1 else '' }}{% if t.video_count %} &middot; {{ t.video_count }} video{{ 's' if t.video_count != 1 else '' }}{% endif %}{% if t.distance_km %} &middot; {{ t.distance_km }} km{% endif %}</div>
+    </div>
+  </a>
+  {% else %}
+  <p class="empty-library">No trip could be built. The messages above the build say why.</p>
+  {% endfor %}
+</div>
+
+<footer class="site-footer jr-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+try { initLibraryMap('library-map', {{ trips_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>
