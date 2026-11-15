@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+{% include "scrapbook/head.html" %}
+<body class="tpl-scrapbook sb-day-page">
+<header class="sb-nav">
+  <a class="sb-nav-link" href="{{ home_href }}">&larr; {{ trip_title }}</a>
+  <span class="sb-nav-spacer"></span>
+  <span class="sb-crumb">{{ 'Unsorted' if is_unknown else 'Day ' ~ day_number ~ ' of ' ~ day_total }}</span>
+  <a class="sb-nav-arrow{{ '' if prev_href else ' is-off' }}"{% if prev_href %} href="{{ prev_href }}"{% endif %} aria-label="Previous day">&larr;</a>
+  <a class="sb-nav-arrow{{ '' if next_href else ' is-off' }}"{% if next_href %} href="{{ next_href }}"{% endif %} aria-label="Next day">&rarr;</a>
+</header>
+
+<section class="sb-title sb-title-day">
+  <figure class="sb-polaroid sb-cover">
+    <i class="sb-tape"></i>
+    <div class="sb-photo"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}></div>
+    <figcaption class="sb-hand">{{ date_display }}</figcaption>
+  </figure>
+  <div class="sb-title-text">
+    <span class="sb-daystamp big{{ ' is-unknown' if is_unknown else '' }}"><small>{{ 'Date' if is_unknown else 'Day' }}</small><b>{{ day_number if day_number else '?' }}</b></span>
+    <h1>{{ day_title }}</h1>
+    {% if places %}<div class="sb-place big"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ places | join(' · ') }}</div>{% endif %}
+    <div class="sb-stamps">
+      <span class="sb-stamp"><b>{{ photo_count }}</b>photo{{ 's' if photo_count != 1 else '' }}</span>
+      {% if video_count %}<span class="sb-stamp"><b>{{ video_count }}</b>video{{ 's' if video_count != 1 else '' }}</span>{% endif %}
+      {% if distance_km %}<span class="sb-stamp"><b>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</b>km</span>{% endif %}
+      {% if time_range %}<span class="sb-stamp wide">{{ time_range }}</span>{% endif %}
+    </div>
+  </div>
+</section>
+
+<main class="sb-story">
+  {% if editable %}
+  <div class="sb-edit-row"><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+  <div class="day-editor" id="day-editor" hidden>
+    <label for="edit-title">Title</label>
+    <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="{{ title_suggestion or 'Day title' }}">
+    {% if title_suggestion %}<button type="button" class="suggestion" id="use-suggestion" data-title="{{ title_suggestion }}">Use &ldquo;{{ title_suggestion }}&rdquo;</button>{% endif %}
+    <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
+    <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
+    <div class="day-editor-actions">
+      <button type="button" class="editor-btn" id="day-save">Save</button>
+      <button type="button" class="editor-btn secondary" id="day-cancel">Cancel</button>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="sb-notes">{% for para in description %}<p>{{ para }}</p>{% endfor %}</div>
+  {% elif editable %}
+  <div class="sb-notes empty"><p>No description yet. Use &ldquo;Edit title &amp; description&rdquo; to write this page of the story.</p></div>
+  {% endif %}
+
+  {% if route or track %}
+  <section class="sb-map-card">
+    <i class="sb-tape l"></i><i class="sb-tape r"></i>
+    <div class="sb-map" id="day-map" role="region" aria-label="Map of this day"></div>
+    <p class="sb-hand sb-map-cap">the way we went</p>
+  </section>
+  {% endif %}
+
+  {% if items %}
+  <div class="sb-grid-head"><h2 class="sb-hand">the photos</h2><button type="button" class="fav-filter" id="fav-filter" hidden></button></div>
+  {% endif %}
+  <div class="sb-photos" id="thumb-grid">
+    {% for item in items %}
+    <div class="thumb sb-polaroid{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
+      <i class="sb-tape"></i>
+      <img class="cover" src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}"{% if item.hi_url %} data-hi="{{ item.hi_url }}"{% endif %}>
+      {% if item.media_type == 'video' %}
+      <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(40,28,18,.6)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
+      {% endif %}
+      {% if item.live %}<span class="live-badge" title="Live Photo">LIVE</span>{% endif %}
+      <span class="sb-note sb-hand">{{ item.caption }}</span>
+      {% if item.time_display %}<span class="badge">{{ item.time_display }}</span>{% endif %}
+      <span class="fav-badge" title="Favorite">&#9733;</span>
+      <span class="hidden-badge">HIDDEN</span>
+    </div>
+    {% endfor %}
+  </div>
+
+  {% if prev_href or next_href %}
+  <nav class="sb-pager" aria-label="Other days">
+    {% if prev_href %}<a class="sb-ticket prev" href="{{ prev_href }}"><small>&larr; Day before &middot; {{ prev_label }}</small><b>{{ prev_title }}</b></a>{% else %}<span></span>{% endif %}
+    {% if next_href %}<a class="sb-ticket next" href="{{ next_href }}"><small>Next day &middot; {{ next_label }} &rarr;</small><b>{{ next_title }}</b></a>{% endif %}
+  </nav>
+  <div class="sb-hint">&larr; &rarr; keys or swipe change day &middot; Esc returns to the trip</div>
+  {% endif %}
+</main>
+
+<footer class="site-footer sb-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% include "slideshow.html" %}
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+// slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
+initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
+openSlideshowFromHash();
+initSharpThumbs();
+initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
+{% if editable %}initDayEditor({{ date_key_json }});{% endif %}
+{% if route or track %}
+try { initScrapbookDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}, {{ track_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+{% endif %}
+</script>
+</body>
+</html>

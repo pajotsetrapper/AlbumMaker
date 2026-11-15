@@ -35,7 +35,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_names_are_case_insensitive_and_unknown_ones_list_the_choices(self):
         self.assertEqual(site_templates.template_arg(" Journal "), "journal")
-        with self.assertRaisesRegex(argparse.ArgumentTypeError, "classic, journal"):
+        with self.assertRaisesRegex(argparse.ArgumentTypeError, "classic, journal, scrapbook"):
             site_templates.template_arg("fancy")
 
     def test_the_command_line_takes_the_option(self):
@@ -103,6 +103,25 @@ class StaticSiteTests(TempDirMixin, unittest.TestCase):
         a = sorted(p.name for p in (self.tmp / "classic" / "thumbs").iterdir())
         b = sorted(p.name for p in (self.tmp / "journal" / "thumbs").iterdir())
         self.assertEqual(a, b)
+
+
+class ScrapbookTests(TempDirMixin, unittest.TestCase):
+    def test_a_static_site_and_a_library_use_the_scrapbook_pages(self):
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        build("-i", str(photos), "-o", str(tmp / "site"), "--template", "scrapbook")
+        index = (tmp / "site" / "index.html").read_text(encoding="utf-8")
+        for part in ("tpl-scrapbook", "sb-title", "sb-stamp", 'class="sb-page', "initScrapbookOverviewMap"):
+            self.assertIn(part, index)
+        day = (tmp / "site" / "days" / "2026-05-01.html").read_text(encoding="utf-8")
+        for part in ('id="slideshow"', 'id="thumb-grid"', 'data-slide-index="0"', "sb-polaroid", "initSlideshow("):
+            self.assertIn(part, day)
+        self.assertIn(".sb-polaroid", (tmp / "site" / "assets" / "style.css").read_text(encoding="utf-8"))
+        listing = tmp / "trips.txt"
+        listing.write_text(f"{photos} | trip\n", encoding="utf-8")
+        build("--library", str(listing), "-o", str(tmp / "lib"), "--template", "scrapbook")
+        self.assertIn("sb-trips", (tmp / "lib" / "index.html").read_text(encoding="utf-8"))
 
 
 class LibraryTests(TempDirMixin, unittest.TestCase):

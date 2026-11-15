@@ -52,6 +52,16 @@ TEMPLATES = {
         js=("journal.js",),
         previews=5,
     ),
+    "scrapbook": TemplateInfo(
+        name="scrapbook",
+        label="Scrapbook",
+        description="A warm paper scrapbook: taped polaroid photos, rubber-stamp statistics, "
+                    "a push-pin map and lined notebook pages for each day's story.",
+        folder="scrapbook",
+        css=("scrapbook.css",),
+        js=("scrapbook.js",),
+        previews=4,
+    ),
 }
 
 

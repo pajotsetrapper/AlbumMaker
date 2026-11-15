@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+{% include "scrapbook/head.html" %}
+<body class="tpl-scrapbook sb-library-page">
+<header class="sb-nav"><span class="sb-brand">{{ library_title }}</span></header>
+
+<section class="sb-title sb-title-library">
+  <div class="sb-title-text">
+    <div class="sb-hand sb-eyebrow">{{ trip_count }} trip{{ 's' if trip_count != 1 else '' }} in the album</div>
+    <h1>{{ library_title }}</h1>
+    <div class="sb-stamps">
+      <span class="sb-stamp"><b>{{ trip_count }}</b>trip{{ 's' if trip_count != 1 else '' }}</span>
+      <span class="sb-stamp"><b>{{ day_count }}</b>day{{ 's' if day_count != 1 else '' }}</span>
+      <span class="sb-stamp"><b>{{ photo_count }}</b>photo{{ 's' if photo_count != 1 else '' }}</span>
+      {% if distance_km %}<span class="sb-stamp"><b>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</b>km</span>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="sb-map-card">
+  <i class="sb-tape l"></i><i class="sb-tape r"></i>
+  <div class="sb-map" id="library-map" role="region" aria-label="Map of all trips"></div>
+  <p class="sb-hand sb-map-cap">everywhere we have been</p>
+</section>
+
+<div class="sb-trips" id="trip-list">
+  {% for t in trips %}
+  <a class="sb-trip" href="{{ t.href }}">
+    <figure class="sb-polaroid">
+      <i class="sb-tape"></i>
+      <div class="sb-photo cover" {% if t.cover %}style="background-image:url('{{ t.cover }}')" data-lo="{{ t.cover }}"{% if t.cover_hi %} data-hi="{{ t.cover_hi }}"{% endif %}{% endif %}></div>
+      <figcaption class="sb-hand">{{ t.dates }}</figcaption>
+    </figure>
+    <h2>{{ t.title }}</h2>
+    {% if t.subtitle %}<p>{{ t.subtitle }}</p>{% endif %}
+    <div class="sb-meta">{{ t.day_count }} day{{ 's' if t.day_count != 1 else '' }} &middot; {{ t.photo_count }} photo{{ 's' if t.photo_count != 1 else '' }}{% if t.video_count %} &middot; {{ t.video_count }} video{{ 's' if t.video_count != 1 else '' }}{% endif %}{% if t.distance_km %} &middot; {{ t.distance_km }} km{% endif %}</div>
+  </a>
+  {% else %}
+  <p class="empty-library">No trip could be built. The messages above the build say why.</p>
+  {% endfor %}
+</div>
+
+<footer class="site-footer sb-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+try { initLibraryMap('library-map', {{ trips_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>

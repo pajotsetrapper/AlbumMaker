@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+{% include "scrapbook/head.html" %}
+<body class="tpl-scrapbook">
+<header class="sb-nav">
+  {% if library_href %}<a class="sb-nav-link" href="{{ library_href }}">&larr; All trips</a>{% endif %}
+  <a class="sb-brand" href="{{ home_href }}">{{ title }}</a>
+</header>
+
+<section class="sb-title">
+  <figure class="sb-polaroid sb-cover">
+    <i class="sb-tape"></i>
+    <div class="sb-photo"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}></div>
+    <figcaption class="sb-hand">{{ date_span or title }}</figcaption>
+  </figure>
+  <div class="sb-title-text">
+    <div class="sb-hand sb-eyebrow">a trip in {{ day_count }} day{{ 's' if day_count != 1 else '' }}</div>
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<p class="sb-sub">{{ subtitle }}</p>{% endif %}
+    <div class="sb-stamps">
+      <span class="sb-stamp"><b>{{ day_count }}</b>day{{ 's' if day_count != 1 else '' }}</span>
+      {% if place_count %}<span class="sb-stamp"><b>{{ place_count }}</b>place{{ 's' if place_count != 1 else '' }}</span>{% endif %}
+      <span class="sb-stamp"><b>{{ photo_count }}</b>photo{{ 's' if photo_count != 1 else '' }}</span>
+      {% if video_count %}<span class="sb-stamp"><b>{{ video_count }}</b>video{{ 's' if video_count != 1 else '' }}</span>{% endif %}
+      {% if distance_km %}<span class="sb-stamp"><b>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</b>km</span>{% endif %}
+    </div>
+  </div>
+</section>
+
+<section class="sb-map-card">
+  <i class="sb-tape l"></i><i class="sb-tape r"></i>
+  <div class="sb-map" id="overview-map" role="region" aria-label="Map of the trip"></div>
+  <p class="sb-hand sb-map-cap">where we went</p>
+</section>
+
+<main class="sb-pages" id="day-list">
+  {% for d in days %}
+  <article class="sb-page{{ ' flip' if loop.index is even else '' }}" id="step-{{ loop.index0 }}" data-index="{{ loop.index0 }}">
+    <a class="sb-page-link" href="{{ d.href }}">
+      <div class="sb-page-text">
+        <span class="sb-daystamp{{ ' is-unknown' if d.is_unknown else '' }}"><small>{{ 'Date' if d.is_unknown else 'Day' }}</small><b>{{ d.day_number if d.day_number else '?' }}</b></span>
+        <div class="sb-hand sb-date">{{ d.date_display }}{% if d.time_range %} &middot; {{ d.time_range }}{% endif %}</div>
+        <h2>{{ d.title }}</h2>
+        {% if d.places %}<div class="sb-place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ d.places | join(' · ') }}</div>{% endif %}
+        {% if d.excerpt %}<p class="sb-excerpt">{{ d.excerpt }}</p>{% endif %}
+        <div class="sb-meta">{{ d.photo_count }} photo{{ 's' if d.photo_count != 1 else '' }}{% if d.video_count %} &middot; {{ d.video_count }} video{{ 's' if d.video_count != 1 else '' }}{% endif %} &nbsp;&rarr;</div>
+      </div>
+      {% if d.previews %}
+      <div class="sb-fan n{{ d.previews | length }}">
+        {% for p in d.previews %}
+        <span class="sb-polaroid sb-mini">{% if loop.first %}<i class="sb-tape"></i>{% endif %}<img class="cover" src="{{ p.thumb }}" alt="" loading="lazy"{% if p.hi %} data-hi="{{ p.hi }}"{% endif %}></span>
+        {% endfor %}
+      </div>
+      {% endif %}
+    </a>
+  </article>
+  {% endfor %}
+</main>
+
+<footer class="site-footer sb-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+{% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
+try { initScrapbookOverviewMap('overview-map', {{ days_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>
