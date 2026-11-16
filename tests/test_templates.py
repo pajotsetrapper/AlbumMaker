@@ -35,7 +35,7 @@ class RegistryTests(unittest.TestCase):
 
     def test_names_are_case_insensitive_and_unknown_ones_list_the_choices(self):
         self.assertEqual(site_templates.template_arg(" Journal "), "journal")
-        with self.assertRaisesRegex(argparse.ArgumentTypeError, "classic, journal, scrapbook"):
+        with self.assertRaisesRegex(argparse.ArgumentTypeError, "classic, journal, scrapbook, cinema"):
             site_templates.template_arg("fancy")
 
     def test_the_command_line_takes_the_option(self):
@@ -122,6 +122,33 @@ class ScrapbookTests(TempDirMixin, unittest.TestCase):
         listing.write_text(f"{photos} | trip\n", encoding="utf-8")
         build("--library", str(listing), "-o", str(tmp / "lib"), "--template", "scrapbook")
         self.assertIn("sb-trips", (tmp / "lib" / "index.html").read_text(encoding="utf-8"))
+
+
+class CinemaTests(TempDirMixin, unittest.TestCase):
+    def test_a_static_site_and_a_library_use_the_cinema_pages(self):
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        build("-i", str(photos), "-o", str(tmp / "site"), "--template", "cinema")
+        index = (tmp / "site" / "index.html").read_text(encoding="utf-8")
+        for part in ("tpl-cinema", "cn-intro", 'class="cn-scene cn-day"', "cn-mini", "initCinemaOverview"):
+            self.assertIn(part, index)
+        day = (tmp / "site" / "days" / "2026-05-01.html").read_text(encoding="utf-8")
+        for part in ('id="slideshow"', 'id="thumb-grid"', 'data-slide-index="0"', 'style="--r:', "cn-gallery"):
+            self.assertIn(part, day)
+        self.assertIn(".cn-scene", (tmp / "site" / "assets" / "style.css").read_text(encoding="utf-8"))
+        listing = tmp / "trips.txt"
+        listing.write_text(f"{photos} | trip\n", encoding="utf-8")
+        build("--library", str(listing), "-o", str(tmp / "lib"), "--template", "cinema")
+        self.assertIn("cn-posters", (tmp / "lib" / "index.html").read_text(encoding="utf-8"))
+
+    def test_the_day_banner_is_not_a_small_thumbnail(self):
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        build("-i", str(photos), "-o", str(tmp / "site"), "--template", "cinema")
+        index = (tmp / "site" / "index.html").read_text(encoding="utf-8")
+        self.assertRegex(index, r"cn-bg cover\" style=\"background-image:url\('media/")
 
 
 class LibraryTests(TempDirMixin, unittest.TestCase):

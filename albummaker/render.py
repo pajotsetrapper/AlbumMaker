@@ -252,6 +252,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
                           "video": it.media_type == "video"}
                          for it in _preview_items(d, cover, content, previews)],
             "time_range": _time_range(d),
+            "hero": urls.hero(cover, from_index=True) if cover else None,
         })
 
     from .library import format_date_span     # (library imports this module, so not at the top)
@@ -276,7 +277,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         distance_km=round(sum(d.distance_km for d in days), 1),
         days=summaries,
         # (the maps don't need the homepage cards' extra photos)
-        days_json=script_json([{k: v for k, v in s.items() if k not in ("previews", "time_range")} for s in summaries]),
+        days_json=script_json([{k: v for k, v in s.items() if k not in ("previews", "time_range", "hero")} for s in summaries]),
         places_credit=_places_credit(days),
         date_span=format_date_span(real[0].date_obj, real[-1].date_obj) if real else "",
         place_count=len({p for d in days for p in d.places}),
@@ -297,7 +298,9 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         item_ctx = {"thumb_url": urls.thumb(it, from_index=False), "media_type": it.media_type,
                     "live": it.live_clip is not None, "caption": pe["caption"],
                     "favorite": pe["favorite"], "hidden": pe["hidden"],
-                    "hi_url": urls.hi_thumb(it, from_index=False)}
+                    "hi_url": urls.hi_thumb(it, from_index=False),
+                    # width / height, for layouts that fit photos into rows
+                    "ratio": round(it.width / it.height, 3) if it.width and it.height else 1.5}
         if not d.is_unknown:
             # only show a time badge when it's a real capture time: a
             # file-modified fallback time isn't worth presenting as fact

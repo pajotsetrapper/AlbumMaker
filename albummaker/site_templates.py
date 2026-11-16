@@ -62,6 +62,16 @@ TEMPLATES = {
         js=("scrapbook.js",),
         previews=4,
     ),
+    "cinema": TemplateInfo(
+        name="cinema",
+        label="Cinema",
+        description="Dark and cinematic: a full-screen scene for every day, film-strip photos and a "
+                    "mini-map that follows your scrolling.",
+        folder="cinema",
+        css=("cinema.css",),
+        js=("cinema.js",),
+        previews=5,
+    ),
 }
 
 

@@ -170,6 +170,7 @@ Both scripts, the library builds and the desktop app (*Site template*) take a te
 | `classic` (default) | Dark navy pages, parchment text panels, a card per day. |
 | `journal` | A light travel-journal look: full-width cover photo, a floating statistics card, a timeline of numbered steps (one per day, with a photo collage) beside a sticky map that follows your scrolling, and a story page per day with a photo grid. Use `--large-thumb-size 1600` for a crisp cover. |
 | `scrapbook` | A warm paper scrapbook: taped polaroid photos scattered on each day's page, rubber-stamp statistics, a push-pin map and lined notebook paper for the day story. Uses only system fonts, so it works offline. |
+| `cinema` | Dark and cinematic: a full-screen scene for each day (big photo, outlined day number, film-strip of more photos) that fades in as you scroll, with a mini-map that flies to the day you are reading and opens up to show the whole route. Day pages have a drop-cap story, a glowing route map and a photo gallery in rows that follow each photo's shape. Use `--large-thumb-size 1600` for sharp scenes. |
 
 ```bash
 python generate_site.py -i photos -o site --template journal

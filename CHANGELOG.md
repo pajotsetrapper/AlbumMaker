@@ -8,6 +8,7 @@ the section for a version as that GitHub Release's notes.
 ### Added
 
 - **Site templates.** `--template NAME` on `generate_site.py` and `album_server.py` (and a *Site template* setting in the desktop app) chooses the look of the pages; `classic` is the default and unchanged.
+- **`cinema` template**: full-screen dark scenes per day with a film-strip of photos, a mini-map that follows the scrolling, a rows-of-photos gallery and an amber glowing route.
 - **`scrapbook` template**: warm paper pages with taped polaroid photos, rubber-stamp statistics, a push-pin map with a dashed route, and lined notebook paper for each day's story.
 - **`journal` template**: a light travel-journal trip page with a cover photo, statistics card, step timeline with photo collages beside a map that follows your scrolling, day pages with a photo grid, and a matching all-trips page.
 
