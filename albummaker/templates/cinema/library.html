@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="en">
+{% include "cinema/head.html" %}
+<body class="tpl-cinema cn-library-page">
+<header class="cn-bar"><span class="cn-brand">{{ library_title }}</span></header>
+
+<section class="cn-scene cn-intro cn-intro-plain">
+  <div class="cn-shade"></div>
+  <div class="cn-content">
+    <div class="cn-kicker">{{ trip_count }} trip{{ 's' if trip_count != 1 else '' }}</div>
+    <h1>{{ library_title }}</h1>
+    <dl class="cn-facts">
+      <div><dt>Trips</dt><dd>{{ trip_count }}</dd></div>
+      <div><dt>Days</dt><dd>{{ day_count }}</dd></div>
+      <div><dt>Photos</dt><dd>{{ photo_count }}</dd></div>
+      {% if distance_km %}<div><dt>Km</dt><dd>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</dd></div>{% endif %}
+    </dl>
+  </div>
+</section>
+
+<div class="cn-wrap wide"><div class="cn-mapband"><div class="cn-map" id="library-map" role="region" aria-label="Map of all trips"></div></div></div>
+
+<div class="cn-posters" id="trip-list">
+  {% for t in trips %}
+  <a class="cn-poster" href="{{ t.href }}">
+    <div class="cn-poster-bg cover" {% if t.cover %}style="background-image:url('{{ t.cover }}')" data-lo="{{ t.cover }}"{% if t.cover_hi %} data-hi="{{ t.cover_hi }}"{% endif %}{% endif %}></div>
+    <div class="cn-shade"></div>
+    <div class="cn-poster-text">
+      <div class="cn-kicker">{{ t.dates }}</div>
+      <h2>{{ t.title }}</h2>
+      {% if t.subtitle %}<p>{{ t.subtitle }}</p>{% endif %}
+      <div class="cn-poster-meta">{{ t.day_count }} day{{ 's' if t.day_count != 1 else '' }} &middot; {{ t.photo_count }} photo{{ 's' if t.photo_count != 1 else '' }}{% if t.video_count %} &middot; {{ t.video_count }} video{{ 's' if t.video_count != 1 else '' }}{% endif %}{% if t.distance_km %} &middot; {{ t.distance_km }} km{% endif %}</div>
+    </div>
+  </a>
+  {% else %}
+  <p class="empty-library">No trip could be built. The messages above the build say why.</p>
+  {% endfor %}
+</div>
+
+<footer class="site-footer cn-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+try { initLibraryMap('library-map', {{ trips_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>

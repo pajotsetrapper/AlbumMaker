@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="en">
+{% include "cinema/head.html" %}
+<body class="tpl-cinema">
+<header class="cn-bar">
+  {% if library_href %}<a class="cn-bar-link" href="{{ library_href }}">&larr; All trips</a>{% endif %}
+  <a class="cn-brand" href="{{ home_href }}">{{ title }}</a>
+  <span class="cn-bar-spacer"></span>
+  <span class="cn-count" id="cn-count" aria-live="off"></span>
+</header>
+<nav class="cn-dots" aria-label="Days">
+  {% for d in days %}<a href="#step-{{ loop.index0 }}" data-i="{{ loop.index0 }}" aria-label="{{ d.title }}"><span>{{ d.title }}</span></a>{% endfor %}
+</nav>
+
+<section class="cn-scene cn-intro" id="intro" data-index="-1">
+  <div class="cn-bg cover"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}></div>
+  <div class="cn-shade"></div>
+  <div class="cn-content">
+    {% if date_span %}<div class="cn-kicker">{{ date_span }}</div>{% endif %}
+    <h1>{{ title }}</h1>
+    {% if subtitle %}<p class="cn-lede">{{ subtitle }}</p>{% endif %}
+    <dl class="cn-facts">
+      <div><dt>Days</dt><dd>{{ day_count }}</dd></div>
+      {% if place_count %}<div><dt>Places</dt><dd>{{ place_count }}</dd></div>{% endif %}
+      <div><dt>Photos</dt><dd>{{ photo_count }}</dd></div>
+      {% if video_count %}<div><dt>Videos</dt><dd>{{ video_count }}</dd></div>{% endif %}
+      {% if distance_km %}<div><dt>Km</dt><dd>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</dd></div>{% endif %}
+    </dl>
+  </div>
+  <a class="cn-scroll" href="#step-0" aria-label="Start the story"><span></span></a>
+</section>
+
+<main id="day-list">
+  {% for d in days %}
+  <section class="cn-scene cn-day" id="step-{{ loop.index0 }}" data-index="{{ loop.index0 }}">
+    <div class="cn-bg cover"{% if d.hero %} style="background-image:url('{{ d.hero }}')"{% endif %}></div>
+    <div class="cn-shade"></div>
+    <span class="cn-bignum" aria-hidden="true">{{ ('%02d' % d.day_number) if d.day_number else '??' }}</span>
+    <div class="cn-content">
+      <div class="cn-kicker">{{ 'Undated' if d.is_unknown else 'Day ' ~ d.day_number }} &middot; {{ d.date_display }}{% if d.time_range %} &middot; {{ d.time_range }}{% endif %}</div>
+      <h2><a href="{{ d.href }}">{{ d.title }}</a></h2>
+      {% if d.places %}<div class="cn-place"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ d.places | join(' · ') }}</div>{% endif %}
+      {% if d.excerpt %}<p class="cn-lede">{{ d.excerpt }}</p>{% endif %}
+      <a class="cn-more" href="{{ d.href }}">Open this day <span>&rarr;</span> <small>{{ d.photo_count }} photo{{ 's' if d.photo_count != 1 else '' }}{% if d.video_count %} &middot; {{ d.video_count }} video{{ 's' if d.video_count != 1 else '' }}{% endif %}</small></a>
+    </div>
+    {% if d.previews %}
+    <a class="cn-strip" href="{{ d.href }}" tabindex="-1" aria-hidden="true">
+      {% for p in d.previews %}<span class="cn-frame"><img class="cover" src="{{ p.thumb }}" alt="" loading="lazy"{% if p.hi %} data-hi="{{ p.hi }}"{% endif %}></span>{% endfor %}
+    </a>
+    {% endif %}
+  </section>
+  {% endfor %}
+</main>
+
+<footer class="site-footer cn-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+<div class="cn-mini" id="cn-mini">
+  <div class="cn-mini-map" id="overview-map" role="region" aria-label="Map of the trip"></div>
+  <button type="button" class="cn-mini-toggle" id="cn-mini-toggle" aria-label="Enlarge the map" aria-expanded="false">&#x2922;</button>
+</div>
+
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+initSharpThumbs();
+{% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
+try { initCinemaOverview('overview-map', {{ days_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+</script>
+</body>
+</html>

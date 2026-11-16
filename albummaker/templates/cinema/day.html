@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+{% include "cinema/head.html" %}
+<body class="tpl-cinema cn-day-page">
+<header class="cn-bar">
+  <a class="cn-bar-link" href="{{ home_href }}">&larr; {{ trip_title }}</a>
+  <span class="cn-bar-spacer"></span>
+  <span class="cn-count">{{ 'Unsorted' if is_unknown else 'Day ' ~ day_number ~ ' / ' ~ day_total }}</span>
+  <a class="cn-arrow{{ '' if prev_href else ' is-off' }}"{% if prev_href %} href="{{ prev_href }}"{% endif %} aria-label="Previous day">&larr;</a>
+  <a class="cn-arrow{{ '' if next_href else ' is-off' }}"{% if next_href %} href="{{ next_href }}"{% endif %} aria-label="Next day">&rarr;</a>
+</header>
+
+<section class="cn-scene cn-dayhero in-view">
+  <div class="cn-bg cover"{% if hero %} style="background-image:url('{{ hero }}')"{% endif %}></div>
+  <div class="cn-shade"></div>
+  <span class="cn-bignum" aria-hidden="true">{{ ('%02d' % day_number) if day_number else '??' }}</span>
+  <div class="cn-content">
+    <div class="cn-kicker">{{ 'Undated' if is_unknown else 'Day ' ~ day_number }} &middot; {{ date_display }}</div>
+    <h1>{{ day_title }}</h1>
+    {% if places %}<div class="cn-place big"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 22s7-6.2 7-12a7 7 0 10-14 0c0 5.8 7 12 7 12z"/><circle cx="12" cy="10" r="2.6"/></svg>{{ places | join(' · ') }}</div>{% endif %}
+    <dl class="cn-facts">
+      <div><dt>Photos</dt><dd>{{ photo_count }}</dd></div>
+      {% if video_count %}<div><dt>Videos</dt><dd>{{ video_count }}</dd></div>{% endif %}
+      {% if time_range %}<div><dt>From &ndash; to</dt><dd class="small">{{ time_range }}</dd></div>{% endif %}
+      {% if distance_km %}<div><dt>Km</dt><dd>{{ distance_km|int if distance_km == distance_km|int else distance_km }}</dd></div>{% endif %}
+    </dl>
+  </div>
+  <a class="cn-scroll" href="#story" aria-label="Read on"><span></span></a>
+</section>
+
+<main class="cn-wrap" id="story">
+  {% if editable %}
+  <div class="cn-edit-row"><button type="button" class="day-edit-btn" id="day-edit">Edit title &amp; description</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+  <div class="day-editor" id="day-editor" hidden>
+    <label for="edit-title">Title</label>
+    <input id="edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="{{ title_suggestion or 'Day title' }}">
+    {% if title_suggestion %}<button type="button" class="suggestion" id="use-suggestion" data-title="{{ title_suggestion }}">Use &ldquo;{{ title_suggestion }}&rdquo;</button>{% endif %}
+    <label for="edit-desc">Description <span>(a blank line starts a new paragraph)</span></label>
+    <textarea id="edit-desc" rows="8">{{ raw_description }}</textarea>
+    <div class="day-editor-actions">
+      <button type="button" class="editor-btn" id="day-save">Save</button>
+      <button type="button" class="editor-btn secondary" id="day-cancel">Cancel</button>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if description %}
+  <div class="cn-text">{% for para in description %}<p>{{ para }}</p>{% endfor %}</div>
+  {% elif editable %}
+  <div class="cn-text empty"><p>No description yet. Use &ldquo;Edit title &amp; description&rdquo; to write this chapter.</p></div>
+  {% endif %}
+
+  {% if route or track %}
+  <div class="cn-mapband"><div class="cn-map" id="day-map" role="region" aria-label="Map of this day"></div></div>
+  {% endif %}
+
+  {% if items %}
+  <div class="cn-gallery-head"><h2>The frames</h2><button type="button" class="fav-filter" id="fav-filter" hidden></button></div>
+  {% endif %}
+  <div class="cn-gallery" id="thumb-grid">
+    {% for item in items %}
+    <div class="thumb{{ ' is-fav' if item.favorite else '' }}{{ ' is-hidden' if item.hidden else '' }}" style="--r:{{ item.ratio }}" data-slide-index="{{ loop.index0 }}" role="button" tabindex="0" aria-label="{{ item.caption or ('Open video' if item.media_type == 'video' else 'Open photo') }}">
+      <img class="cover" src="{{ item.thumb_url }}" loading="lazy" alt="{{ item.caption }}"{% if item.hi_url %} data-hi="{{ item.hi_url }}"{% endif %}>
+      {% if item.media_type == 'video' %}
+      <div class="play"><svg viewBox="0 0 24 24" fill="white"><circle cx="12" cy="12" r="11" fill="rgba(11,12,16,.6)"/><path d="M10 8l6 4-6 4V8z"/></svg></div>
+      {% endif %}
+      {% if item.live %}<span class="live-badge" title="Live Photo">LIVE</span>{% endif %}
+      {% if item.caption %}<span class="cn-cap">{{ item.caption }}</span>{% endif %}
+      {% if item.time_display %}<span class="badge">{{ item.time_display }}</span>{% endif %}
+      <span class="fav-badge" title="Favorite">&#9733;</span>
+      <span class="hidden-badge">HIDDEN</span>
+    </div>
+    {% endfor %}
+  </div>
+</main>
+
+{% if prev_href or next_href %}
+<nav class="cn-pager" aria-label="Other days">
+  {% if prev_href %}<a class="cn-next prev" href="{{ prev_href }}"{% if prev_cover %} style="background-image:url('{{ prev_cover }}')"{% endif %}><span class="cn-kicker">&larr; Previous &middot; {{ prev_label }}</span><b>{{ prev_title }}</b></a>{% else %}<span></span>{% endif %}
+  {% if next_href %}<a class="cn-next next" href="{{ next_href }}"{% if next_cover %} style="background-image:url('{{ next_cover }}')"{% endif %}><span class="cn-kicker">Next &middot; {{ next_label }} &rarr;</span><b>{{ next_title }}</b></a>{% endif %}
+</nav>
+<div class="cn-hint">&larr; &rarr; keys or swipe change day &middot; Esc returns to the trip</div>
+{% endif %}
+
+<footer class="site-footer cn-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
+
+{% include "slideshow.html" %}
+{% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+<script src="{{ js_href }}"></script>
+<script>
+window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+// slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
+initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
+openSlideshowFromHash();
+initSharpThumbs();
+initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
+{% if editable %}initDayEditor({{ date_key_json }});{% endif %}
+{% if route or track %}
+try { initCinemaDayMap('day-map', {{ route_json }}, {{ route_thumbs_json }}, {{ route_slide_indices_json }}, {{ track_json }}); }
+catch(e) { console.error('Map failed to load (check your internet connection):', e); }
+{% endif %}
+</script>
+</body>
+</html>
