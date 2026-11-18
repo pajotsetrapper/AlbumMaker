@@ -194,6 +194,75 @@ class LiveServerTests(TempDirMixin, unittest.TestCase):
         self.assertIn("jr-hero-day", body.decode("utf-8"))
 
 
+class LibraryPickerTests(TempDirMixin, unittest.TestCase):
+    """The template is picked on the live library page and remembered in library_settings.json."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = cls.make_tmp()
+        cls.app = install_app(cls.tmp / "app")
+        cls.trip = cls.tmp / "photos"
+        standard_trip(cls.trip)
+        cls.listing = cls.tmp / "lists" / "trips.txt"
+        cls.listing.parent.mkdir()
+        cls.listing.write_text(f"{cls.trip} | trip\n", encoding="utf-8")
+        cls.settings = cls.listing.parent / "library_settings.json"
+
+    def serve(self, *extra):
+        server = AlbumMaker(self.app, None, self.tmp / "work", "--library", self.listing, *extra)
+        server.start()
+        self.addCleanup(server.stop)
+        return server
+
+    def test_pick_apply_remember_and_override(self):
+        server = self.serve()
+        page = server.text("/")
+        self.assertIn('id="template-select"', page)                # we are the owner: localhost
+        for name in site_templates.template_names():
+            self.assertIn(f'value="{name}"', page)
+        self.assertNotIn("tpl-journal", page)                      # the default: classic
+        status, reply = server.post_json("/api/library-template", {"template": "journal"})
+        self.assertEqual((status, reply["template"]), (200, "journal"))
+        page = server.text("/")
+        self.assertIn("tpl-journal", page)
+        self.assertRegex(page, r'value="journal" [^>]*selected')
+        self.assertIn(b".jr-hero", server.get("/assets/style.css")[2])
+        self.assertIn("tpl-journal", server.text("/trip/"))        # the trip's own pages too
+        import json
+        self.assertEqual(json.loads(self.settings.read_text())["template"], "journal")
+        server.stop()
+        # a new start uses what was remembered ...
+        again = self.serve()
+        self.assertIn("tpl-journal", again.text("/"))
+        again.stop()
+        # ... unless --template says otherwise
+        forced = self.serve("--template", "cinema")
+        self.assertIn("tpl-cinema", forced.text("/"))
+
+    def test_bad_requests_change_nothing(self):
+        server = self.serve()
+        before = self.settings.read_text() if self.settings.exists() else None
+        for body in ({"template": "nope"}, {"template": 3}, {}):
+            status, reply = server.post_json("/api/library-template", body)
+            self.assertEqual(status, 400, body)
+            self.assertFalse(reply["ok"])
+        self.assertIn("tpl-journal" if before and "journal" in before else "day-card", server.text("/"))
+        self.assertEqual(self.settings.read_text() if self.settings.exists() else None, before)
+
+    def test_visitors_and_read_only_servers_cannot_switch(self):
+        server = self.serve("--read-only")
+        self.assertNotIn('id="template-select"', server.text("/"))
+        status, reply = server.post_json("/api/library-template", {"template": "journal"})
+        self.assertEqual(status, 403)
+
+    def test_a_single_trip_has_no_template_to_pick(self):
+        server = AlbumMaker(self.app, self.trip, self.tmp / "single")
+        server.start()
+        self.addCleanup(server.stop)
+        status, reply = server.post_json("/api/library-template", {"template": "journal"})
+        self.assertEqual(status, 400)
+
+
 class DesktopAppSettingsTests(unittest.TestCase):
     def settings(self, template=None):
         s = default_settings()
@@ -212,8 +281,10 @@ class DesktopAppSettingsTests(unittest.TestCase):
         listing.write_text("/tmp/x\n", encoding="utf-8")
         s = self.settings("journal")
         s["advanced"]["tile_cache"] = "/tmp/tiles"
-        for command in (build_command("python", listing, "/tmp/out", s), server_command("python", listing, s)):
-            self.assertEqual(command[command.index("--template") + 1], "journal")
+        command = build_command("python", listing, "/tmp/out", s)
+        self.assertEqual(command[command.index("--template") + 1], "journal")
+        # the live server remembers the template picked on its library page instead
+        self.assertNotIn("--template", server_command("python", listing, s))
 
 
 if __name__ == "__main__":

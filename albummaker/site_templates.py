@@ -35,6 +35,7 @@ class TemplateInfo:
 
 
 DEFAULT_TEMPLATE = "classic"
+LIBRARY_SETTINGS_NAME = "library_settings.json"   # what a library's page remembers, next to its list file
 
 TEMPLATES = {
     "classic": TemplateInfo(
@@ -95,7 +96,19 @@ def template_arg(value: str) -> str:
         raise argparse.ArgumentTypeError(str(exc)) from None
 
 
-def add_template_arg(parser) -> None:
-    parser.add_argument("--template", type=template_arg, default=DEFAULT_TEMPLATE, metavar="NAME",
-                        help="The look of the site: " + "; ".join(f"{t.name} ({t.description})" for t in TEMPLATES.values())
-                             + f" Default: {DEFAULT_TEMPLATE}.")
+def template_choices() -> list:
+    """name, label and description of every template, for a page that lets you pick one."""
+    return [{"name": t.name, "label": t.label, "description": t.description} for t in TEMPLATES.values()]
+
+
+def add_template_arg(parser, saved_choice: bool = False) -> None:
+    """--template NAME. With saved_choice (the live server) the default is "the one picked on
+    the library page last time, else classic", so an explicit --template overrides that."""
+    help_text = "The look of the site: " + "; ".join(f"{t.name} ({t.description})" for t in TEMPLATES.values())
+    if saved_choice:
+        help_text += (f" Default: the template last picked on the library page (remembered in "
+                      f"{LIBRARY_SETTINGS_NAME} next to the --library list), else {DEFAULT_TEMPLATE}.")
+    else:
+        help_text += f" Default: {DEFAULT_TEMPLATE}."
+    parser.add_argument("--template", type=template_arg, default=None if saved_choice else DEFAULT_TEMPLATE,
+                        metavar="NAME", help=help_text)

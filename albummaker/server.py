@@ -59,6 +59,7 @@ from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import ASSET_VERSION, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
+from .site_templates import LIBRARY_SETTINGS_NAME, template_choices, template_info
 from .util import atomic_write_bytes, script_json
 
 # mimetypes' built-in table is inconsistent across OS/Python installs for a
@@ -475,6 +476,20 @@ class ContentStore:
 # The application
 # --------------------------------------------------------------------------
 
+def read_library_settings(path: Optional[Path]) -> dict:
+    """What a library remembers (library_settings.json); {} when there is no file or it can't be read."""
+    if path is None:
+        return {}
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        print(f"! Could not read {path}: {e}\n  Its settings are ignored.", file=sys.stderr)
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 class Shared:
     """What every trip on one server shares: the settings that aren't per trip,
     the editor link, the map tiles, and one memory budget and render limiter
@@ -490,6 +505,8 @@ class Shared:
         self.tile_attribution = tile_attribution
         self.vendor = vendor
         self.template = get_template(getattr(args, "template", None))   # the look of every page (--template)
+        self.settings_path = None        # a library's library_settings.json: where the picked template is remembered
+        self._template_lock = threading.Lock()
         self.allowed_hostnames = allowed_hostnames or {"localhost"}
         self.editor_token = editor_token or secrets.token_urlsafe(32)
         total_mb = max(16, getattr(args, "memory_cache_mb", 512) or 512)
@@ -497,6 +514,30 @@ class Shared:
         self.hi_thumb_cache = ByteLRU(total_mb * 1024 * 1024 * 25 // 100)
         self.fallback_cache = ByteLRU(total_mb * 1024 * 1024 * 60 // 100)
         self.renderer = Renderer(getattr(args, "render_threads", None) or max(2, (os.cpu_count() or 2)))
+
+    def use_saved_template(self):
+        """Take the template remembered in library_settings.json, unless --template was given."""
+        if getattr(self.args, "template", None):
+            return
+        saved = read_library_settings(self.settings_path).get("template")
+        if saved is None:
+            return
+        try:
+            self.template = get_template(template_info(saved).name)
+        except ValueError as e:
+            print(f"! {self.settings_path}: {e}\n  The default template is used.", file=sys.stderr)
+
+    def set_template(self, name: str) -> str:
+        """Switch every page to another template and remember it (library mode). The
+        choice is written first, so a failed write changes nothing."""
+        info = template_info(name)
+        with self._template_lock:
+            if self.settings_path is not None:
+                settings = read_library_settings(self.settings_path)
+                settings["template"] = info.name
+                atomic_write_bytes(self.settings_path, (json.dumps(settings, indent=2) + "\n").encode("utf-8"))
+            self.template = get_template(info.name)
+        return info.name
 
 
 class App:
@@ -606,12 +647,14 @@ class Library:
         self._summaries[name] = (content, summary)
         return summary
 
-    def render(self) -> str:
+    def render(self, editable: bool = False) -> str:
         summaries = [s for s in (self.summary(name) for name in self.trips) if s is not None]
         first = next(iter(self.trips.values()))
+        # the owner can pick the template here (see Shared.set_template)
+        picker = dict(editable=editable, template_choices=template_choices(), current_template=first.template.name)
         return first.template.library.render(**build_library_context(
             summaries, first.urls(), footer=LiveUrls.footer, places_credit=PLACES_ATTRIBUTION,
-            title=self.library_title), **first.page_extras())
+            title=self.library_title), **picker, **first.page_extras())
 
 
 class LiveUrls(SiteUrls):
@@ -1053,8 +1096,13 @@ class RequestHandler(BaseHTTPRequestHandler):
                                    "through the editor link it prints (and is switched off by --read-only).")
         if not self._origin_ok():
             return self._fail(403, "Cross-origin request refused")
-        self._app, path = self._select_trip(unquote(urlparse(self.path).path))
-        if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day", "/api/trip-cover"):
+        raw = unquote(urlparse(self.path).path)
+        if raw == "/api/library-template":       # about the whole server, not one trip
+            self._app, path = self.server.app, raw
+        else:
+            self._app, path = self._select_trip(raw)
+        if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day", "/api/trip-cover",
+                                             "/api/library-template"):
             return self._fail(404, "Not found")
         if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
             return self._fail(415, "Expected application/json")
@@ -1077,6 +1125,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self._api_cover(body)
             elif path == "/api/trip-cover":
                 result = self._api_trip_cover(body)
+            elif path == "/api/library-template":
+                result = self._api_library_template(body)
             else:
                 result = self._api_day(body)
         except ContentFileError as e:
@@ -1133,6 +1183,18 @@ class RequestHandler(BaseHTTPRequestHandler):
                 raise ValueError("That photo isn't from this day")
         self.app.content.update(lambda c: set_cover(c, date, rel))
         return {}
+
+    def _api_library_template(self, body: dict) -> dict:
+        """The template picked on the library page: used at once, and remembered."""
+        if self.server.library is None:
+            raise ValueError("Only a library (--library) has a template to pick on its page")
+        name = body.get("template")
+        if not isinstance(name, str):
+            raise ValueError("Expected a template name")
+        try:
+            return {"template": self.app.shared.set_template(name)}
+        except OSError as e:     # the choice is not applied when it can't be remembered
+            raise ValueError(f"Nothing was saved: could not write {LIBRARY_SETTINGS_NAME} ({e.strerror or e})") from e
 
     def _api_trip_cover(self, body: dict) -> dict:
         rel = body.get("rel")
@@ -1211,7 +1273,7 @@ class RequestHandler(BaseHTTPRequestHandler):
                     if (not self.app.args.read_only and self._direct_local()
                             and not self._has_editor_cookie()):
                         self._set_cookie = self._cookie_header()
-                    self._send_text(self.server.library.render(), "text/html")
+                    self._send_text(self.server.library.render(editable=self._editor_view()), "text/html")
                 else:
                     self.send_error(404, "No such trip")
                 return
@@ -1406,7 +1468,7 @@ def build_parser() -> argparse.ArgumentParser:
                              "attaching them to their photos.")
     add_date_check_args(parser)
     add_location_args(parser)
-    add_template_arg(parser)
+    add_template_arg(parser, saved_choice=True)
     add_offline_args(parser)
     parser.add_argument("--large-thumb-size", type=large_thumb_size_arg, default=None, metavar="PIXELS",
                         help="Size of the larger thumbnails that are loaded only where the screen can use "
@@ -1526,6 +1588,8 @@ def main(argv=None):
 
     library = None
     if args.library:
+        shared.settings_path = Path(args.library).expanduser().resolve().parent / LIBRARY_SETTINGS_NAME
+        shared.use_saved_template()
         library = load_library(args, shared)
         app = next(iter(library.trips.values()))
         content_files = [str(a.content.path) for a in library.trips.values()]
@@ -1550,7 +1614,8 @@ def main(argv=None):
         sys.exit(1)
 
     writes = [] if args.read_only else (content_files if not library else
-                                        [f"each trip's trip_content.json ({', '.join(content_files)})"])
+                                        [f"each trip's trip_content.json ({', '.join(content_files)})",
+                                         f"{LIBRARY_SETTINGS_NAME} (the template picked on the library page)"])
     writes += [f"the map tile cache in {args.tile_cache}"] if tiles else []
     writes += [f"the index cache {args.index_cache}"] if args.index_cache else []
     print("\nThis server generates every page and image on the fly, in memory. It writes to disk "
@@ -1577,6 +1642,9 @@ def main(argv=None):
         saved = "each trip's own trip_content.json" if library else content_files[0]
         print(f"Editing works {where}: captions, favorites, hiding, cover photos and day text are "
               f"saved into {saved}. Use --read-only to turn it off.")
+        if library:
+            print(f"The template can be picked on the library page; the choice is remembered in "
+                  f"{shared.settings_path}.")
         link_host = lan_ip if lan_ip else "127.0.0.1"
         print(f"Editor link (keep it private; it changes every start): "
               f"http://{link_host}:{args.port}/?key={shared.editor_token}")

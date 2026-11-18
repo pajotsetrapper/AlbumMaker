@@ -992,7 +992,8 @@ class MainWindow(QMainWindow):
         for info in TEMPLATES.values():
             self.template_combo.addItem(info.label, info.name)
         self.template_combo.setToolTip(
-            "The look of the generated pages, in both the live server and static sites.\n"
+            "The look of static sites you build. (The live server remembers the template\n"
+            "picked on its library page.)\n"
             + "\n".join(f"{info.label}: {info.description}" for info in TEMPLATES.values())
         )
         self.template_combo.currentIndexChanged.connect(self._schedule_save)

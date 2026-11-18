@@ -40,9 +40,11 @@
 <footer class="site-footer cn-footer">{{ footer }}{% if places_credit %}<br>{{ places_credit }}{% endif %}</footer>
 
 {% if vendor %}<script src="{{ vendor }}leaflet/leaflet.js"></script>{% else %}<script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.js"></script>{% endif %}
+{% include "template_picker.html" %}
 <script src="{{ js_href }}"></script>
 <script>
 initSharpThumbs();
+initTemplatePicker();
 try { initLibraryMap('library-map', {{ trips_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
 </script>

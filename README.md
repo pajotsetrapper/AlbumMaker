@@ -178,6 +178,8 @@ python album_server.py -i photos --template journal
 ```
 With `--library`, one template applies to the whole library.
 
+**Picking it on the library page.** On the live server with `--library`, the owner (the computer running the server, or a browser that opened the editor link) sees a small *Template* menu in the corner of the library page. Choosing a template switches every page at once and is remembered in `library_settings.json`, stored next to the `--library` list file, so it is still there after a restart. An explicit `--template` on the command line overrides the remembered choice. Visitors and `--read-only` servers do not see the menu. The desktop app's *Site template* setting is used for the static sites it builds; the live server it starts remembers the page's choice instead.
+
 **Adding your own:** put `index.html`, `day.html` and `library.html` in `albummaker/templates/<name>/` (reuse `slideshow.html` with `{% include "slideshow.html" %}`; the existing templates show which element ids the viewer and editor need), optional `<name>.css` / `<name>.js` in `albummaker/static/` (added after the shared `style.css` / `script.js`), and register it in `albummaker/site_templates.py`. The journal colours are variables at the top of `journal.css`.
 
 ### 4. Offline Assets & Caching
