@@ -1,0 +1,10 @@
+{# The owner's template picker on a library page (shared by every template; styled in style.css).
+   Only the live server gives an editor `editable` and the choices; a static site shows nothing. #}
+{% if editable and template_choices %}
+<div class="template-picker" id="template-picker">
+  <label for="template-select">Template</label>
+  <select id="template-select" title="Pick the look of the whole site; it is remembered">
+    {% for t in template_choices %}<option value="{{ t.name }}" title="{{ t.description }}"{{ ' selected' if t.name == current_template else '' }}>{{ t.label }}</option>{% endfor %}
+  </select>
+</div>
+{% endif %}
