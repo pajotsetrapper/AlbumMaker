@@ -5,6 +5,13 @@ the section for a version as that GitHub Release's notes.
 
 ## [Unreleased]
 
+### Changed
+
+- The README now covers the templates, the library list-file format, `python -m albummaker`, the `trip_content.json` structure and the supported file types, and its stale links were fixed. It also says plainly that a static site contains the untouched originals, including their embedded GPS data.
+- The desktop app's Help now explains the *Site template* setting.
+- The product page has a new **templates** section with screenshots of all four looks and a live sample of each (`docs/demo-journal`, `docs/demo-scrapbook`, `docs/demo-cinema`). It also lists Linux among the downloads, says that a static site contains the untouched originals, and fixes the oversized hero screenshot and a sideways scroll on phones.
+- `tools/build_demo.py` builds the sample trip in every template, and the new `tools/build_screenshots.py` takes the template screenshots for the product page.
+
 ### Added
 
 - **Site templates.** `--template NAME` on `generate_site.py` and `album_server.py` (and a *Site template* setting in the desktop app) chooses the look of the pages; `classic` is the default and unchanged.

@@ -333,6 +333,10 @@ tile provider instead.</p>
 <li><b>Appearance &rarr; Color theme:</b> light or dark, for this app.</li>
 <li><b>Trip library page &rarr; Overview page title:</b> the heading and browser-tab title of the
 page listing all trips. Defaults to <code>Trips</code>.</li>
+<li><b>Trip library page &rarr; Site template:</b> the look of the static sites you create: Classic,
+Journal, Scrapbook or Cinema. All four show the same content; only the layout and styling differ.
+Defaults to Classic. The live server does not use this setting: it shows the template picked in the
+<b>Template</b> menu on the trip list page (shown only to someone who may edit) and remembers it.</li>
 <li><b>Video time handling &rarr; Default video UTC offset:</b> optional fixed fallback for videos in
 trips whose time zone is Automatic. Enter hours east of UTC, such as <code>2</code> or
 <code>-5.5</code>. A time zone chosen for a trip takes precedence. Leave blank to use automatic

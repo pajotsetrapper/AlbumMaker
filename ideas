@@ -1,0 +1,32 @@
+# Best value first
+
+1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.
+
+2. Per-trip template override. A "template" key in a trip’s trip_content.json, so a road trip can be cinema and a family album scrapbook. The library page could then show a picker on each trip card as well. The main catch is that a live server and a static library each serve one stylesheet today, so assets would need to be per template.
+
+3. Print or PDF “photo book” view. A print stylesheet for scrapbook and journal that produces clean pages (one day per page, with map and story). People often want a physical or PDF keepsake, and the scrapbook look suits it.
+
+4. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
+
+5. Elevation and route extras. The GPX data would give an elevation profile on day pages, plus ascent, descent and speed. The library page could show a “countries visited” stat.
+
+# Templates themselves
+
+1. A light/dark switch following the system setting for journal and scrapbook.
+2. Simple customization from trip_content.json (accent colour, title font, hide the statistics) and an optional custom.css picked up automatically.
+3. Small preview thumbnails in the template menu instead of just names.
+
+# Sharing and viewing
+
+1. Password or private-link sharing for the live server, and a “download this day as a zip” button.
+2. A route replay: an animated line that travels the trip on the map, which would suit cinema.
+3. Autoplay in the viewer with a slow zoom, optionally with music.
+4. Search across the whole library (captions, places, dates), and a favorites page that spans all trips.
+
+# Performance and polish
+
+1. Blurred placeholders while photos load, and srcset/WebP so phones download smaller images.
+2. A PWA mode so a published site can be opened offline.
+Translated interface text and local date formats.
+
+If I had to start with two, I’d do link previews and per-trip templates, sin
