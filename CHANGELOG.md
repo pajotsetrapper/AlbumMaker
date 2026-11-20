@@ -3,22 +3,55 @@
 All notable changes to AlbumMaker are listed here. The release workflow uses
 the section for a version as that GitHub Release's notes.
 
-## [Unreleased]
+## [3.1.0] - 2026-11-20
 
-### Changed
-
-- The README now covers the templates, the library list-file format, `python -m albummaker`, the `trip_content.json` structure and the supported file types, and its stale links were fixed. It also says plainly that a static site contains the untouched originals, including their embedded GPS data.
-- The desktop app's Help now explains the *Site template* setting.
-- The product page has a new **templates** section with screenshots of all four looks and a live sample of each (`docs/demo-journal`, `docs/demo-scrapbook`, `docs/demo-cinema`). It also lists Linux among the downloads, says that a static site contains the untouched originals, and fixes the oversized hero screenshot and a sideways scroll on phones.
-- `tools/build_demo.py` builds the sample trip in every template, and the new `tools/build_screenshots.py` takes the template screenshots for the product page.
+Choose the look of your trip site. AlbumMaker now comes with four templates, and
+the live server can switch between them from the library page.
 
 ### Added
 
-- **Site templates.** `--template NAME` on `generate_site.py` and `album_server.py` (and a *Site template* setting in the desktop app) chooses the look of the pages; `classic` is the default and unchanged.
-- **Template picker on the library page**: with `--library`, the owner can switch the whole live site to another template from a menu on the library page. The choice is saved in `library_settings.json` next to the list file and used on the next start (an explicit `--template` still wins). New `POST /api/library-template`; the desktop app no longer passes `--template` to the live server.
-- **`cinema` template**: full-screen dark scenes per day with a film-strip of photos, a mini-map that follows the scrolling, a rows-of-photos gallery and an amber glowing route.
-- **`scrapbook` template**: warm paper pages with taped polaroid photos, rubber-stamp statistics, a push-pin map with a dashed route, and lined notebook paper for each day's story.
-- **`journal` template**: a light travel-journal trip page with a cover photo, statistics card, step timeline with photo collages beside a map that follows your scrolling, day pages with a photo grid, and a matching all-trips page.
+- **Site templates.** `--template NAME` on `generate_site.py` and
+  `album_server.py`, and a *Site template* setting in the desktop app, choose the
+  look of the pages. All templates show the same content and keep the
+  full-screen viewer, maps and in-page editing. `classic` is the default and its
+  output is unchanged.
+- **`journal` template:** a light travel-journal look with a full-width cover
+  photo, a floating statistics card, a timeline of numbered steps with photo
+  collages beside a map that follows your scrolling, day pages with a photo grid,
+  and a matching all-trips page.
+- **`scrapbook` template:** warm paper pages with taped polaroid photos,
+  rubber-stamp statistics, a push-pin map with a dashed route, and lined notebook
+  paper for each day's story.
+- **`cinema` template:** dark, full-screen scenes per day with a film strip of
+  photos, a mini-map that follows the scrolling, a rows-of-photos gallery and a
+  glowing amber route.
+- **Template picker on the library page.** With `--library`, the owner can switch
+  the whole live site to another template from a menu on the library page. The
+  choice is saved in `library_settings.json` next to the list file and used on the
+  next start; an explicit `--template` still wins. New `POST /api/library-template`.
+  The desktop app no longer passes `--template` to the live server.
+- **Sample trip in every template** on the product page (`docs/demo-journal`,
+  `docs/demo-scrapbook`, `docs/demo-cinema`), built by `tools/build_demo.py`.
+  `tools/build_screenshots.py` takes the template screenshots.
+
+### Changed
+
+- **Product page:** a new "One trip. Four looks." section with screenshots and a
+  live sample of each template. It now lists Linux among the downloads and says
+  that a static site contains your untouched original files, including their
+  embedded metadata such as GPS positions.
+- **README:** documents the templates, the full command-line flags, the library
+  list-file format, `python -m albummaker`, the `trip_content.json` structure, the
+  supported file types and the maintainer tools. Dead links and references to
+  sections that no longer exist were fixed, and the static-export privacy note
+  was corrected.
+- The desktop app's Help now explains the *Site template* setting.
+
+### Fixed
+
+- The hero screenshot on the product page was cropped to a single word on desktop
+  screens, and the "Get it" cards caused sideways scrolling on phones.
+
 
 ## [3.0.0] - 2026-11-11
 
