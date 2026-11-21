@@ -150,6 +150,21 @@ class CinemaTests(TempDirMixin, unittest.TestCase):
         index = (tmp / "site" / "index.html").read_text(encoding="utf-8")
         self.assertRegex(index, r"cn-bg cover\" style=\"background-image:url\('media/")
 
+    def test_the_library_intro_is_visible_without_a_scroll_observer(self):
+        # the library page has no initCinemaOverview, so nothing else would reveal the intro
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        listing = tmp / "trips.txt"
+        listing.write_text(f"{photos} | trip\n", encoding="utf-8")
+        build("--library", str(listing), "-o", str(tmp / "lib"), "--template", "cinema")
+        index = (tmp / "lib" / "index.html").read_text(encoding="utf-8")
+        self.assertRegex(index, r'class="cn-scene cn-intro cn-intro-plain in-view"')
+
+    def test_a_scene_can_animate_in_every_time_it_is_reached(self):
+        js = (Path(__file__).resolve().parent.parent / "albummaker" / "static" / "cinema.js").read_text(encoding="utf-8")
+        self.assertIn("classList.remove('in-view')", js)
+
 
 class LibraryTests(TempDirMixin, unittest.TestCase):
     def test_a_library_uses_the_template_for_every_page(self):
