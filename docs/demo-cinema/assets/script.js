@@ -1290,7 +1290,12 @@ function initCinemaOverview(elId, days){
     scenes.forEach(s => s.classList.add('in-view'));
     return;
   }
-  const seen = new IntersectionObserver(entries => entries.forEach(e => { if(e.isIntersecting) e.target.classList.add('in-view'); }), {threshold: .18});
+  // in-view is set on reaching a scene and cleared once it is fully off screen, so the
+  // entrance animation plays every time you come back to a day, not just the first time
+  const seen = new IntersectionObserver(entries => entries.forEach(e => {
+    if(e.intersectionRatio >= .18) e.target.classList.add('in-view');
+    else if(!e.isIntersecting) e.target.classList.remove('in-view');
+  }), {threshold: [0, .18]});
   const focus = new IntersectionObserver(entries => entries.forEach(e => { if(e.isIntersecting) reading(+e.target.dataset.index); }),
                                          {threshold: .55});
   scenes.forEach(s => { seen.observe(s); focus.observe(s); });

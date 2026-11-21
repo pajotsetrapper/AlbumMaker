@@ -371,7 +371,7 @@ body.tpl-cinema :focus-visible{outline:3px solid var(--cn-accent); outline-offse
 .cn-scroll{position:absolute; left:50%; bottom:1.1rem; width:26px; height:42px; margin-left:-13px; border:2px solid var(--cn-faint); border-radius:14px; opacity:.85;}
 .cn-scroll span{position:absolute; left:50%; top:8px; width:4px; height:8px; margin-left:-2px; border-radius:2px; background:var(--cn-text); animation:cn-wheel 1.8s ease-in-out infinite;}
 @keyframes cn-wheel{0%{opacity:0; transform:translateY(0);}30%{opacity:1;}100%{opacity:0; transform:translateY(14px);}}
-.cn-intro-plain{min-height:62vh; background:radial-gradient(ellipse at 20% 100%,rgba(255,179,71,.18),transparent 60%),var(--cn-bg);}
+.cn-intro-plain{min-height:0; justify-content:flex-start; background:radial-gradient(ellipse at 20% 100%,rgba(255,179,71,.18),transparent 60%),var(--cn-bg);}
 
 /* the film strip of a day */
 .cn-strip{position:relative; display:flex; gap:6px; align-self:flex-start; width:min(820px,100%); margin-top:2rem; padding:18px 10px; background:#050608; border-radius:4px;

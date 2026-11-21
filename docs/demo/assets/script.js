@@ -56,6 +56,26 @@ async function apiPost(path, body){
   }
 }
 
+// ---------- template picker (the owner, on the library page) ----------
+// Saves the choice (the server remembers it in library_settings.json), then reloads
+// so the page comes back in the new look.
+function initTemplatePicker(){
+  const select = document.getElementById('template-select');
+  if(!select) return;
+  let current = select.value;
+  select.addEventListener('change', async () => {
+    select.disabled = true;
+    const data = await apiPost('/api/library-template', {template: select.value});
+    if(data){
+      current = select.value;
+      location.reload();
+    } else {
+      select.value = current;
+      select.disabled = false;
+    }
+  });
+}
+
 // ---------- size controls: thumbnails on day pages, cards on the homepage ----------
 // Each .size-toggle names the element it resizes (data-target) and the browser-storage
 // key that remembers the choice (data-store), so the two pages choose independently.
