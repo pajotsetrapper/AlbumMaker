@@ -13,7 +13,7 @@ body.tpl-scrapbook{
   --sb-serif:"Iowan Old Style","Palatino Linotype",Palatino,"Book Antiqua",Georgia,serif;
   --sb-hand:"Segoe Print","Bradley Hand","Chalkboard SE","Marker Felt","Comic Sans MS","Comic Neue",cursive;
   --sb-sans:ui-sans-serif,system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
-  --sb-max:1240px; --sb-pad:clamp(1rem,3.2vw,2.2rem);
+  --sb-max:max(1240px,min(94vw,1900px)); --sb-story-max:max(960px,min(92vw,1560px)); --sb-pad:clamp(1rem,3.2vw,2.2rem);
   --sb-shadow:0 1px 1px rgba(60,40,20,.18),0 6px 14px rgba(60,40,20,.16),0 18px 32px rgba(60,40,20,.10);
 
   --gold:var(--sb-red); --gold-dim:var(--sb-red-dark); --teal:var(--sb-red);
@@ -61,7 +61,7 @@ body.tpl-scrapbook h1, body.tpl-scrapbook h2{font-family:var(--sb-serif);}
 .sb-title{max-width:var(--sb-max); margin:0 auto; padding:1.2rem var(--sb-pad) 1rem; display:grid; align-items:center; gap:clamp(1.5rem,5vw,4rem);
   grid-template-columns:minmax(0,.9fr) minmax(0,1.1fr);}
 .sb-title-library{grid-template-columns:minmax(0,1fr); padding-top:2.5rem;}
-.sb-cover{max-width:480px; width:100%; justify-self:center; transform:rotate(-2.2deg); padding:14px 14px 58px;}
+.sb-cover{max-width:clamp(380px,38vw,640px); width:100%; justify-self:center; transform:rotate(-2.2deg); padding:14px 14px 58px;}
 .sb-cover .sb-photo{aspect-ratio:4/3;}
 .sb-cover figcaption{font-size:1.3rem; bottom:15px;}
 .sb-cover .sb-tape{width:120px; margin-left:-60px; top:-16px;}
@@ -131,10 +131,10 @@ body.tpl-scrapbook h1, body.tpl-scrapbook h2{font-family:var(--sb-serif);}
 .sb-page-link:hover .sb-fan .sb-mini:nth-child(even){transform:rotate(1deg) translateY(-4px);}
 
 /* ---------- a day ---------- */
-.sb-story{max-width:960px; margin:0 auto; padding:1rem var(--sb-pad) 2rem;}
+.sb-story{max-width:var(--sb-story-max); margin:0 auto; padding:1rem var(--sb-pad) 2rem;}
 .sb-story .sb-map-card{width:100%; margin:2.6rem 0;}
 .sb-edit-row{margin-bottom:1.2rem;}
-.sb-notes{position:relative; margin:1.6rem 0; padding:.9rem 2rem .9rem 5.2rem; background-color:var(--sb-card); box-shadow:var(--sb-shadow); transform:rotate(-.25deg);
+.sb-notes{position:relative; max-width:62rem; margin:1.6rem auto; padding:.9rem 2rem .9rem 5.2rem; background-color:var(--sb-card); box-shadow:var(--sb-shadow); transform:rotate(-.25deg);
   background-image:linear-gradient(90deg,transparent 4.2rem,rgba(196,69,45,.35) 4.2rem,rgba(196,69,45,.35) calc(4.2rem + 2px),transparent calc(4.2rem + 2px)),
                    repeating-linear-gradient(transparent 0 calc(2rem - 1px),rgba(47,93,124,.22) calc(2rem - 1px) 2rem);
   background-position:0 0,0 .9rem; font-size:1.15rem; line-height:2rem; white-space:pre-line;}

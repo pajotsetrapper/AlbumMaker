@@ -1,3 +1,7 @@
+# Fixes
+    - Fix cinema skin: empty space on top, and animation on day pages needs to work every time -> done
+    - The Journal, Scrapbook & Cinema templates leave quite some room unused on the left & right. Optimize that
+
 # Best value first
 
 1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.

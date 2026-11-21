@@ -3,6 +3,10 @@
 All notable changes to AlbumMaker are listed here. The release workflow uses
 the section for a version as that GitHub Release's notes.
 
+## [3.1.1] - TBD
+- Fix Cinema skin: replay day animation on every visit, remove empty gap on library page
+- Fix Journal, Scrapbook and Cinema template: Use available window width more effectively
+
 ## [3.1.0] - 2026-11-20
 
 Choose the look of your trip site. AlbumMaker now comes with four templates, and

@@ -12,7 +12,7 @@ body.tpl-journal{
   --jr-line:#e3e8ee; --jr-bg:#ffffff; --jr-bg-soft:#f4f6f9;
   --jr-radius:18px; --jr-shadow:0 12px 36px rgba(15,27,45,.10);
   --jr-font:-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,Roboto,"Helvetica Neue",Arial,sans-serif;
-  --jr-max:1360px; --jr-pad:clamp(1rem,3vw,2rem);
+  --jr-max:max(1360px,min(94vw,2400px)); --jr-pad:clamp(1rem,3vw,2rem);
 
   /* the shared parts (viewer, details panel, editor, toast) take their colours from these */
   --gold:var(--jr-accent); --gold-dim:var(--jr-accent-dark); --teal:var(--jr-accent);
@@ -62,7 +62,7 @@ body.tpl-journal h1, body.tpl-journal h2{font-family:var(--jr-font);}
 .jr-pill-on-photo{background:rgba(255,255,255,.93); color:var(--jr-text); border-color:transparent;}
 
 /* ---------- statistics ---------- */
-.jr-stats{position:relative; z-index:2; width:min(1100px,calc(100% - 2rem)); margin:-3.1rem auto 0; padding:1.15rem .5rem;
+.jr-stats{position:relative; z-index:2; width:min(calc(var(--jr-max) * .82),calc(100% - 2rem)); margin:-3.1rem auto 0; padding:1.15rem .5rem;
   display:flex; flex-wrap:wrap; justify-content:space-around; background:#fff; border-radius:22px; box-shadow:var(--jr-shadow);}
 .jr-stat{flex:1 1 110px; position:relative; text-align:center; padding:.45rem 1rem;}
 .jr-stat + .jr-stat::before{content:""; position:absolute; left:0; top:18%; bottom:18%; width:1px; background:var(--jr-line);}
@@ -73,7 +73,7 @@ body.tpl-journal h1, body.tpl-journal h2{font-family:var(--jr-font);}
 /* ---------- timeline next to the map ---------- */
 .jr-split{max-width:var(--jr-max); margin:0 auto; padding:2.4rem var(--jr-pad) 3rem; display:grid; align-items:start;
   grid-template-columns:minmax(0,1fr) minmax(0,1.12fr); gap:clamp(1.5rem,3.4vw,3.4rem);}
-.jr-split.no-map{grid-template-columns:minmax(0,780px); justify-content:center;}
+.jr-split.no-map{grid-template-columns:minmax(0,min(1100px,100%)); justify-content:center;}
 .jr-mapcol{position:sticky; top:76px; order:2; height:calc(100vh - 100px); min-height:380px;}
 .jr-timeline, .jr-story{order:1; min-width:0;}
 .jr-timeline{display:flex; flex-direction:column; gap:2.4rem;}
