@@ -174,6 +174,24 @@ class CinemaTests(TempDirMixin, unittest.TestCase):
         index = (tmp / "lib" / "index.html").read_text(encoding="utf-8")
         self.assertRegex(index, r'class="cn-scene cn-intro cn-intro-plain in-view"')
 
+    def test_the_library_page_of_every_template_has_the_card_size_control(self):
+        wanted = [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        listing = tmp / "trips.txt"
+        listing.write_text(f"{photos} | trip\n", encoding="utf-8")
+        for name, grid in (("journal", ".jr-trips"), ("scrapbook", ".sb-trips"), ("cinema", ".cn-posters")):
+            with self.subTest(template=name):
+                build("--library", str(listing), "-o", str(tmp / name), "--template", name)
+                index = (tmp / name / "index.html").read_text(encoding="utf-8")
+                self.assertEqual(size_toggle(index, "trip-list"), ("tripLibrarySize", wanted))
+                self.assertIn("initSizeControls();", index)
+                self.assertIn('id="trip-list"', index)
+                css = (tmp / name / "assets" / "style.css").read_text(encoding="utf-8")
+                for size in ("small", "large", "xl"):
+                    self.assertIn(f"{grid}.size-{size}", css)
+
     def test_a_scene_can_animate_in_every_time_it_is_reached(self):
         js = (Path(__file__).resolve().parent.parent / "albummaker" / "static" / "cinema.js").read_text(encoding="utf-8")
         self.assertIn("classList.remove('in-view')", js)

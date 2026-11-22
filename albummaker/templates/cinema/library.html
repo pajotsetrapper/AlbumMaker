@@ -20,6 +20,18 @@
 
 <div class="cn-wrap wide"><div class="cn-mapband"><div class="cn-map" id="library-map" role="region" aria-label="Map of all trips"></div></div></div>
 
+{% if trips %}
+<div class="cn-posters-bar">
+  <span class="cn-size-label">Card size</span>
+  <div class="size-toggle" role="group" aria-label="Card size" data-target="trip-list" data-store="tripLibrarySize">
+    <button type="button" class="size-btn" data-size="small">S</button>
+    <button type="button" class="size-btn" data-size="medium">M</button>
+    <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
+  </div>
+</div>
+{% endif %}
+
 <div class="cn-posters" id="trip-list">
   {% for t in trips %}
   <a class="cn-poster" href="{{ t.href }}">
@@ -43,6 +55,7 @@
 {% include "template_picker.html" %}
 <script src="{{ js_href }}"></script>
 <script>
+initSizeControls();
 initSharpThumbs();
 initTemplatePicker();
 try { initLibraryMap('library-map', {{ trips_json }}); }

@@ -23,6 +23,18 @@
   <p class="sb-hand sb-map-cap">everywhere we have been</p>
 </section>
 
+{% if trips %}
+<div class="sb-trips-bar">
+  <span class="sb-size-label">Card size</span>
+  <div class="size-toggle" role="group" aria-label="Card size" data-target="trip-list" data-store="tripLibrarySize">
+    <button type="button" class="size-btn" data-size="small">S</button>
+    <button type="button" class="size-btn" data-size="medium">M</button>
+    <button type="button" class="size-btn" data-size="large">L</button>
+    <button type="button" class="size-btn" data-size="xl">XL</button>
+  </div>
+</div>
+{% endif %}
+
 <div class="sb-trips" id="trip-list">
   {% for t in trips %}
   <a class="sb-trip" href="{{ t.href }}">
@@ -46,6 +58,7 @@
 {% include "template_picker.html" %}
 <script src="{{ js_href }}"></script>
 <script>
+initSizeControls();
 initSharpThumbs();
 initTemplatePicker();
 try { initLibraryMap('library-map', {{ trips_json }}); }
