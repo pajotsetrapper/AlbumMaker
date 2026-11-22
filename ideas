@@ -1,18 +1,19 @@
 # Fixes
-    - Fix cinema skin: empty space on top, and animation on day pages needs to work every time -> done
-
-    - The Journal, Scrapbook & Cinema templates leave quite some room unused on the left & right. Optimize that -> done
-
     - FIXME: Docs: update the site: Explore the live sample trip and Try the demo bottons link to classic view. This may make people think it is the only one, so update that so that prospects can easily find the different demo sites with the existing templates
 
-    - FIXME: in Journal template, on the day pages - the 'Large' thumnail size makes no sense. 'M' looks great, 'S' is too small and XL is good as well.
-
 # Best value first
-0. Scrapbook and Journal template: allow end users to select the thumbmail size on the day pages, similar to the classic view -> done
+
+0. Update the gui: Make it clear to the end uset that the server is preparing the sites & make it more clear when done (in your face pop-up?)
+
+0. Transitioning effect in slideshow (optional).
+    - Ken Burns (Slow Pan & Zoom): Gently scales and pans a high-res photo over several seconds. It gives still landscapes and cityscapes a cinematic "living postcard" feel while showcasing fine detail. Keep motion slow (around 6–10 seconds) and scale modest (roughly 1.05x to 1.12x) so high-res images stay sharp and never feel jittery.
+    - Smooth Crossfade (Dissolve): Fades one image out while fading the next in over 600–1,000 ms with an ease-in-out curve. Ideal for hero banners, mood shifts (such as day to dusk), and editorial travel stories where hard cuts feel abrupt.
+    - Subtle Parallax Slide: Moves the incoming and outgoing images at slightly different speeds or offsets as they slide horizontally or vertically. This creates a sense of depth and spatial journey, especially when paired with destination titles or route cards.
+    - Reveal Mask / Wipe (Soft Edge): Uncovers the next photo using a soft gradient wipe or subtle scale-up reveal rather than a harsh mechanical slice. Works well for modern destination showcases when kept gentle and unhurried.
+
 
 0. Export favorites as printable album
-0. Thumbnail size selection on all templates
-0. Transitioning effect in slideshow (optional). The explore Album Maker 
+
 
 
 1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.

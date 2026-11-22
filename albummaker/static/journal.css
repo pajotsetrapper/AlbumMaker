@@ -175,9 +175,9 @@ body.tpl-journal .size-btn.active{background:var(--jr-accent); color:#fff;}
 .jr-photos.size-small .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){grid-column:auto; aspect-ratio:1/1;}
 .jr-photos.size-xl .thumb:nth-child(n){aspect-ratio:4/3;}
 .jr-photos.size-small .thumb:nth-child(n){border-radius:10px;}
-/* L: two columns, every third photo is a full-width feature (a lone last photo gets a full row too) */
+/* L: always two photos per row, so it never looks like M's collage; a lone last photo gets a full row */
 .jr-photos.size-large .thumb:nth-child(n){grid-column:span 1; aspect-ratio:4/3;}
-.jr-photos.size-large .thumb:nth-child(3n+1), .jr-photos.size-large .thumb:last-child:nth-child(3n+2){grid-column:span 2; aspect-ratio:16/10;}
+.jr-photos.size-large .thumb:last-child:nth-child(odd){grid-column:span 2; aspect-ratio:16/10;}
 /* favourites only: the collage rule above would span two columns in these grids */
 .jr-photos.fav-only.size-small .thumb.is-fav{grid-column:auto !important; aspect-ratio:1/1 !important;}
 .jr-photos.fav-only.size-large .thumb.is-fav, .jr-photos.fav-only.size-xl .thumb.is-fav{grid-column:auto !important; aspect-ratio:4/3 !important;}
