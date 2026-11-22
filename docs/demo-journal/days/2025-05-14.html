@@ -52,7 +52,16 @@
     
     <div class="jr-grid-head">
       <h2>Photos</h2>
-      <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+      <div class="jr-grid-tools">
+        <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+        <span class="jr-size-label">Thumbnail size</span>
+        <div class="size-toggle" role="group" aria-label="Thumbnail size" data-target="thumb-grid" data-store="tripThumbSize">
+          <button type="button" class="size-btn" data-size="small">S</button>
+          <button type="button" class="size-btn" data-size="medium">M</button>
+          <button type="button" class="size-btn" data-size="large">L</button>
+          <button type="button" class="size-btn" data-size="xl">XL</button>
+        </div>
+      </div>
     </div>
     
     <div class="jr-photos" id="thumb-grid">
@@ -143,6 +152,7 @@ window.API_BASE = "";   // where this trip's edits are saved (a trip in a librar
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow([{"type": "image", "display": "../media/IMG_4102.jpg", "time": "2025-05-14T09:12:00", "lat": 47.054471, "lon": 8.318981, "detail": {"filename": "IMG_4102.jpg", "dimensions": "1200 \u00d7 900", "filesize": "64.0 KB", "camera": "AlbumMaker Sample Camera Demo 1", "date_note": "Wednesday, May 14, 2025", "gps_display": "47.05447\u00b0 N, 8.31898\u00b0 E (from GPX track)", "place": "Luzern, Switzerland"}, "downloadUrl": "../media/IMG_4102.jpg", "key": "IMG_4102.jpg", "caption": "Sunrise over the lakefront, the old town still asleep", "favorite": false, "hidden": false}, {"type": "image", "display": "../media/IMG_4138.jpg", "time": "2025-05-14T14:36:00", "lat": 47.053218, "lon": 8.298966, "detail": {"filename": "IMG_4138.jpg", "dimensions": "1200 \u00d7 900", "filesize": "62.6 KB", "camera": "AlbumMaker Sample Camera Demo 1", "date_note": "Wednesday, May 14, 2025", "gps_display": "47.05322\u00b0 N, 8.29897\u00b0 E (from GPX track)", "place": "Luzern, Switzerland"}, "downloadUrl": "../media/IMG_4138.jpg", "key": "IMG_4138.jpg", "caption": "The old town glowing across the Reuss", "favorite": true, "hidden": false}], {editable: false, dayKey: "2025-05-14"});
 openSlideshowFromHash();
+initSizeControls();
 initSharpThumbs();
 initDayNav(null, "2025-05-15.html", "../index.html");
 

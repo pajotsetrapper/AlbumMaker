@@ -56,7 +56,19 @@
   
 
   
-  <div class="sb-grid-head"><h2 class="sb-hand">the photos</h2><button type="button" class="fav-filter" id="fav-filter" hidden></button></div>
+  <div class="sb-grid-head">
+    <h2 class="sb-hand">the photos</h2>
+    <div class="sb-grid-tools">
+      <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+      <span class="sb-size-label">Thumbnail size</span>
+      <div class="size-toggle" role="group" aria-label="Thumbnail size" data-target="thumb-grid" data-store="tripThumbSize">
+        <button type="button" class="size-btn" data-size="small">S</button>
+        <button type="button" class="size-btn" data-size="medium">M</button>
+        <button type="button" class="size-btn" data-size="large">L</button>
+        <button type="button" class="size-btn" data-size="xl">XL</button>
+      </div>
+    </div>
+  </div>
   
   <div class="sb-photos" id="thumb-grid">
     
@@ -136,6 +148,7 @@ window.API_BASE = "";   // where this trip's edits are saved (a trip in a librar
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow([{"type": "image", "display": "../media/IMG_5201.jpg", "time": "2025-05-15T10:05:00", "lat": 47.056483, "lon": 8.485477, "detail": {"filename": "IMG_5201.jpg", "dimensions": "1200 \u00d7 900", "filesize": "35.6 KB", "camera": "AlbumMaker Sample Camera Demo 1", "date_note": "Thursday, May 15, 2025", "gps_display": "47.05648\u00b0 N, 8.48548\u00b0 E (from GPX track)", "place": "Arth, Switzerland"}, "downloadUrl": "../media/IMG_5201.jpg", "key": "IMG_5201.jpg", "caption": "Snow on the peaks, seen from the top of the Rigi", "favorite": true, "hidden": false}, {"type": "image", "display": "../media/IMG_5244.jpg", "time": "2025-05-15T16:22:00", "lat": 47.029979, "lon": 8.427538, "detail": {"filename": "IMG_5244.jpg", "dimensions": "1200 \u00d7 900", "filesize": "35.0 KB", "camera": "AlbumMaker Sample Camera Demo 1", "date_note": "Thursday, May 15, 2025", "gps_display": "47.02998\u00b0 N, 8.42754\u00b0 E (from GPX track)", "place": "Weggis, Switzerland"}, "downloadUrl": "../media/IMG_5244.jpg", "key": "IMG_5244.jpg", "caption": "Evening calm by the water at Weggis", "favorite": false, "hidden": false}], {editable: false, dayKey: "2025-05-15"});
 openSlideshowFromHash();
+initSizeControls();
 initSharpThumbs();
 initDayNav("2025-05-14.html", null, "../index.html");
 
