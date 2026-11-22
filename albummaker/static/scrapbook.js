@@ -44,9 +44,9 @@ function initScrapbookOverviewMap(elId, days){
     const a = sbAnchor(day);
     if(a) joined.push(a);
   });
-  if(joined.length > 1){
-    L.polyline(joined, {color: SB_INK, weight: 3, opacity: .85, dashArray: '9 9', lineCap: 'round', interactive: false}).addTo(map);
-  }
+  splitLongHops(joined).forEach(line => {      // (no line across the world between two days)
+    L.polyline(line, {color: SB_INK, weight: 3, opacity: .85, dashArray: '9 9', lineCap: 'round', interactive: false}).addTo(map);
+  });
   const pages = Array.prototype.slice.call(document.querySelectorAll('.sb-page'));
   function light(i, on){
     const pin = pins[i];
@@ -86,8 +86,8 @@ function initScrapbookDayMap(elId, route, thumbs, slideIndices, track){
     L.polyline(s, {color: SB_RED, weight: 4, opacity: .9, lineCap: 'round', interactive: false}).addTo(map);
     s.forEach(p => all.push(p));
   });
-  if(!all.length && route.length > 1){
-    L.polyline(route, {color: SB_INK, weight: 3, opacity: .85, dashArray: '8 8', lineCap: 'round', interactive: false}).addTo(map);
+  if(!all.length){
+    splitLongHops(route).forEach(line => L.polyline(line, {color: SB_INK, weight: 3, opacity: .85, dashArray: '8 8', lineCap: 'round', interactive: false}).addTo(map));
   }
   route.forEach((p, i) => {
     all.push(p);

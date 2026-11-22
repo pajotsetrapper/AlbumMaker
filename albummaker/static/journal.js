@@ -61,13 +61,13 @@ function initJournalOverviewMap(elId, days){
     const anchor = jrAnchor(day);
     const stretches = (day.track || []).filter(s => s.length > 1);
     stretches.forEach(s => { jrLine(map, s, accent, false); s.forEach(p => all.push(p)); });
-    if(!stretches.length && day.route.length > 1) jrLine(map, day.route, accent, false);
+    if(!stretches.length) splitLongHops(day.route).forEach(line => jrLine(map, line, accent, false));
     (day.route || []).forEach(p => all.push(p));
     if(anchor) joined.push(anchor);
   });
-  if(joined.length > 1){
-    L.polyline(joined, {color: '#7b899c', weight: 2, opacity: .9, dashArray: '2 8', lineCap: 'round', interactive: false}).addTo(map);
-  }
+  splitLongHops(joined).forEach(line => {      // (no line across the world between two days)
+    L.polyline(line, {color: '#7b899c', weight: 2, opacity: .9, dashArray: '2 8', lineCap: 'round', interactive: false}).addTo(map);
+  });
   days.forEach((day, i) => {
     const anchor = jrAnchor(day);
     if(!anchor) return;
@@ -134,7 +134,7 @@ function initJournalDayMap(elId, route, thumbs, slideIndices, track){
 
   const all = [];
   (track || []).filter(s => s.length > 1).forEach(s => { jrLine(map, s, accent, false); s.forEach(p => all.push(p)); });
-  if(!all.length && route.length > 1) jrLine(map, route, accent, true);
+  if(!all.length) splitLongHops(route).forEach(line => jrLine(map, line, accent, true));
 
   route.forEach((p, i) => {
     all.push(p);

@@ -201,10 +201,11 @@ function initLibraryMap(elId, trips){
     trip.points.forEach(p => all.push(p));
     const go = () => navigateTo(trip.href);
     const label = trip.title + ' \u2014 ' + trip.dates;
-    if(trip.points.length > 1){
-      L.polyline(trip.points, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
+    // one line per stretch of the trip: no line across the world to the next continent
+    splitLongHops(trip.points).forEach(line => {
+      L.polyline(line, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
         .bindTooltip(textNode(label), {sticky: true}).on('click', go);
-    }
+    });
     L.circleMarker(trip.points[0], {radius: 6, color: trip.color, fillColor: trip.color, fillOpacity: 1, weight: 1})
       .addTo(map).bindTooltip(textNode(label)).on('click', go);
   });
@@ -337,6 +338,36 @@ const OSM_ATTRIBUTION = '&copy; <a href="https://www.openstreetmap.org/copyright
 function tileAttribution(){
   const custom = window.TILE_ATTRIBUTION;
   return (typeof custom === 'string' && custom) ? escapeHtml(custom) : OSM_ATTRIBUTION;
+}
+
+// ---------- lines that don't cross the world ----------
+// A line through photo positions (or one point per day, or a whole trip) is straight between two
+// neighbours. When those are on different continents (a flight, or a photo taken at the airport
+// before the plane left) the line would cut across the map, so it is split there instead: this
+// gives the lines to draw, each of at least two points. (A GPX track is already cut at its jumps
+// when the site is built; see albummaker/gpx.py.)
+const LONG_HOP_KM = 1000;
+
+function hopKm(a, b){
+  const rad = Math.PI / 180;
+  const h = Math.pow(Math.sin((b[0] - a[0]) * rad / 2), 2) +
+            Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.pow(Math.sin((b[1] - a[1]) * rad / 2), 2);
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function splitLongHops(points, maxKm){
+  const limit = maxKm || LONG_HOP_KM;
+  const lines = [];
+  let current = [];
+  (points || []).forEach(p => {
+    if(current.length && hopKm(current[current.length - 1], p) > limit){
+      if(current.length > 1) lines.push(current);
+      current = [];
+    }
+    current.push(p);
+  });
+  if(current.length > 1) lines.push(current);
+  return lines;
 }
 
 function addBaseMap(map, options){

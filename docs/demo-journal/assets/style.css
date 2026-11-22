@@ -454,18 +454,12 @@ body.tpl-journal .size-btn{padding:.32rem .8rem; border:none; border-left:1px so
 body.tpl-journal .size-btn:first-child{border-left:none;}
 body.tpl-journal .size-btn:hover{background:var(--jr-bg-soft); color:var(--jr-text);}
 body.tpl-journal .size-btn.active{background:var(--jr-accent); color:#fff;}
-.jr-photos.size-small{grid-template-columns:repeat(3,minmax(0,1fr)); gap:6px;}
-.jr-photos.size-large{grid-template-columns:repeat(2,minmax(0,1fr));}
+.jr-photos.size-small{grid-template-columns:repeat(auto-fill,minmax(clamp(96px,8vw,150px),1fr)); gap:6px;}
+.jr-photos.size-large{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(240px,20vw,400px)),1fr));}
 .jr-photos.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(340px,34vw,640px)),1fr));}
-.jr-photos.size-small .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){grid-column:auto; aspect-ratio:1/1;}
-.jr-photos.size-xl .thumb:nth-child(n){aspect-ratio:4/3;}
+.jr-photos.size-small .thumb:nth-child(n), .jr-photos.size-large .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){grid-column:auto; aspect-ratio:1/1;}
+.jr-photos.size-large .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){aspect-ratio:4/3;}
 .jr-photos.size-small .thumb:nth-child(n){border-radius:10px;}
-/* L: always two photos per row, so it never looks like M's collage; a lone last photo gets a full row */
-.jr-photos.size-large .thumb:nth-child(n){grid-column:span 1; aspect-ratio:4/3;}
-.jr-photos.size-large .thumb:last-child:nth-child(odd){grid-column:span 2; aspect-ratio:16/10;}
-/* favourites only: the collage rule above would span two columns in these grids */
-.jr-photos.fav-only.size-small .thumb.is-fav{grid-column:auto !important; aspect-ratio:1/1 !important;}
-.jr-photos.fav-only.size-large .thumb.is-fav, .jr-photos.fav-only.size-xl .thumb.is-fav{grid-column:auto !important; aspect-ratio:4/3 !important;}
 @media (max-width:640px){ .jr-size-label{display:none;} }
 
 /* ---------- the library page ---------- */

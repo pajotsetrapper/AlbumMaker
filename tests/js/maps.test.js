@@ -194,3 +194,41 @@ test('a library whose trips are all in one spot is not zoomed in to a single str
           L.map = orig;`);
   assert.ok(w.eval('window.__lm.getZoom()') <= 9, 'zoom ' + w.eval('window.__lm.getZoom()'));
 });
+
+// ---------- lines never cross the world ----------
+
+test('a line is split where two neighbours are on different continents', async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  const split = (pts, km) => JSON.parse(w.eval(`JSON.stringify(splitLongHops(${JSON.stringify(pts)}${km ? ', ' + km : ''}))`));
+  const brussels = [50.85, 4.35], ghent = [51.05, 3.72], bangkok = [13.75, 100.5], phuket = [7.88, 98.39];
+  // a flight in the middle: two lines, and nothing drawn between them
+  assert.deepEqual(split([brussels, ghent, bangkok, phuket]), [[brussels, ghent], [bangkok, phuket]]);
+  // a way home as well: three pieces
+  assert.deepEqual(split([ghent, brussels, bangkok, phuket, brussels, ghent]), [[ghent, brussels], [bangkok, phuket], [brussels, ghent]]);
+  // a long drive is not a flight, and a line that never jumps comes back whole
+  assert.deepEqual(split([brussels, ghent]), [[brussels, ghent]]);
+  assert.deepEqual(split([[34.05, -118.24], [36.17, -115.14], [37.77, -112.0]]).length, 1);
+  // the limit can be given
+  assert.equal(split([brussels, ghent], 10).length, 0);
+});
+
+test('a lone point or a lone stray photo leaves no line', async () => {
+  const { w } = await load(fixture.server, '/day/2026-05-01?preview=1');
+  const split = (pts) => JSON.parse(w.eval(`JSON.stringify(splitLongHops(${JSON.stringify(pts)}))`));
+  assert.deepEqual(split([]), []);
+  assert.deepEqual(split([[50, 4]]), []);
+  // one photo far from the others: it cannot be joined to either side
+  assert.deepEqual(split([[50, 4], [50.1, 4.1], [13.7, 100.5], [50.2, 4.2], [50.3, 4.3]]), [[[50, 4], [50.1, 4.1]], [[50.2, 4.2], [50.3, 4.3]]]);
+});
+
+test('the library map draws one line per stretch of a trip, not one across the world', { skip }, async () => {
+  const { w, errors } = await load(fixture.server, '/?preview=1');
+  const trips = [{href: 'x', title: 'Asia', dates: 'May', color: '#ff0000',
+                  points: [[50.85, 4.35], [51.05, 3.72], [13.75, 100.5], [7.88, 98.39]]}];
+  w.document.body.insertAdjacentHTML('beforeend', '<div id="lib-test-map" style="height:300px"></div>');
+  w.eval(`initLibraryMap('lib-test-map', ${JSON.stringify(trips)})`);
+  const paths = w.document.querySelectorAll('#lib-test-map .leaflet-overlay-pane path.leaflet-interactive');
+  // two lines (Europe, Asia) and the start marker
+  assert.equal(paths.length, 3);
+  assert.deepEqual(realErrors(errors), []);
+});

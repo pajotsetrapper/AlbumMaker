@@ -36,7 +36,7 @@ function initCinemaOverview(elId, days){
   days.forEach((day, i) => {
     const group = [];
     (day.track || []).filter(s => s.length > 1).forEach(s => group.push(L.polyline(s, {color: CN_ACCENT, weight: 2, opacity: .4, interactive: false}).addTo(map)));
-    if(!group.length && day.route && day.route.length > 1) group.push(L.polyline(day.route, {color: CN_ACCENT, weight: 2, opacity: .4, dashArray: '2 6', interactive: false}).addTo(map));
+    if(!group.length) splitLongHops(day.route).forEach(line => group.push(L.polyline(line, {color: CN_ACCENT, weight: 2, opacity: .4, dashArray: '2 6', interactive: false}).addTo(map)));
     lines[i] = group;
     cnDayPoints(day).forEach(p => all.push(p));
     const a = cnAnchor(day);
@@ -124,8 +124,8 @@ function initCinemaDayMap(elId, route, thumbs, slideIndices, track){
     L.polyline(s, {color: CN_ACCENT, weight: 3, opacity: .95, lineCap: 'round', interactive: false}).addTo(map);
     s.forEach(p => all.push(p));
   });
-  if(!all.length && route.length > 1){
-    L.polyline(route, {color: CN_ACCENT, weight: 2, opacity: .8, dashArray: '3 7', interactive: false}).addTo(map);
+  if(!all.length){
+    splitLongHops(route).forEach(line => L.polyline(line, {color: CN_ACCENT, weight: 2, opacity: .8, dashArray: '3 7', interactive: false}).addTo(map));
   }
   route.forEach((p, i) => {
     all.push(p);
