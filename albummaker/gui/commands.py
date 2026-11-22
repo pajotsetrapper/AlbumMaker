@@ -9,6 +9,8 @@ from pathlib import Path
 import sys
 from typing import Optional
 
+from ..site_templates import DEFAULT_TEMPLATE
+
 
 def _command_prefix(python: str, subcommand: str) -> list[str]:
     if getattr(sys, "frozen", False):
@@ -161,7 +163,7 @@ def build_command(python: str, library_file: Path, output_dir: str, settings: di
         "--library", str(library), "--output", str(Path(output_dir).expanduser())
     ]
     args.extend(("--library-title", settings["library"]["title"].strip() or "Trips"))
-    args.extend(("--template", settings["library"].get("template") or "classic"))
+    args.extend(("--template", settings["library"].get("template") or DEFAULT_TEMPLATE))
     args.extend(_shared_options(build))
     _append_value(args, "--thumb-size", build.get("thumb_size", "400"))
     _append_value(args, "--large-thumb-size", build.get("large_thumb_size", "1600"))

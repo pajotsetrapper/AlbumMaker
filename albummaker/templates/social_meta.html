@@ -1,0 +1,16 @@
+{# Link-preview tags (Open Graph, read by WhatsApp, iMessage, Telegram, Slack, ...; Twitter/X).
+   Included by every template's head.html, so a new template only needs the include.
+   `social` comes from render.social_meta(): title, description, url and image. The url and
+   image are absolute, as the apps that read these tags need; a static site does not know
+   its address, so it leaves both out. #}
+{% if social %}
+<meta property="og:type" content="website">
+<meta property="og:title" content="{{ social.title }}">
+{% if social.description %}<meta property="og:description" content="{{ social.description }}">{% endif %}
+{% if social.url %}<meta property="og:url" content="{{ social.url }}">{% endif %}
+{% if social.image %}<meta property="og:image" content="{{ social.image }}">{% endif %}
+<meta name="twitter:card" content="{{ 'summary_large_image' if social.image else 'summary' }}">
+<meta name="twitter:title" content="{{ social.title }}">
+{% if social.description %}<meta name="twitter:description" content="{{ social.description }}">{% endif %}
+{% if social.image %}<meta name="twitter:image" content="{{ social.image }}">{% endif %}
+{% endif %}

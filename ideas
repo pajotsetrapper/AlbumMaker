@@ -3,26 +3,18 @@
 
 # Best value first
 
-0. Update the gui: Make it clear to the end uset that the server is preparing the sites & make it more clear when done (in your face pop-up?)
+- Make Cinema template the default one
+- 
 
-0. Transitioning effect in slideshow (optional).
-    - Ken Burns (Slow Pan & Zoom): Gently scales and pans a high-res photo over several seconds. It gives still landscapes and cityscapes a cinematic "living postcard" feel while showcasing fine detail. Keep motion slow (around 6–10 seconds) and scale modest (roughly 1.05x to 1.12x) so high-res images stay sharp and never feel jittery.
-    - Smooth Crossfade (Dissolve): Fades one image out while fading the next in over 600–1,000 ms with an ease-in-out curve. Ideal for hero banners, mood shifts (such as day to dusk), and editorial travel stories where hard cuts feel abrupt.
-    - Subtle Parallax Slide: Moves the incoming and outgoing images at slightly different speeds or offsets as they slide horizontally or vertically. This creates a sense of depth and spatial journey, especially when paired with destination titles or route cards.
-    - Reveal Mask / Wipe (Soft Edge): Uncovers the next photo using a soft gradient wipe or subtle scale-up reveal rather than a harsh mechanical slice. Works well for modern destination showcases when kept gentle and unhurried.
+0. Update the gui: Make it clear to the end uset that the server is preparing the sites & make it more clear when done (in your face pop-up?)
 
 0. Print or PDF “photo book” view. A print stylesheet for scrapbook and journal that produces clean pages (one day per page, with map and story). People often want a physical or PDF keepsake, and the scrapbook look suits it. Check what online print services offer as options & tailor it to that. You probably want to support different sizes. The photo book needs to have a nice trip cover & back. Chapters per day, with the descriptions and contai, the pictures that have been favourited.
 
-
 1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.
 
-2. Per-trip template override. A "template" key in a trip’s trip_content.json, so a road trip can be cinema and a family album scrapbook. The library page could then show a picker on each trip card as well. The main catch is that a live server and a static library each serve one stylesheet today, so assets would need to be per template.
+2. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
 
-
-
-4. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
-
-5. Elevation and route extras. The GPX data would give an elevation profile on day pages, plus ascent, descent and speed. The library page could show a “countries visited” stat.
+3. Elevation and route extras. The GPX data would give an elevation profile on day pages, plus ascent, descent and speed. The library page could show a “countries visited” stat.
 
 # Templates themselves
 

@@ -323,7 +323,8 @@ class StaticLibraryTests(TempDirMixin, unittest.TestCase):
 
     def test_a_trip_that_crashes_does_not_stop_the_others(self):
         site = self.tmp / "crash-site"
-        args = build.build_parser().parse_args(["--library", str(self.list), "-o", str(site), "--workers", "1"])
+        args = build.build_parser().parse_args(["--library", str(self.list), "-o", str(site), "--workers", "1",
+                                               "--template", "classic"])
         real = build.build_trip
         calls = []
 

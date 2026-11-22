@@ -26,6 +26,7 @@ WORLD_LAND_JSON = read_resource("static", "world_land.json").strip()
 JS = read_resource("static", "script.js").replace("__WORLD_LAND__", WORLD_LAND_JSON)
 # changes whenever the CSS or JS does: the live server puts it in the asset
 # URLs, so browsers can cache them for good and still never see a stale copy
+PREVIEW_IMAGE_SIZE = 1200    # the picture in a link preview: sharp, but small enough for chat apps to accept
 ASSET_VERSION = hashlib.sha1((CSS + "\0" + JS).encode("utf-8")).hexdigest()[:12]
 
 
@@ -59,7 +60,7 @@ class Template:
             self.css = self.css.rstrip("\n") + "\n\n" + read_resource("static", extra)
         for extra in self.info.js:
             self.js = self.js.rstrip("\n") + "\n\n" + read_resource("static", extra)
-        self.asset_version = ASSET_VERSION if self.name == DEFAULT_TEMPLATE else hashlib.sha1(
+        self.asset_version = ASSET_VERSION if not (self.info.css or self.info.js) else hashlib.sha1(
             (self.css + "\0" + self.js).encode("utf-8")).hexdigest()[:12]
         prefix = self.info.folder + "/" if self.info.folder else ""
         self.index = _JINJA.get_template(prefix + "index.html")
@@ -69,7 +70,7 @@ class Template:
 
 @functools.lru_cache(maxsize=None)
 def get_template(name: Optional[str] = None) -> Template:
-    """The template called `name` (None: the default, "classic")."""
+    """The template called `name` (None: the default, see DEFAULT_TEMPLATE)."""
     return Template(name or DEFAULT_TEMPLATE)
 
 
@@ -130,6 +131,15 @@ class SiteUrls:
         """URL of style.css / script.js."""
         return f"{self.assets_prefix(from_index)}assets/{name}"
 
+    def absolute(self, url: Optional[str]) -> Optional[str]:
+        """`url` (a path on this site) with the site's address in front, or None when the
+        address is not known. A static site is not told where it will be put online."""
+        return None
+
+    def preview_image(self, item: MediaItem) -> Optional[str]:
+        """A picture for a link preview (a path, see absolute()), or None for no picture."""
+        return None
+
 
 
 def pick_cover(d: DayGroup, content: dict) -> MediaItem:
@@ -149,6 +159,15 @@ def pick_cover(d: DayGroup, content: dict) -> MediaItem:
         if it.media_type == "image":
             return it
     return d.items[0]
+
+
+def social_meta(urls: SiteUrls, title: str, description: str, page: str,
+                cover: Optional[MediaItem]) -> dict:
+    """What the link-preview tags in the page head (templates/social_meta.html) say:
+    what WhatsApp, iMessage and the like show when the page's link is pasted into a chat.
+    `page` is the page's own path; the url and the image are None where the address is unknown."""
+    return {"title": title, "description": description, "url": urls.absolute(page),
+            "image": urls.absolute(urls.preview_image(cover)) if cover is not None else None}
 
 
 def _places_credit(days: list) -> str:
@@ -258,8 +277,11 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
     from .library import format_date_span     # (library imports this module, so not at the top)
     real = [d for d in days if not d.is_unknown]
     trip_cover = trip_cover_item(days, content)
+    date_span = format_date_span(real[0].date_obj, real[-1].date_obj) if real else ""
     return dict(
         page_title=trip_title(content),
+        social=social_meta(urls, trip_title(content), date_span or _text(content.get("subtitle")),
+                           urls.home(from_index=True), trip_cover),
         library_href=urls.library_href(from_index=True),
         library_href_json=script_json(urls.library_href(from_index=True)),
         home_href=urls.home(from_index=True),
@@ -279,7 +301,7 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         # (the maps don't need the homepage cards' extra photos)
         days_json=script_json([{k: v for k, v in s.items() if k not in ("previews", "time_range", "hero")} for s in summaries]),
         places_credit=_places_credit(days),
-        date_span=format_date_span(real[0].date_obj, real[-1].date_obj) if real else "",
+        date_span=date_span,
         place_count=len({p for d in days for p in d.places}),
         hero=urls.hero(trip_cover, from_index=True) if trip_cover else None,
     )
@@ -352,6 +374,9 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
 
     return dict(
         page_title=f"{title} \u2014 {trip_title(content)}",
+        social=social_meta(urls, f"{title} \u2014 {trip_title(content)}",
+                           "" if d.is_unknown else format_long_date(d.date_obj),
+                           urls.day(d.date_key, from_index=False), day_cover),
         library_href=urls.library_href(from_index=False),
         api_base_json=script_json(urls.api_base),
         home_href=urls.home(from_index=False),

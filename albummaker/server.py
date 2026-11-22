@@ -56,7 +56,7 @@ from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_
 from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
                       read_trip_list, trip_args, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION
-from .render import ASSET_VERSION, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
+from .render import ASSET_VERSION, PREVIEW_IMAGE_SIZE, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
 from .site_templates import LIBRARY_SETTINGS_NAME, template_choices, template_info
@@ -82,6 +82,7 @@ KEY_RE = re.compile(r"^[0-9a-f]{10,40}$")
 # and only an editor's browser may hold a hidden photo at all.
 CACHE_IMMUTABLE = "private, max-age=31536000, immutable"
 CACHE_REVALIDATE = "no-cache"
+_HOST_HEADER = re.compile(r"^(?:[A-Za-z0-9.-]+|\[[0-9A-Fa-f:.]+\])(?::\d{1,5})?$")   # a plain host name or IP, maybe with a port
 PROXY_HEADERS = ("Forwarded", "X-Forwarded-For", "X-Forwarded-Host", "X-Forwarded-Proto",
                  "X-Real-IP", "Via")
 SLOW_REQUEST_SECONDS = 2.0
@@ -580,22 +581,22 @@ class App:
         map credit set with --tile-attribution (or made for --tile-url)."""
         return {"tile_attribution_json": script_json(self.tile_attribution)}
 
-    def urls(self) -> "LiveUrls":
-        return LiveUrls(self)
+    def urls(self, origin: Optional[str] = None) -> "LiveUrls":
+        return LiveUrls(self, origin)
 
-    def render_homepage(self, editable: bool = False) -> str:
+    def render_homepage(self, editable: bool = False, origin: Optional[str] = None) -> str:
         content = self.content.get()
         days = visible_days(self.days, content, editable)
-        urls = self.urls()
+        urls = self.urls(origin)
         return self.template.index.render(**build_index_context(days, content, urls), **self.page_extras())
 
-    def render_day(self, date_key: str, editable: bool = False) -> Optional[str]:
+    def render_day(self, date_key: str, editable: bool = False, origin: Optional[str] = None) -> Optional[str]:
         content = self.content.get()
         days = visible_days(self.days, content, editable)   # hidden photos (and emptied days) drop out for visitors
         idx = next((i for i, d in enumerate(days) if d.date_key == date_key), None)
         if idx is None:
             return None
-        return self.template.day.render(**build_day_context(days, idx, content, self.urls(), editable=editable),
+        return self.template.day.render(**build_day_context(days, idx, content, self.urls(origin), editable=editable),
                                         **self.page_extras())
 
     # -- image work, cached and limited -------------------------------------
@@ -664,8 +665,9 @@ class LiveUrls(SiteUrls):
     footer = Markup(f"Served live by album_server.py, version {__version__}")
     edit_hint = ", then refresh this page."
 
-    def __init__(self, app: App):
+    def __init__(self, app: App, origin: Optional[str] = None):
         self.app = app
+        self.origin = origin               # "https://trips.example.org": what the visitor typed, for link previews
         self._versions = {}
         self.tile_url = app.tile_client_url
         self.template = app.template
@@ -713,6 +715,14 @@ class LiveUrls(SiteUrls):
 
     def live(self, item):
         return f"{self.prefix}/live/{item.key}?v={file_version(item.live_clip.path)}"
+
+    def absolute(self, url):
+        return f"{self.origin}{url}" if self.origin and url else None
+
+    def preview_image(self, item):
+        # a size of its own: the big thumbnail can be several MB, and WhatsApp and others
+        # drop a preview picture that is much over a few hundred KB
+        return f"{self._url('thumb', item)}&w={PREVIEW_IMAGE_SIZE}"
 
 
 # --------------------------------------------------------------------------
@@ -885,6 +895,16 @@ class RequestHandler(BaseHTTPRequestHandler):
         except ValueError:
             pass
         return name in self.app.allowed_hostnames
+
+    def _origin(self) -> Optional[str]:
+        """'https://host:port' as the visitor reached this server, for the absolute links in
+        link previews (the apps that make them need absolute URLs). The Host header was
+        checked by _host_allowed; a proxy says https with X-Forwarded-Proto."""
+        host = self.headers.get("Host") or ""
+        if not _HOST_HEADER.match(host):
+            return None
+        proto = (self.headers.get("X-Forwarded-Proto") or "").split(",")[0].strip().lower()
+        return f"{proto if proto in ('http', 'https') else 'http'}://{host}"
 
     def _direct_local(self) -> bool:
         """A request straight from the computer running the server: a
@@ -1287,9 +1307,9 @@ class RequestHandler(BaseHTTPRequestHandler):
                     # its requests keep working if they later arrive another way
                     self._set_cookie = self._cookie_header()
                 if raw_path in ("/", ""):
-                    self._send_text(self.app.render_homepage(self._editor_view()), "text/html")
+                    self._send_text(self.app.render_homepage(self._editor_view(), self._origin()), "text/html")
                 else:
-                    html = self.app.render_day(raw_path[len("/day/"):].strip("/"), self._editor_view())
+                    html = self.app.render_day(raw_path[len("/day/"):].strip("/"), self._editor_view(), self._origin())
                     if html is None:
                         self.send_error(404, "No such day")
                     else:
@@ -1351,13 +1371,14 @@ class RequestHandler(BaseHTTPRequestHandler):
         version = file_version(item.path)
         size, large = self.app.args.thumb_size, False
         if self._req_width is not None:
-            # the larger thumbnail: only the one configured size is offered, so a client
-            # can't make the server build (and cache) thumbnails of arbitrary sizes
-            wanted = self.app.args.large_thumb_size
-            if not wanted or self._req_width != str(wanted):
+            # the larger thumbnail: only the configured size (and the link-preview size) are
+            # offered, so a client can't make the server build (and cache) thumbnails of
+            # arbitrary sizes
+            offered = {str(s) for s in (self.app.args.large_thumb_size, PREVIEW_IMAGE_SIZE) if s}
+            if self._req_width not in offered:
                 self.send_error(404, "No such thumbnail size")
                 return
-            size, large = wanted, True
+            size, large = int(self._req_width), True
         data = self.app.thumbnail(item, size, large, version)
         if data is None:
             self.send_error(404, "Could not generate thumbnail")

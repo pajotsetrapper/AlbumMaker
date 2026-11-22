@@ -29,8 +29,8 @@ def build(*argv):
 
 
 class RegistryTests(unittest.TestCase):
-    def test_the_default_is_classic_and_the_journal_style_exists(self):
-        self.assertEqual(site_templates.DEFAULT_TEMPLATE, "classic")
+    def test_the_default_is_cinema_and_the_journal_style_exists(self):
+        self.assertEqual(site_templates.DEFAULT_TEMPLATE, "cinema")
         self.assertIn("journal", site_templates.template_names())
 
     def test_names_are_case_insensitive_and_unknown_ones_list_the_choices(self):
@@ -39,7 +39,7 @@ class RegistryTests(unittest.TestCase):
             site_templates.template_arg("fancy")
 
     def test_the_command_line_takes_the_option(self):
-        self.assertEqual(build_parser().parse_args(["-i", "x"]).template, "classic")
+        self.assertEqual(build_parser().parse_args(["-i", "x"]).template, "cinema")
         self.assertEqual(build_parser().parse_args(["-i", "x", "--template", "journal"]).template, "journal")
 
     def test_classic_is_exactly_what_it_was(self):
@@ -236,6 +236,35 @@ class LibraryTests(TempDirMixin, unittest.TestCase):
         self.assertIn(".jr-hero", (tmp / "out" / "assets" / "style.css").read_text(encoding="utf-8"))
 
 
+class LinkPreviewTests(TempDirMixin, unittest.TestCase):
+    """The preview tags sit in the one shared partial, so every template has them. A static
+    site does not know its own address: it gets the title and dates, but no picture or url."""
+
+    def test_every_template_has_the_tags_and_a_static_site_has_no_picture(self):
+        tmp = self.make_tmp()
+        photos = tmp / "photos"
+        standard_trip(photos)
+        for name in site_templates.template_names():
+            with self.subTest(template=name):
+                build("-i", str(photos), "-o", str(tmp / name), "--template", name)
+                for page in ("index.html", next((tmp / name / "days").glob("*.html")).relative_to(tmp / name)):
+                    html = (tmp / name / page).read_text(encoding="utf-8")
+                    self.assertIn('property="og:title" content="', html)
+                    self.assertIn('name="twitter:title" content="', html)
+                    self.assertNotIn("og:image", html)
+                    self.assertNotIn("og:url", html)
+                    self.assertIn('name="twitter:card" content="summary"', html)
+                index = (tmp / name / "index.html").read_text(encoding="utf-8")
+                self.assertIn('og:description" content="1 \u2013 2 May 2026"', index)
+
+    def test_text_in_the_tags_is_escaped(self):
+        from albummaker import render
+        html = render.get_template("cinema").index.render(
+            page_title="t", css_href="x.css", tile_url_json="null", js_href="x.js", vendor=None,
+            social={"title": 'A "quoted" <trip>', "description": "", "url": None, "image": None})
+        self.assertIn('og:title" content="A &#34;quoted&#34; &lt;trip&gt;"', html)
+
+
 class LiveServerTests(TempDirMixin, unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -243,9 +272,47 @@ class LiveServerTests(TempDirMixin, unittest.TestCase):
         cls.app = install_app(tmp / "app")
         photos = tmp / "photos"
         standard_trip(photos)
-        cls.server = AlbumMaker(cls.app, photos, tmp / "work", "--template", "journal")
+        cls.server = AlbumMaker(cls.app, photos, tmp / "work", "--template", "journal",
+                                "--allow-host", "trips.example.org")
         cls.server.start()
         cls.addClassCleanup(cls.server.stop)
+
+    def test_a_pasted_link_shows_the_cover_title_and_dates(self):
+        """What WhatsApp / iMessage read when the link is pasted: Open Graph and Twitter tags."""
+        seen_by_the_app = {"Host": "trips.example.org", "X-Forwarded-Proto": "https"}
+        html = self.server.text("/", seen_by_the_app)
+        meta = dict(re.findall(r'<meta (?:property|name)="((?:og|twitter):[a-z_]+)" content="([^"]*)"', html))
+        self.assertEqual(meta["og:title"], "My Trip")
+        self.assertEqual(meta["og:description"], "1 \u2013 2 May 2026")          # the date range
+        self.assertEqual(meta["og:url"], "https://trips.example.org/")
+        self.assertEqual(meta["twitter:card"], "summary_large_image")
+        self.assertEqual(meta["twitter:title"], "My Trip")
+        image = meta["og:image"].replace("&amp;", "&")
+        self.assertRegex(image, r"^https://trips\.example\.org/thumb/[0-9a-f]+\?v=\w+&w=1200$")
+        self.assertEqual(meta["twitter:image"], meta["og:image"])
+        # ... and the picture is really served (the app fetches it as a visitor)
+        status, headers, body = self.server.get(image[len("https://trips.example.org"):], seen_by_the_app)
+        self.assertEqual((status, headers["content-type"]), (200, "image/jpeg"))
+
+    def test_a_day_link_has_the_day_title_and_date(self):
+        seen_by_the_app = {"Host": "trips.example.org", "X-Forwarded-Proto": "https"}
+        day = re.search(r'href="(/day/[^"]+)"', self.server.text("/")).group(1)
+        html = self.server.text(day, seen_by_the_app)
+        self.assertRegex(html, r'og:title" content="[^"]+ \u2014 My Trip"')
+        self.assertIn('og:description" content="Friday, May 1, 2026"', html)
+        self.assertIn(f'og:url" content="https://trips.example.org{day}"', html)
+        self.assertIn('og:image" content="https://trips.example.org/thumb/', html)
+
+    def test_the_address_comes_from_the_host_the_visitor_used(self):
+        self.assertIn('og:url" content="http://127.0.0.1:%d/"' % self.server.port, self.server.text("/"))
+        # a made-up Host is refused as before, and an odd one never reaches a tag
+        status, _, _ = self.server.get("/", {"Host": "evil.example.net"})
+        self.assertEqual(status, 403)
+
+    def test_only_the_two_known_large_sizes_are_served(self):
+        key = re.search(r"/thumb/([0-9a-f]+)\?v=", self.server.text("/")).group(1)
+        self.assertEqual(self.server.get(f"/thumb/{key}?w=1200")[0], 200)
+        self.assertEqual(self.server.get(f"/thumb/{key}?w=1234")[0], 404)
 
     def test_pages_and_assets_use_the_template(self):
         status, _, body = self.server.get("/")
@@ -281,7 +348,8 @@ class LibraryPickerTests(TempDirMixin, unittest.TestCase):
         cls.settings = cls.listing.parent / "library_settings.json"
 
     def serve(self, *extra):
-        server = AlbumMaker(self.app, None, self.tmp / "work", "--library", self.listing, *extra)
+        server = AlbumMaker(self.app, None, self.tmp / "work", "--library", self.listing, *extra,
+                           default_template=True)
         server.start()
         self.addCleanup(server.stop)
         return server
@@ -292,7 +360,8 @@ class LibraryPickerTests(TempDirMixin, unittest.TestCase):
         self.assertIn('id="template-select"', page)                # we are the owner: localhost
         for name in site_templates.template_names():
             self.assertIn(f'value="{name}"', page)
-        self.assertNotIn("tpl-journal", page)                      # the default: classic
+        self.assertIn("tpl-cinema", page)                          # the default: cinema
+        self.assertNotIn("tpl-journal", page)
         status, reply = server.post_json("/api/library-template", {"template": "journal"})
         self.assertEqual((status, reply["template"]), (200, "journal"))
         page = server.text("/")
@@ -318,7 +387,7 @@ class LibraryPickerTests(TempDirMixin, unittest.TestCase):
             status, reply = server.post_json("/api/library-template", body)
             self.assertEqual(status, 400, body)
             self.assertFalse(reply["ok"])
-        self.assertIn("tpl-journal" if before and "journal" in before else "day-card", server.text("/"))
+        self.assertIn("tpl-journal" if before and "journal" in before else "tpl-cinema", server.text("/"))
         self.assertEqual(self.settings.read_text() if self.settings.exists() else None, before)
 
     def test_visitors_and_read_only_servers_cannot_switch(self):
@@ -328,7 +397,7 @@ class LibraryPickerTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(status, 403)
 
     def test_a_single_trip_has_no_template_to_pick(self):
-        server = AlbumMaker(self.app, self.trip, self.tmp / "single")
+        server = AlbumMaker(self.app, self.trip, self.tmp / "single", default_template=True)
         server.start()
         self.addCleanup(server.stop)
         status, reply = server.post_json("/api/library-template", {"template": "journal"})
@@ -342,8 +411,8 @@ class DesktopAppSettingsTests(unittest.TestCase):
             s["library"]["template"] = template
         return s
 
-    def test_the_default_is_classic_and_unknown_names_are_refused(self):
-        self.assertEqual(default_settings()["library"]["template"], "classic")
+    def test_the_default_is_cinema_and_unknown_names_are_refused(self):
+        self.assertEqual(default_settings()["library"]["template"], "cinema")
         with self.assertRaisesRegex(SettingsError, "library.template"):
             validate_settings(self.settings("fancy"))
         self.assertEqual(validate_settings(self.settings("journal"))["library"]["template"], "journal")

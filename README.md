@@ -135,8 +135,10 @@ The same programs are also available as one command, `python -m albummaker`
 
 The optional desktop app provides a resizable interface for managing a
 trip library, choosing the site template, starting the live server,
-generating static sites, and watching progress and HTTP requests. Every
-control is explained in its **Help** window.
+generating static sites, and watching progress and HTTP requests. A
+*Please wait* window stays in front while a server or site is being prepared,
+and a big *Your trips are ready!* (or *problem*) window tells you when it is
+done. Every control is explained in its **Help** window.
 
 ### Download a standalone app
 
@@ -229,7 +231,8 @@ python album_server.py -i /path/to/photos
 ```
 * Server-only flags: `--port`, `--lan`, `--read-only`, `--editor-link-only`, `--allow-host`, `--tile-cache`, `--tile-url`, `--tile-attribution`, `--memory-cache-mb`, `--index-cache`, `--verbose`.
 * Flags shared with `generate_site.py`: `-i`, `-c`, `--library`, `--library-title`, `--template`, `--thumb-size`, `--tz-offset`, `--timezone`, `--date-range`, `--no-date-check`, `--no-dedupe`, `--no-live-photos`, `--gpx`, `--no-gpx`, `--no-places`, `--fetch-offline-assets`, `--large-thumb-size` (on by default here, 1600; thumbnails are made on demand and kept in memory).
-* `--template` on the server defaults to the template last picked on the library page, else `classic` (see [Templates](#3b-templates---template-name)).
+* `--template` on the server defaults to the template last picked on the library page, else `cinema` (see [Templates](#3b-templates---template-name)).
+* **Link previews.** When a trip or day link is pasted into WhatsApp, iMessage, Telegram, Slack and the like, the chat shows the cover photo, the trip title and the date range (a day link shows the day's title, date and cover). The pages carry Open Graph and Twitter tags for this, in every template. The picture is a 1200 px version of the cover, kept small because chat apps drop preview pictures that are too big. These apps need absolute links, so the server builds them from the address the visitor used (the `Host` header, with `https` when a proxy or tunnel sends `X-Forwarded-Proto: https`). Reaching the server under a public name therefore needs `--allow-host your.name` and a tunnel or proxy that passes the `Host` header on (most do). Apps remember a link's preview, so a link that was pasted before shows the old one for a while. A static site (`generate_site.py`) does not know where it will be published, so its pages carry the title and dates but no picture.
 * The server only listens on this computer unless you add `--lan`; there is no password, so use `--lan` on a trusted network only. Other devices can look but not edit, unless they open the editor link printed at startup.
 
 ### 2c. Library (`--library LIST`)
@@ -282,10 +285,10 @@ Both scripts, the library builds and the desktop app (*Site template*) take a te
 
 | Template | Look |
 |---|---|
-| `classic` (default) | Dark navy pages, parchment text panels, a card per day. |
+| `classic` | Dark navy pages, parchment text panels, a card per day. |
 | `journal` | A light travel-journal look: full-width cover photo, a floating statistics card, a timeline of numbered steps (one per day, with a photo collage) beside a sticky map that follows your scrolling, and a story page per day with a photo grid whose thumbnail size (S/M/L/XL) visitors can change, as in the classic view. Use `--large-thumb-size 1600` for a crisp cover. |
 | `scrapbook` | A warm paper scrapbook: taped polaroid photos scattered on each day's page, rubber-stamp statistics, a push-pin map and lined notebook paper for the day story. Visitors can change the polaroid size (S/M/L/XL) on a day page. |
-| `cinema` | Dark and cinematic: a full-screen scene for each day (big photo, outlined day number, film-strip of more photos) that fades in as you scroll, with a mini-map that flies to the day you are reading and opens up to show the whole route. Day pages have a drop-cap story, a glowing route map and a photo gallery in rows that follow each photo's shape; visitors can change the frame size (S/M/L/XL): S is a tight contact sheet, XL shows one big frame per row with subtitle-style captions. Use `--large-thumb-size 1600` for sharp scenes. |
+| `cinema` (default) | Dark and cinematic: a full-screen scene for each day (big photo, outlined day number, film-strip of more photos) that fades in as you scroll, with a mini-map that flies to the day you are reading and opens up to show the whole route. Day pages have a drop-cap story, a glowing route map and a photo gallery in rows that follow each photo's shape; visitors can change the frame size (S/M/L/XL): S is a tight contact sheet, XL shows one big frame per row with subtitle-style captions. Use `--large-thumb-size 1600` for sharp scenes. |
 
 `journal`, `scrapbook` and `cinema` use only system fonts, so they need nothing to be downloaded for typography; `classic` uses the bundled Fraunces and IBM Plex fonts.
 

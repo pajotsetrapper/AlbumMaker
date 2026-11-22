@@ -54,6 +54,8 @@ from PySide6.QtWidgets import (
 )
 
 from .. import __version__
+from .dialogs import PreparingDialog, ResultDialog
+from .progress import RunProgress
 from .commands import (
     build_command,
     ffmpeg_install_command,
@@ -63,7 +65,7 @@ from .commands import (
 from .settings import (LoadedSettings, SettingsError, default_settings, load_settings_or_recover,
                        prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
                        validate_settings, write_library_file)
-from ..site_templates import TEMPLATES
+from ..site_templates import DEFAULT_TEMPLATE, TEMPLATES
 from ..timezones import timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
@@ -160,6 +162,23 @@ THEME_STYLES = {
         QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QLabel#muted { color: #66748a; }
         QLabel#status { color: #315fce; font-weight: 600; }
+        QLabel#readyTitle { color: #1b6657; font-size: 15px; font-weight: 700; }
+        QLabel#statusIconBusy { font-size: 40px; }
+        QLabel#statusIconOk, QLabel#statusIconError { color: #ffffff; border-radius: 32px;
+            min-width: 64px; max-width: 64px; min-height: 64px; max-height: 64px;
+            font-size: 34px; font-weight: 700; }
+        QLabel#statusIconOk { background: #237b68; }
+        QLabel#statusIconError { background: #a63333; }
+        QLabel#statusHeading { font-size: 22px; font-weight: 700; }
+        QLabel#statusHeadingOk { color: #1b6657; font-size: 22px; font-weight: 700; }
+        QLabel#statusHeadingError { color: #a63333; font-size: 22px; font-weight: 700; }
+        QLabel#statusNotice { color: #7a5200; background: #fff4d6; border: 1px solid #f0d58a;
+            border-radius: 8px; padding: 6px 12px; font-weight: 650; }
+        QLabel#statusDetail { font-size: 14px; }
+        QLabel#addressBox { color: #1b6657; background: #e8f4f1; border: 1px solid #cfe5df;
+            border-radius: 8px; padding: 10px 12px; font-size: 15px; font-weight: 650; }
+        QProgressBar { background: #dfe6f1; border: 0; border-radius: 8px; }
+        QProgressBar::chunk { background: #315fce; border-radius: 8px; }
         QLabel#stepNumber { color: #315fce; font-size: 12px; font-weight: 700; }
     """,
     "dark": """
@@ -243,6 +262,23 @@ THEME_STYLES = {
         QScrollBar::add-line, QScrollBar::sub-line { width: 0; height: 0; }
         QLabel#muted { color: #a2adbf; }
         QLabel#status { color: #a9c2ff; font-weight: 600; }
+        QLabel#readyTitle { color: #7fe0c8; font-size: 15px; font-weight: 700; }
+        QLabel#statusIconBusy { font-size: 40px; }
+        QLabel#statusIconOk, QLabel#statusIconError { color: #ffffff; border-radius: 32px;
+            min-width: 64px; max-width: 64px; min-height: 64px; max-height: 64px;
+            font-size: 34px; font-weight: 700; }
+        QLabel#statusIconOk { background: #287c6c; }
+        QLabel#statusIconError { background: #a8444b; }
+        QLabel#statusHeading { font-size: 22px; font-weight: 700; }
+        QLabel#statusHeadingOk { color: #7fe0c8; font-size: 22px; font-weight: 700; }
+        QLabel#statusHeadingError { color: #ff8f96; font-size: 22px; font-weight: 700; }
+        QLabel#statusNotice { color: #ffd98a; background: #3a3220; border: 1px solid #6b5a2c;
+            border-radius: 8px; padding: 6px 12px; font-weight: 650; }
+        QLabel#statusDetail { font-size: 14px; }
+        QLabel#addressBox { color: #7fe0c8; background: #202f32; border: 1px solid #34534e;
+            border-radius: 8px; padding: 10px 12px; font-size: 15px; font-weight: 650; }
+        QProgressBar { background: #2a3447; border: 0; border-radius: 8px; }
+        QProgressBar::chunk { background: #4a78dc; border-radius: 8px; }
         QLabel#stepNumber { color: #a9c2ff; font-size: 12px; font-weight: 700; }
     """,
 }
@@ -298,7 +334,15 @@ need the live-server setup. Its maps need the site to be served over http(s); se
 <ul>
 <li>The button says <b>Start live server</b> or <b>Create static site</b>, depending on Step 2. The text
 next to it says what is still missing, if anything.</li>
-<li>While a task runs, the button becomes <b>Stop server</b> (live server) or <b>Stop task</b> (anything
+<li>As soon as you start, a <b>Please wait</b> window appears and stays in front until your trips are
+ready. It shows what is happening (and how far along it is, when that is known) and how long it has
+taken. Large albums can take several minutes, especially the first time. Keep AlbumMaker open; the
+<b>Cancel</b> button in that window stops everything.</li>
+<li>When it is done, a <b>Your trips are ready!</b> (or <b>Your site is ready!</b>) window appears, and
+the AlbumMaker icon in your taskbar or Dock flashes if the app is behind other windows. If something
+went wrong you get a window saying so, and the Activity log has the details.</li>
+<li>While a task runs, the button becomes <b>Cancel</b> (live server, while it is preparing),
+<b>Stop server</b> (live server, once it is ready) or <b>Stop task</b> (anything
 else, such as creating a site or downloading offline assets). Only one task runs at a time.</li>
 <li>When the live server is ready, <b>Open trip site</b> opens it in your browser. When editing is
 enabled, <b>Open editing link (private)</b> opens the private editor link, which lets any browser
@@ -698,6 +742,10 @@ class MainWindow(QMainWindow):
         self._server_url = ""
         self._editor_url = ""
         self._stopping = False
+        self._last_problem = ""            # the last "! ..." line the task printed, for the problem pop-up
+        self._progress: Optional[RunProgress] = None       # what the running task says it is doing
+        self._preparing: Optional[PreparingDialog] = None  # the "please wait" pop-up (made on first use)
+        self._result_dialog: Optional[ResultDialog] = None # the "ready" / "problem" pop-up
         self._save_timer = QTimer(self)
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
@@ -770,7 +818,7 @@ class MainWindow(QMainWindow):
         self.server_links.setObjectName("serverLinks")
         links_layout = QHBoxLayout(self.server_links)
         links_layout.setContentsMargins(12, 8, 12, 8)
-        links_layout.addWidget(_label("Live server is ready", "status"))
+        links_layout.addWidget(_label("\u2714  READY \u2013 your trips are online", "readyTitle"))
         links_layout.addStretch(1)
         self.site_link_button = QPushButton("Open trip site")
         self.site_link_button.setObjectName("serverLink")
@@ -1230,7 +1278,7 @@ class MainWindow(QMainWindow):
         )
         self.library_title.setText(self.settings["library"]["title"])
         self.template_combo.setCurrentIndex(
-            max(0, self.template_combo.findData(self.settings["library"].get("template", "classic"))))
+            max(0, self.template_combo.findData(self.settings["library"].get("template", DEFAULT_TEMPLATE))))
         server = self.settings["server"]
         self.port.setValue(int(server["port"]))
         self.memory_cache.setValue(int(server["memory_cache_mb"]))
@@ -1500,22 +1548,28 @@ class MainWindow(QMainWindow):
             self._process and self._process.state() != QProcess.ProcessState.NotRunning
         )
         if running:
+            preparing = self._process_kind == "server" and not self._server_ready
             action = "Stop server" if self._process_kind == "server" else "Stop task"
+            if preparing:
+                action = "Cancel"
             if self._stopping:
                 self._set_run_button("Stopping…", "stop", "The running process is stopping.")
                 self.run_button.setEnabled(False)
             else:
                 self._set_run_button(
-                    action, "stop", "Stop the live server." if self._process_kind == "server"
-                    else "Stop the running task."
+                    action, "stop",
+                    ("Stop preparing and cancel." if preparing else "Stop the live server.")
+                    if self._process_kind == "server" else "Stop the running task."
                 )
                 self.run_button.setEnabled(True)
             if self._process_kind == "server":
                 status = (
                     "The live server is running."
                     if self._server_ready
-                    else "Waiting for the live server to become ready…"
+                    else "Preparing your trips \u2013 please wait. The server is not ready yet."
                 )
+            elif self._process_kind == "build":
+                status = "Creating your site \u2013 please wait. It is not ready yet."
             else:
                 status = f"{_task_name(self._process_kind)} is in progress."
             self.workflow_status.setText(status)
@@ -1574,7 +1628,7 @@ class MainWindow(QMainWindow):
             "version": self.settings["version"],
             "appearance": {"theme": self.theme_combo.currentData()},
             "library": {"title": self.library_title.text().strip() or "Trips",
-                        "template": self.template_combo.currentData() or "classic"},
+                        "template": self.template_combo.currentData() or DEFAULT_TEMPLATE},
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
@@ -1864,6 +1918,7 @@ class MainWindow(QMainWindow):
         self._server_ready = False
         self._server_url = ""
         self._editor_url = ""
+        self._last_problem = ""
         self.site_link_button.hide()
         self.editor_link_button.hide()
         self.server_links.hide()
@@ -1871,6 +1926,10 @@ class MainWindow(QMainWindow):
         self._append_log(f"Starting {_task_label(kind)}: {self._display_command(arguments)}")
         self.status_label.setText(f"Starting {_task_label(kind)}…")
         self._update_actions()
+        # a server or a site takes a while to prepare: say so in front of everything. The
+        # offline-assets download is only announced when it is part of starting the server.
+        if kind in ("server", "build") or (kind == "offline assets" and self._pending_server_start):
+            self._show_preparing(kind)
         process.start(arguments[0], arguments[1:])
 
     @staticmethod
@@ -1942,6 +2001,10 @@ class MainWindow(QMainWindow):
             if line.endswith(("\n", "\r")):
                 message = line.rstrip("\r\n")
                 self._append_log(message)
+                if message.startswith("!"):
+                    self._last_problem = message.lstrip("! ").strip()
+                if self._progress is not None and self._progress.feed(message) and self._preparing is not None:
+                    self._preparing.update_progress(self._progress)
                 expected_url = f"http://127.0.0.1:{self.port.value()}/"
                 editor_match = re.search(
                     r"Editor link \(keep it private; it changes every start\):\s*(https?://\S+)",
@@ -1960,6 +2023,9 @@ class MainWindow(QMainWindow):
                     self.server_links.show()
                     self.status_label.setText("Server running")
                     self._update_workflow()
+                    self._update_actions()
+                    self._hide_preparing()
+                    self._show_server_ready()
             else:
                 self._log_remainder = line
 
@@ -1969,8 +2035,8 @@ class MainWindow(QMainWindow):
 
     def _on_started(self, kind: str) -> None:
         states = {
-            "server": "Starting server",
-            "build": "Generating site",
+            "server": "Preparing trips…",
+            "build": "Creating site…",
             "offline assets": "Downloading assets",
         }
         self.status_label.setText(states.get(kind, f"{_task_name(kind)} running"))
@@ -1982,6 +2048,9 @@ class MainWindow(QMainWindow):
         if error == QProcess.ProcessError.FailedToStart:
             message = self._process.errorString() if self._process else "Could not start the process."
             self._append_log(f"Error: {message}")
+            failed_kind = self._process_kind
+            self._hide_preparing()
+            self._show_problem(failed_kind, False, f"AlbumMaker could not start its helper program ({message}).")
             self.status_label.setText("Could not start")
             self.server_links.hide()
             self.site_link_button.hide()
@@ -2002,6 +2071,7 @@ class MainWindow(QMainWindow):
             self._log_remainder = ""
         kind = self._process_kind
         user_stopped = self._stopping
+        was_ready = self._server_ready
         resume_server = (
             kind == "offline assets" and self._pending_server_start and not user_stopped
         )
@@ -2031,10 +2101,20 @@ class MainWindow(QMainWindow):
         self._append_log(f"{_task_name(kind)} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
+        starting_server = resume_server and exit_code == 0 and self._offline_assets_ready()
+        if not starting_server:
+            self._hide_preparing()      # done, failed or cancelled; when the server is about to start it stays up
+            if not user_stopped and (kind in ("server", "build") or resume_server):
+                if exit_code != 0 or resume_server:
+                    self._show_problem(kind, was_ready)
+                elif kind == "build":
+                    self._show_build_done()
         if resume_server:
             if exit_code == 0 and self._offline_assets_ready():
                 self._append_log("Offline assets are ready; starting the live server.")
                 self._start_server()
+                if self._process is None:       # it could not start (for example: the port is taken)
+                    self._hide_preparing()
             else:
                 self.status_label.setText("Could not prepare offline assets")
                 self.workflow_status.setText(
@@ -2043,6 +2123,64 @@ class MainWindow(QMainWindow):
                 self._append_log(
                     "The live server was not started: offline asset download failed or validation did not pass."
                 )
+
+    # -- pop-ups: what is going on, and when it is done -----------------------
+
+    def _show_preparing(self, kind: str) -> None:
+        """The 'please wait' pop-up, in front of the window until the task is ready."""
+        self._progress = RunProgress(kind)
+        if self._preparing is None:
+            self._preparing = PreparingDialog(self, self._stop_process)
+        self._preparing.begin(self._progress)
+
+    def _hide_preparing(self) -> None:
+        if self._preparing is not None:
+            self._preparing.end()
+        self._progress = None
+
+    def _present_result(self, dialog: ResultDialog) -> None:
+        self._result_dialog = dialog        # kept, so it is not collected while it is on screen
+        dialog.present()
+
+    def _show_server_ready(self) -> None:
+        url = self._server_url
+        self._present_result(ResultDialog(
+            self, True, "Your trips are ready!",
+            "The server is running. Click \u201cOpen trip site\u201d to see your trips in your web browser.\n\n"
+            "Keep AlbumMaker open: if you close it or stop the server, your trips go offline.",
+            [("Open trip site", lambda: self._open_server_link(url), "serverLink", True),
+             ("Close", None, None, True)],
+            address=url))
+
+    def _show_build_done(self) -> None:
+        folder = self.output_dir.text().strip()
+        self._present_result(ResultDialog(
+            self, True, "Your site is ready!",
+            "Your static site has been created. It is saved in this folder. Put the folder on a web "
+            "host to share it; its maps only work when it is opened through a web address (see Help).",
+            [("Show site folder", lambda: QDesktopServices.openUrl(QUrl.fromLocalFile(folder)),
+              "serverLink", True),
+             ("Close", None, None, True)],
+            address=folder))
+
+    def _show_problem(self, kind: str, was_ready: bool, detail: str = "") -> None:
+        """A task did not finish: say so in front of everything, and say where to look."""
+        if kind == "server":
+            title = "The server stopped unexpectedly" if was_ready else "The server could not start"
+        elif kind == "build":
+            title = "The site could not be created completely"
+        else:
+            title = "AlbumMaker could not get ready"
+        if not detail:
+            detail = self._last_problem or "Something went wrong."
+        if kind == "offline assets":
+            detail = "The map and font files could not be downloaded, so the server was not started."
+            if self._last_problem:
+                detail += f"\n\n{self._last_problem}"
+        self._present_result(ResultDialog(
+            self, False, title, f"{detail}\n\nThe Activity log has the details.",
+            [("Show activity", lambda: self.activity_toggle.setChecked(True), None, True),
+             ("Close", None, None, True)]))
 
     def _cleanup_process(self) -> None:
         if self._process:
@@ -2054,6 +2192,8 @@ class MainWindow(QMainWindow):
     def _stop_process(self) -> None:
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
             self._stopping = True
+            if self._preparing is not None and self._preparing.isVisible():
+                self._preparing.stopping()
             self.status_label.setText("Stopping…")
             self._append_log("Requesting process shutdown…")
             self._terminate_process()

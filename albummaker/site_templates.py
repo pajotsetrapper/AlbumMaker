@@ -34,7 +34,7 @@ class TemplateInfo:
     previews: int = 0          # photos shown on each day's card on the homepage (0: just the cover)
 
 
-DEFAULT_TEMPLATE = "classic"
+DEFAULT_TEMPLATE = "cinema"
 LIBRARY_SETTINGS_NAME = "library_settings.json"   # what a library's page remembers, next to its list file
 
 TEMPLATES = {

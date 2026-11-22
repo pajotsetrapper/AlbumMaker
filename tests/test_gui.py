@@ -18,6 +18,7 @@ from albummaker.gui.commands import (
     offline_assets_command,
     server_command,
 )
+from albummaker.gui.progress import RunProgress
 from albummaker.gui.settings import (
     SettingsError,
     default_settings,
@@ -587,6 +588,66 @@ class MainWindowTests(unittest.TestCase):
                                                            (QComboBox, QAbstractSpinBox)):
                     missing.append(f"QLineEdit {widget.placeholderText()}")
         self.assertEqual(missing, [])
+
+
+
+class RunProgressTests(unittest.TestCase):
+    """The progress pop-up reads the task's output lines and says what is going on."""
+
+    def test_a_server_starting_says_so_before_any_line_arrives(self):
+        progress = RunProgress("server")
+        self.assertEqual(progress.heading, "Preparing your trips\u2026")
+        self.assertIsNone(progress.fraction)                    # "busy", not a made-up percentage
+        self.assertIn("keep AlbumMaker open", progress.hint)
+
+    def test_a_server_names_the_trip_it_is_reading(self):
+        progress = RunProgress("server")
+        self.assertTrue(progress.feed("=== Trip 2 of 3: C:\\Photos\\Italy 2026  ->  /italy-2026/ ==="))
+        self.assertIn("Trip 2 of 3: Italy 2026", progress.detail)
+        progress.feed("Indexing C:\\Photos\\Italy 2026 ...")
+        self.assertIn("Reading the photos and videos in Italy 2026", progress.detail)
+        progress.feed("Found 120 media files (0 without a usable capture date, filed under Unsorted; 3 with GPS location).")
+        self.assertIn("Found 120 photos and videos", progress.detail)
+        progress.feed("Grouped into 6 day(s).")
+        self.assertIn("Making the pages", progress.detail)
+        self.assertAlmostEqual(progress.fraction, 1 / 3)        # two trips to go, one library of three
+
+    def test_a_single_trip_has_no_trip_x_of_y(self):
+        progress = RunProgress("server")
+        progress.feed("Indexing /photos/Norway ...")
+        self.assertEqual(progress.detail, "Reading the photos and videos in Norway\u2026")
+
+    def test_a_site_build_shows_how_far_it_is(self):
+        progress = RunProgress("build")
+        progress.feed("Processing 4 file(s) with 2 worker process(es)...")
+        self.assertEqual(progress.fraction, 0)
+        progress.feed("[1/4] image IMG_1.jpg")
+        progress.feed("[3/4] video MOV_2.mp4")
+        self.assertEqual(progress.fraction, 0.75)
+        self.assertEqual(progress.detail, "Preparing photo 3 of 4")
+
+    def test_the_bar_of_a_library_build_counts_across_all_trips(self):
+        progress = RunProgress("build")
+        progress.feed("=== Trip 2 of 4: /photos/b  ->  /out/b ===")
+        progress.feed("Processing 10 file(s) with 2 worker process(es)...")
+        progress.feed("[5/10] image x.jpg")
+        self.assertAlmostEqual(progress.fraction, (1 + 0.5) / 4)
+
+    def test_unrelated_lines_change_nothing(self):
+        progress = RunProgress("server")
+        self.assertFalse(progress.feed("Maps and fonts load from the internet."))
+        self.assertFalse(progress.feed(""))
+        self.assertEqual(progress.detail, "Starting the server\u2026")
+
+    def test_nothing_to_do_is_said_in_words(self):
+        progress = RunProgress("build")
+        progress.feed("Nothing to (re)generate.")
+        self.assertIn("already up to date", progress.detail)
+
+    def test_the_offline_download_explains_itself(self):
+        progress = RunProgress("offline assets")
+        self.assertIn("only needed once", progress.detail)
+        self.assertIn("starts by itself", progress.hint)
 
 
 if __name__ == "__main__":

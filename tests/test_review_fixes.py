@@ -29,7 +29,7 @@ sys.path.insert(0, str(ROOT))
 
 from PIL import Image  # noqa: E402
 
-from albummaker import build, content, imaging, scan, server, util  # noqa: E402
+from albummaker import build, content, imaging, render, scan, server, util  # noqa: E402
 
 HAS_FFMPEG = shutil.which("ffmpeg") is not None
 
@@ -578,9 +578,10 @@ class LiveServerTests(TempDirTest):
 
     def test_assets_are_versioned_and_cacheable(self):
         self.start()
+        version = render.get_template().asset_version       # (of the default template: its own CSS and JS)
         r, html = self.request("GET", "/")
-        self.assertIn(f"/assets/script.js?v={server.ASSET_VERSION}".encode(), html)
-        r, _ = self.request("GET", f"/assets/script.js?v={server.ASSET_VERSION}")
+        self.assertIn(f"/assets/script.js?v={version}".encode(), html)
+        r, _ = self.request("GET", f"/assets/script.js?v={version}")
         self.assertEqual(r.getheader("Cache-Control"), server.CACHE_IMMUTABLE)
         r, _ = self.request("GET", "/assets/script.js")
         self.assertEqual(r.getheader("Cache-Control"), server.CACHE_REVALIDATE)

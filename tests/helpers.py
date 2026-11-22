@@ -223,10 +223,21 @@ def free_port() -> int:
         return s.getsockname()[1]
 
 
+def pin_classic(args, default_template: bool = False) -> list:
+    """`args` with --template classic added, unless a template is named or `default_template`
+    asks for the program's own default. Most tests check the shared behaviour through the
+    classic pages' markup; the tests of the templates themselves (test_templates.py) say
+    which template they mean, or ask for the default."""
+    args = [str(a) for a in args]
+    if default_template or "--template" in args:
+        return args
+    return args + ["--template", "classic"]
+
+
 def run_script(app: Path, name: str, *args, cwd: Path | None = None,
-               timeout: int = 180) -> subprocess.CompletedProcess:
+               timeout: int = 180, default_template: bool = False) -> subprocess.CompletedProcess:
     """Run one of the scripts as a user would, from a copy in `app`."""
-    return subprocess.run([sys.executable, str(Path(app) / name), *map(str, args)],
+    return subprocess.run([sys.executable, str(Path(app) / name), *pin_classic(args, default_template)],
                           cwd=str(cwd or app), capture_output=True, text=True, timeout=timeout,
                           env=local_env(Path(app) / ".albummaker-data"))
 
@@ -240,12 +251,14 @@ class AlbumMaker:
         server.stop()
     """
 
-    def __init__(self, app: Path, photos: Path, work: Path, *extra, content="content.json"):
+    def __init__(self, app: Path, photos: Path, work: Path, *extra, content="content.json",
+                 default_template: bool = False):
         self.app, self.work = Path(app), Path(work)
+        self.default_template = default_template      # False: run with --template classic (see pin_classic)
         self.photos = None if photos is None else Path(photos)
         self.port = free_port()
         self.content = self.work / content
-        self.extra = [str(e) for e in extra]
+        self.extra = pin_classic(extra, default_template)
         self.log_path = self.work / f"server-{self.port}.log"
         self.proc = None
 
