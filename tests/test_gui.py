@@ -93,12 +93,12 @@ class GuiSettingsTests(unittest.TestCase):
             self.assertEqual(loaded["build"]["thumb_size"], 400)
             self.assertEqual(loaded["server"]["large_thumb_size"], 2400)
             self.assertTrue(loaded["advanced"]["tile_cache"])
-            self.assertEqual(loaded["appearance"]["theme"], "light")
+            self.assertEqual(loaded["appearance"]["theme"], "dark")
             self.assertEqual(loaded["library"]["title"], "Family Holidays")
 
-            settings["appearance"]["theme"] = "dark"
+            settings["appearance"]["theme"] = "light"
             save_settings(settings, path)
-            self.assertEqual(load_settings(path)["appearance"]["theme"], "dark")
+            self.assertEqual(load_settings(path)["appearance"]["theme"], "light")
 
     def test_theme_values_are_validated(self):
         with tempfile.TemporaryDirectory() as tmp:

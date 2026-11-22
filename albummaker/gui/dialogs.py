@@ -44,6 +44,22 @@ def _bring_to_front(window: QWidget) -> None:
     QApplication.alert(window, 0)
 
 
+def _fit_to_content(dialog: QDialog) -> None:
+    """Resize a dialog so word-wrapped labels are never cut off.
+
+    adjustSize() alone often misses the extra height that wrapped text needs, so the
+    height is worked out from the layout for the dialog's actual width. The dialog can
+    grow but never shrinks, so it does not jump around while the text changes."""
+    layout = dialog.layout()
+    if layout is None:
+        return
+    layout.activate()
+    width = max(dialog.width(), dialog.minimumWidth(), layout.minimumSize().width())
+    needed = max(layout.totalHeightForWidth(width), layout.totalMinimumSize().height(),
+                 dialog.sizeHint().height())
+    dialog.resize(width, max(dialog.height(), needed))
+
+
 class PreparingDialog(QDialog):
     """'Please wait: your trips are being prepared', with a progress bar and a Stop button.
     It cannot be closed with the window's close button or Esc; Stop (or the task ending) is
@@ -112,6 +128,7 @@ class PreparingDialog(QDialog):
         self._clock.start()
         self.show()
         self.adjustSize()
+        _fit_to_content(self)
         _bring_to_front(self)
 
     def update_progress(self, progress: RunProgress) -> None:
@@ -122,6 +139,8 @@ class PreparingDialog(QDialog):
         else:
             self.bar.setRange(0, 1000)
             self.bar.setValue(int(max(0.0, min(1.0, progress.fraction)) * 1000))
+        if self.isVisible():
+            _fit_to_content(self)       # the text may now need more lines
 
     def stopping(self) -> None:
         self.heading.setText("Stopping\u2026")
@@ -182,4 +201,5 @@ class ResultDialog(QDialog):
     def present(self) -> None:
         self.show()
         self.adjustSize()
+        _fit_to_content(self)
         _bring_to_front(self)

@@ -1507,7 +1507,7 @@ class MainWindow(QMainWindow):
     def _apply_theme(self, *_args) -> None:
         if not hasattr(self, "theme_combo"):
             return
-        theme = self.theme_combo.currentData() or "light"
+        theme = self.theme_combo.currentData() or "dark"
         application = QApplication.instance()
         if application is not None:
             if not hasattr(self, "_default_palette"):

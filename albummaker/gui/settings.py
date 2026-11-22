@@ -27,7 +27,7 @@ def default_settings() -> dict:
         "version": SETTINGS_VERSION,
         "trips": [],
         "output_dir": str(Path.home() / "AlbumMakerSites"),
-        "appearance": {"theme": "light"},
+        "appearance": {"theme": "dark"},
         "library": {"title": "Trips", "template": DEFAULT_TEMPLATE},
         "server": {
             "port": 8000,
