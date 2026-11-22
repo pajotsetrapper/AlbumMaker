@@ -1,16 +1,13 @@
 # Fixes
     - FIXME: Docs: update the site: Explore the live sample trip and Try the demo bottons link to classic view. This may make people think it is the only one, so update that so that prospects can easily find the different demo sites with the existing templates
 
+    - FIXME: Gui, when starting the live-server, the text does not fit the progress window
+
 # Best value first
 
-- Make Cinema template the default one
-- 
-
-0. Update the gui: Make it clear to the end uset that the server is preparing the sites & make it more clear when done (in your face pop-up?)
+0. Allow the browser to read the descriptions out loud, default language is the browser language, but let the user select the language from a selector in the website and persist that in the trip's json (and would be even better if language could be detected).
 
 0. Print or PDF “photo book” view. A print stylesheet for scrapbook and journal that produces clean pages (one day per page, with map and story). People often want a physical or PDF keepsake, and the scrapbook look suits it. Check what online print services offer as options & tailor it to that. You probably want to support different sizes. The photo book needs to have a nice trip cover & back. Chapters per day, with the descriptions and contai, the pictures that have been favourited.
-
-1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.
 
 2. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
 

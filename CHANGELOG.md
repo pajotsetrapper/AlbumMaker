@@ -1,154 +1,51 @@
 # Changelog
 
-All notable changes to AlbumMaker are listed here. The release workflow uses
-the section for a version as that GitHub Release's notes.
+All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
 
-## [3.1.1] - TBD
-- Fix Cinema skin: replay day animation on every visit, remove empty gap on library page:
-The three templates capped their content at fixed widths (1360px, 1240px, 1300px; 980px on Cinema day pages), leaving large empty margins on wide screens. The caps are now fluid, up to 94% of the viewport with an upper limit, and the stats card, cover photo, day-page columns and Cinema map scale with them. Text keeps its readable line length. Layouts below the old widths are unchanged.
-- Use more of the window width in the Journal, Scrapbook and Cinema templates: 
-The three templates capped their content at fixed widths (1360px, 1240px, 1300px; 980px on Cinema day pages), leaving large empty margins on wide screens. The caps are now fluid, up to 94% of the viewport with an upper limit, and the stats card, cover photo, day-page columns and Cinema map scale with them. Text keeps its readable line length. Layouts below the old widths are unchanged.
-- Add a thumbnail size control (S/M/L/XL) to the Journal and Scrapbook day pages:
-Visitors can now choose the thumbnail size on a day page, as in the classic view. The control reuses the classic size logic (initSizeControls, remembered in the same tripThumbSize storage key). Journal keeps its collage at M and uses even grids for S, L and XL; Scrapbook scales its polaroids, tape and captions. Adds tests and a README note. Also restores consistent CRLF line endings on one line of cinema.css.
-- Cut GPX tracks at long jumps instead of drawing a straight line across the map: When two consecutive track points are far apart (at least 1.5 km and either faster than 1000 km/h or 25 times longer than the hops around them, e.g. a GPS fix that went astray, or a signal lost and found again far away), the recording is split there and the parts are used as separate recordings. The maps no longer draw a line across the jump, and a photo without a location is never placed on it (it takes the nearest end of a part, or none). A lone stray point is dropped. Normal fast or sparse recordings (a car logged once a minute, a flight) are not cut, because the hops are compared with their neighbours. The build says how many jumps it cut. Adds tests.
-- No more lines across the world on the maps: The library map drew each trip as one line through all its points, and the overview and day maps of every template joined photo positions and days the same way, so a trip with a flight showed a long straight line from Europe to Asia and back. A new splitLongHops helper (script.js) now splits every such line where two neighbouring points are more than 100 km apart, and each part is drawn on its own. GPX tracks are still cut where they jump (see above). Adds tests.
-- Add an optional Ken Burns effect to the slideshow: A new "Ken Burns" button (or the K key) in the viewer lets visitors switch a slow pan and zoom on each photo on or off. It is off by default and remembered in the browser (tripKenBurns). While the slideshow plays, each photo fades in and drifts slowly (a scale of 1.0 to 1.1 and a few percent of pan, a different gentle move per photo), lasting as long as the photo stays, also when the speed is changed. Pausing holds the photo where it is, zooming in by hand stops it, videos are never animated, and with prefers-reduced-motion the button is hidden and nothing moves. A CSS animation, so no extra files; it works in all four templates. Adds tests.
-- Add a frame size control (S/M/L/XL) to the Cinema day pages: Visitors can now choose the thumbnail size on a Cinema day page. It reuses the classic size logic (initSizeControls, remembered in the same tripThumbSize key) but keeps the Cinema look: the justified rows and each photo's own shape stay, and only the row height changes (a CSS variable). S is a tight contact sheet without captions, L has bigger frames, XL shows about one large frame per row with soft shadows and always-on, subtitle-style captions. On phones XL is one frame per row. Adds a test and a README note.
-- Add a card size control (S/M/L/XL) to the Journal, Scrapbook and Cinema library pages: Visitors can now choose how large the trip cards are on the library page, as in the classic library. The control reuses the classic size logic and its tripLibrarySize storage key, and each template scales its own cards (Journal cards, Scrapbook polaroids, Cinema poster s)
+## [3.2.0] - TBD 
 
+### Added
+- **Social link previews:** Added shared Open Graph and Twitter card metadata (`templates/social_meta.html`) for trip and day pages, including 1200 px cover preview thumbnails and live-server URL generation from `Host` and `X-Forwarded-Proto` headers[cite: 1].
+- **GUI progress, completion, and error modals:** Added a blocking "Please wait" progress modal (with progress bar, current step, elapsed timer, keep-open note, and `Cancel` option) during server startup and static builds, followed by completion dialogs ("Your trips are ready!" / "Your site is ready!") or a red error dialog with a "Show activity" action on failure[cite: 1].
+- **Taskbar/Dock attention alerts:** Flashed the taskbar or Dock icon when background server startup or build tasks complete or fail while the window is unfocused[cite: 1].
+- **Optional Ken Burns slideshow effect:** Added a toggle button and `K` shortcut in the viewer (`tripKenBurns`) with subtle scale and pan animations across templates, pausing on pause, stopping on manual zoom, skipping videos, and respecting `prefers-reduced-motion`[cite: 1].
+- **Thumbnail and card size controls:** Added `S`/`M`/`L`/`XL` thumbnail size controls to Journal, Scrapbook, and Cinema day pages (reusing `tripThumbSize`), as well as `S`/`M`/`L`/`XL` card size controls to Journal, Scrapbook, and Cinema library pages (reusing `tripLibrarySize`)[cite: 1].
+- **Long-hop line splitting:** Added `splitLongHops` in `script.js` to split route and map lines between distant points instead of drawing straight lines across continents[cite: 1].
+
+### Changed
+- **Default template set to `cinema`:** Updated default template configuration and fallbacks to `cinema` for new installations while preserving existing `classic` library and GUI settings[cite: 1].
+- **Long-hop threshold lowered:** Lowered the distance threshold for long hops from 1000 km to 250 km[cite: 1].
+- **Fluid template widths and Cinema polish:** Expanded container widths up to 94% of the viewport with upper caps in Journal, Scrapbook, and Cinema, replayed Cinema day entrance animations on revisit, fixed library intro visibility/height, and redesigned Journal `L` and `S` layouts and favourites-only grid behavior[cite: 1].
+- **GUI controls and demo site:** Updated run button labels (`Cancel` while preparing, `Stop server` when ready), status copy, help text, tests, `README`, and demo outputs[cite: 1].
+
+### Fixed
+- **Asset cache versioning:** Fixed `render.py` cache version calculation when using non-`classic` default templates so updated `cinema` CSS and JS assets refresh properly in browsers[cite: 1].
+- **GPX jump splitting:** Split GPX recordings at stray jumps or signal gaps (hops of at least 1.5 km exceeding 1000 km/h or 25x surrounding hops), dropping isolated stray points, preventing unlocated photos from being placed on jumps, and reporting cut jumps during builds[cite: 1].
 
 ## [3.1.0] - 2026-11-20
 
-Choose the look of your trip site. AlbumMaker now comes with four templates, and
-the live server can switch between them from the library page.
-
 ### Added
-
-- **Site templates.** `--template NAME` on `generate_site.py` and
-  `album_server.py`, and a *Site template* setting in the desktop app, choose the
-  look of the pages. All templates show the same content and keep the
-  full-screen viewer, maps and in-page editing. `classic` is the default and its
-  output is unchanged.
-- **`journal` template:** a light travel-journal look with a full-width cover
-  photo, a floating statistics card, a timeline of numbered steps with photo
-  collages beside a map that follows your scrolling, day pages with a photo grid,
-  and a matching all-trips page.
-- **`scrapbook` template:** warm paper pages with taped polaroid photos,
-  rubber-stamp statistics, a push-pin map with a dashed route, and lined notebook
-  paper for each day's story.
-- **`cinema` template:** dark, full-screen scenes per day with a film strip of
-  photos, a mini-map that follows the scrolling, a rows-of-photos gallery and a
-  glowing amber route.
-- **Template picker on the library page.** With `--library`, the owner can switch
-  the whole live site to another template from a menu on the library page. The
-  choice is saved in `library_settings.json` next to the list file and used on the
-  next start; an explicit `--template` still wins. New `POST /api/library-template`.
-  The desktop app no longer passes `--template` to the live server.
-- **Sample trip in every template** on the product page (`docs/demo-journal`,
-  `docs/demo-scrapbook`, `docs/demo-cinema`), built by `tools/build_demo.py`.
-  `tools/build_screenshots.py` takes the template screenshots.
+- **Site template system and additional templates:** Added `albummaker/site_templates.py`, `--template` CLI support, library-level template selection, per-trip template selection/persistence, and the `journal`, `scrapbook`, and `cinema` templates alongside `classic`[cite: 1].
+- **Bundled offline assets in desktop builds:** Downloaded Leaflet and fonts at build time (verified with SHA-512), recorded third-party notices, and copied assets into the offline-assets folder on first start[cite: 1].
+- **Support and sponsorship links:** Added a Support window in the desktop app, GitHub Sponsors configuration, and support sections in the docs and product page[cite: 1].
 
 ### Changed
-
-- **Product page:** a new "One trip. Four looks." section with screenshots and a
-  live sample of each template. It now lists Linux among the downloads and says
-  that a static site contains your untouched original files, including their
-  embedded metadata such as GPS positions.
-- **README:** documents the templates, the full command-line flags, the library
-  list-file format, `python -m albummaker`, the `trip_content.json` structure, the
-  supported file types and the maintainer tools. Dead links and references to
-  sections that no longer exist were fixed, and the static-export privacy note
-  was corrected.
-- The desktop app's Help now explains the *Site template* setting.
-
-### Fixed
-
-- The hero screenshot on the product page was cropped to a single word on desktop
-  screens, and the "Get it" cards caused sideways scrolling on phones.
-
+- **Offline asset download resilience:** Downloaded packages in chunks with periodic progress output, per-step and per-attempt timeouts, and retries[cite: 1].
+- **Documentation and demo trip:** Added the Lake Lucerne demo trip and GPX track, updated `README` and product page documentation, and aligned help tests with UI labels[cite: 1].
 
 ## [3.0.0] - 2026-11-11
 
-The first public release with ready-to-run desktop apps for Windows, macOS
-(Apple silicon and Intel) and Linux.
+### Added
+- **Trip libraries (`--library`):** Added multi-trip library support for static site generation (cards newest first, library map, per-trip fallback on error) and live serving under `/<name>/` with a library root `/`[cite: 1].
+- **GPX track import and offline place names:** Added streaming GPX track matching and route/distance rendering (with DTD rejection), plus bundled offline place names (`--no-gpx`, `--no-places`)[cite: 1].
+- **In-page editing and deep links:** Added in-page editing for captions, favorites, hiding, covers, and day text saved to `trip_content.json`, along with photo deep links, Back support, slideshow autoplay, and date sanity checks[cite: 1].
+- **Offline assets, `tripsite` package, and zipapp:** Split shared logic into `tripsite/`, added `tools/build_zipapp.py`, added local Leaflet/fonts and map tile caching with outline fallback, and added `--large-thumb-size`[cite: 1].
+- **Desktop GUI and FFmpeg setup:** Added the desktop GUI with per-trip searchable IANA time zones, configurable library overview title, and `albummaker install-ffmpeg` / GUI FFmpeg installation helpers[cite: 1].
+- **Multi-platform packaging and release workflow:** Added native builds and release workflows for Windows, macOS, and Linux, plus fallback image formats (HEIC, TIFF, MPO) and keyboard day navigation[cite: 1].
 
-### Downloads
-
-Pick the file for your computer below, unpack it and open AlbumMaker. The
-apps are not code-signed: the first time, macOS asks you to allow it in
-**System Settings → Privacy & Security → Open Anyway**, and Windows shows
-"Windows protected your PC" (choose **More info → Run anyway**). See
-[Download a standalone app](https://github.com/pajotsetrapper/AlbumMaker#download-a-standalone-app)
-for the details. `SHA256SUMS.txt` lists each file's checksum.
-
-### Support AlbumMaker ♥
-
-AlbumMaker is free for personal and other noncommercial use. If you enjoy it,
-you can support its development on
-[Ko-fi](https://ko-fi.com/pietercoppens) or
-[GitHub Sponsors](https://github.com/sponsors/pajotsetrapper). Thank you!
-
-### What AlbumMaker does
-
-- Turns a folder of trip photos and videos into a website: one chapter per
-  day, a route map per day, an overview map, and a full-screen slideshow
-  with keyboard shortcuts, autoplay, zoom and Live Photo playback.
-- Works as a static site you can copy anywhere, or as a live local server
-  where you edit titles, descriptions, captions, favorites, hidden photos
-  and day and trip covers right in the page.
-- Gathers several trips, wherever their folders are, on one all-trips page.
-- Names the places you visited offline, uses GPS tracks (`.gpx`) to place
-  camera photos and draw your route, and works without internet once the
-  map library and fonts are downloaded.
-- Desktop app to manage the trip list, run the live server and build static
-  sites, with in-app help for every control.
-
-### Changed in this release
-
-- **License:** AlbumMaker is now under the PolyForm Noncommercial License
-  1.0.0: free for personal and other noncommercial use. Versions published
-  earlier under the MIT License stay MIT for those who received them.
-- **FFmpeg is no longer bundled.** The app offers to install it with your
-  system's package manager (winget or Homebrew), or you can install it
-  yourself; `python -m albummaker install-ffmpeg` does the same from a
-  terminal. Photos work without it.
-- HEIC photos are read with the decode-only `pi-heif` in the downloadable
-  apps.
-- The downloads include the full third-party license notices next to the
-  app, and the app's Help window states the license.
-- The Install FFmpeg button disappears once FFmpeg is found, and the window
-  grows to show the Activity panel when it opens.
-- A new sample trip, "A Weekend at Lake Lucerne", on the product page: day
-  stories, captions and favorites, and a GPS track that places the photos
-  and draws both days' routes. It is rebuilt from `docs/demo-source` with
-  `tools/build_demo.py`.
-- New **♥ Support** button in the desktop app, a support section on the
-  product page and in the README, and a Sponsor button on the repository,
-  all with the Ko-fi and GitHub Sponsors links. The app never asks by itself.
-- A damaged settings file no longer stops the desktop app from starting: it
-  is set aside and the app starts with default settings.
-- The unfinished alternative page templates (`"template"` in
-  `trip_content.json`) were removed; the key is ignored if present.
+### Changed
+- **License and FFmpeg bundling:** Switched to PolyForm Noncommercial 1.0.0, replaced `pillow-heif` with `pi-heif` (while still accepting `pillow-heif` if installed), and stopped bundling FFmpeg inside executables[cite: 1].
+- **Renamed project to AlbumMaker:** Migrated package, launchers, per-user storage paths, and documentation from TripServer to AlbumMaker[cite: 1].
 
 ### Fixed
-
-- A day or trip cover could pick a different photo with the same file name
-  in another subfolder.
-- The all-trips page showed no cover for a trip whose chosen cover photo was
-  hidden or removed.
-- Rebuilding a static site without HEIC support no longer deletes the HEIC
-  photos it built before.
-- Videos whose details could not be read (FFmpeg missing or too slow) are
-  read again on the next run instead of staying undated.
-- 16-bit grayscale TIFF and PNG images no longer come out white.
-- Saving a day's title in the page no longer overwrites a description that
-  was changed in the file in the meantime.
-- Trip titles on the all-trips map are shown as text, never as HTML.
-- On Linux, the downloaded app no longer passes its own libraries to the
-  system's FFmpeg.
-- The desktop apps now include the map library and fonts, so the live
-  server needs no download on its first start.
-- Downloading the map library and fonts (when running from source, or with
-  Refresh offline assets) no longer hangs on a slow or stalling connection: it shows
-  progress, gives up on a stalled try after a time limit and tries again,
-  up to three times.
+- **Build, server, and viewer hardening:** Fixed duplicate/hidden photo and Live Photo clip handling, atomic file writes, byte-capped memory caches, concurrent render limits, editor authentication/cookie handling, optimistic edit conflict checks (`409`), trip cover matching, and path normalization across platforms[cite: 1].
