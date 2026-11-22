@@ -346,7 +346,7 @@ function tileAttribution(){
 // before the plane left) the line would cut across the map, so it is split there instead: this
 // gives the lines to draw, each of at least two points. (A GPX track is already cut at its jumps
 // when the site is built; see albummaker/gpx.py.)
-const LONG_HOP_KM = 1000;
+const LONG_HOP_KM = 250;
 
 function hopKm(a, b){
   const rad = Math.PI / 180;
