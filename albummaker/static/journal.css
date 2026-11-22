@@ -125,7 +125,7 @@ body.tpl-journal h1, body.tpl-journal h2{font-family:var(--jr-font);}
 .jr-text p{margin:0 0 1.15em;}
 .jr-text p:last-child{margin-bottom:0;}
 .jr-text.empty{color:var(--jr-muted); font-style:italic;}
-.jr-grid-head{display:flex; align-items:center; justify-content:space-between; gap:1rem; margin:.4rem 0 .8rem;}
+.jr-grid-head{display:flex; flex-wrap:wrap; align-items:center; justify-content:space-between; gap:.6rem 1rem; margin:.4rem 0 .8rem;}
 .jr-grid-head h2{margin:0; font-size:1.35rem; font-weight:800; letter-spacing:-.02em;}
 
 .jr-photos{display:grid; grid-template-columns:repeat(6,minmax(0,1fr)); gap:8px;}
@@ -158,6 +158,24 @@ body.tpl-journal h1, body.tpl-journal h2{font-family:var(--jr-font);}
 .jr-pager-txt small{font-size:.72rem; font-weight:700; letter-spacing:.03em; color:var(--jr-muted);}
 .jr-pager-txt b{font-size:1rem; font-weight:800; letter-spacing:-.01em; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;}
 .jr-hint{text-align:center; font-size:.72rem; color:var(--jr-muted); opacity:.8;}
+
+/* thumbnail size (S / M / L / XL): M is the collage above, the other sizes are even grids */
+.jr-grid-tools{display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.5rem 1rem;}
+.jr-grid-tools .fav-filter{margin-right:0;}
+.jr-size-label{font-size:.72rem; font-weight:700; letter-spacing:.08em; text-transform:uppercase; color:var(--jr-muted);}
+body.tpl-journal .size-toggle{display:flex; overflow:hidden; border:1px solid var(--jr-line); border-radius:999px; background:#fff;}
+body.tpl-journal .size-btn{padding:.32rem .8rem; border:none; border-left:1px solid var(--jr-line); background:none; color:var(--jr-text-2); opacity:1;
+  font:700 .78rem var(--jr-font); cursor:pointer;}
+body.tpl-journal .size-btn:first-child{border-left:none;}
+body.tpl-journal .size-btn:hover{background:var(--jr-bg-soft); color:var(--jr-text);}
+body.tpl-journal .size-btn.active{background:var(--jr-accent); color:#fff;}
+.jr-photos.size-small{grid-template-columns:repeat(auto-fill,minmax(clamp(96px,8vw,150px),1fr)); gap:6px;}
+.jr-photos.size-large{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(240px,20vw,400px)),1fr));}
+.jr-photos.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(340px,34vw,640px)),1fr));}
+.jr-photos.size-small .thumb:nth-child(n), .jr-photos.size-large .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){grid-column:auto; aspect-ratio:1/1;}
+.jr-photos.size-large .thumb:nth-child(n), .jr-photos.size-xl .thumb:nth-child(n){aspect-ratio:4/3;}
+.jr-photos.size-small .thumb:nth-child(n){border-radius:10px;}
+@media (max-width:640px){ .jr-size-label{display:none;} }
 
 /* ---------- the library page ---------- */
 .jr-library-head{max-width:var(--jr-max); margin:0 auto; padding:clamp(2.2rem,7vw,4.5rem) var(--jr-pad) .4rem;}

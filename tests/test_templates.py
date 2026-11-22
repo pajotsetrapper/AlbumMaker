@@ -10,7 +10,7 @@ from contextlib import redirect_stderr, redirect_stdout
 from pathlib import Path
 from types import SimpleNamespace
 
-from tests.helpers import AlbumMaker, TempDirMixin, install_app, make_jpeg, standard_trip, write_json
+from tests.helpers import AlbumMaker, TempDirMixin, install_app, make_jpeg, size_toggle, standard_trip, write_json
 
 from albummaker import render, site_templates
 from albummaker.build import build_parser, main as build_main
@@ -99,6 +99,14 @@ class StaticSiteTests(TempDirMixin, unittest.TestCase):
         self.assertNotIn("Edit title", day)            # a static site has no editor
         self.assertTrue((self.tmp / "journal" / "assets" / "style.css").read_text().count(".jr-hero"))
 
+    def test_journal_day_pages_have_the_thumbnail_size_control(self):
+        day = self.page("journal", "days/2026-05-01.html")
+        self.assertEqual(size_toggle(day, "thumb-grid"), ("tripThumbSize", [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]))
+        self.assertIn("initSizeControls();", day)
+        css = self.page("journal", "assets/style.css")
+        for size in ("small", "large", "xl"):
+            self.assertIn(f".jr-photos.size-{size}", css)
+
     def test_both_templates_share_the_same_media(self):
         a = sorted(p.name for p in (self.tmp / "classic" / "thumbs").iterdir())
         b = sorted(p.name for p in (self.tmp / "journal" / "thumbs").iterdir())
@@ -118,6 +126,11 @@ class ScrapbookTests(TempDirMixin, unittest.TestCase):
         for part in ('id="slideshow"', 'id="thumb-grid"', 'data-slide-index="0"', "sb-polaroid", "initSlideshow("):
             self.assertIn(part, day)
         self.assertIn(".sb-polaroid", (tmp / "site" / "assets" / "style.css").read_text(encoding="utf-8"))
+        self.assertEqual(size_toggle(day, "thumb-grid"), ("tripThumbSize", [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]))
+        self.assertIn("initSizeControls();", day)
+        css = (tmp / "site" / "assets" / "style.css").read_text(encoding="utf-8")
+        for size in ("small", "large", "xl"):
+            self.assertIn(f".sb-photos.size-{size}", css)
         listing = tmp / "trips.txt"
         listing.write_text(f"{photos} | trip\n", encoding="utf-8")
         build("--library", str(listing), "-o", str(tmp / "lib"), "--template", "scrapbook")
