@@ -201,10 +201,11 @@ function initLibraryMap(elId, trips){
     trip.points.forEach(p => all.push(p));
     const go = () => navigateTo(trip.href);
     const label = trip.title + ' \u2014 ' + trip.dates;
-    if(trip.points.length > 1){
-      L.polyline(trip.points, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
+    // one line per stretch of the trip: no line across the world to the next continent
+    splitLongHops(trip.points).forEach(line => {
+      L.polyline(line, {color: trip.color, weight: 3, opacity: 0.8}).addTo(map)
         .bindTooltip(textNode(label), {sticky: true}).on('click', go);
-    }
+    });
     L.circleMarker(trip.points[0], {radius: 6, color: trip.color, fillColor: trip.color, fillOpacity: 1, weight: 1})
       .addTo(map).bindTooltip(textNode(label)).on('click', go);
   });
@@ -339,6 +340,36 @@ function tileAttribution(){
   return (typeof custom === 'string' && custom) ? escapeHtml(custom) : OSM_ATTRIBUTION;
 }
 
+// ---------- lines that don't cross the world ----------
+// A line through photo positions (or one point per day, or a whole trip) is straight between two
+// neighbours. When those are on different continents (a flight, or a photo taken at the airport
+// before the plane left) the line would cut across the map, so it is split there instead: this
+// gives the lines to draw, each of at least two points. (A GPX track is already cut at its jumps
+// when the site is built; see albummaker/gpx.py.)
+const LONG_HOP_KM = 250;
+
+function hopKm(a, b){
+  const rad = Math.PI / 180;
+  const h = Math.pow(Math.sin((b[0] - a[0]) * rad / 2), 2) +
+            Math.cos(a[0] * rad) * Math.cos(b[0] * rad) * Math.pow(Math.sin((b[1] - a[1]) * rad / 2), 2);
+  return 2 * 6371 * Math.asin(Math.min(1, Math.sqrt(h)));
+}
+
+function splitLongHops(points, maxKm){
+  const limit = maxKm || LONG_HOP_KM;
+  const lines = [];
+  let current = [];
+  (points || []).forEach(p => {
+    if(current.length && hopKm(current[current.length - 1], p) > limit){
+      if(current.length > 1) lines.push(current);
+      current = [];
+    }
+    current.push(p);
+  });
+  if(current.length > 1) lines.push(current);
+  return lines;
+}
+
 function addBaseMap(map, options){
   const pane = map.createPane('outline');
   pane.style.zIndex = 150;   // under the tiles (200), which hide it wherever they load
@@ -431,6 +462,7 @@ let playMs = 5000;
 let liveActive = false;   // a Live Photo clip is playing in place of the photo
 let ignoreNextPop = false;
 const PLAY_SPEEDS = [3000, 5000, 8000, 12000];
+let kenBurns = false;     // slow pan and zoom on each photo while the slideshow plays (the visitor's choice)
 
 const INFO_LABELS = {
   filename: 'File', dimensions: 'Dimensions', filesize: 'File size',
@@ -487,6 +519,7 @@ function applyZoomTransform(){
   // apply scale alone first so we can measure the actual on-screen size at
   // this zoom level, then clamp the pan so the image can't be dragged
   // further than its own edge reaching the edge of the viewport
+  if(ZOOM.scale > 1.01) clearKenBurns();   // zooming by hand takes over from the animation
   img.style.transform = `scale(${ZOOM.scale})`;
   const imgRect = img.getBoundingClientRect();
   const stageRect = stage.getBoundingClientRect();
@@ -576,6 +609,7 @@ function closeSlideshow(fromHistory){
   if(!overlay.classList.contains('open')) return;
   stopPlaying();
   overlay.classList.remove('open');
+  clearKenBurns();
   document.getElementById('slideshow-media').innerHTML = '';
   shownSlide = -1;
   document.body.style.overflow = '';
@@ -591,6 +625,83 @@ function closeSlideshow(fromHistory){
       try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
     }
   }
+}
+
+// ---------- Ken Burns: a slow pan and zoom on each photo while the slideshow plays ----------
+// Off unless the visitor switches it on (button or K), and remembered in the browser. It is a CSS
+// animation on the photo (see .kb in style.css) as long as one photo is shown, so it ends as the
+// slideshow moves on. It only runs while playing, on photos (not videos), never while zoomed in by
+// hand, and never for people who asked their system for less motion. Every photo gets one of a few
+// gentle moves (a scale of 1.0 to 1.1 and a drift of a few percent), in turn, so it keeps varying.
+const KB_MOVES = [          // [x, y, scale] at the start and at the end; x and y in % of the photo
+  [[0, 0, 1],      [-2.5, -2, 1.1]],
+  [[2, 1.5, 1.1],  [0, 0, 1]],
+  [[-2, 2, 1],     [2.5, -1.5, 1.1]],
+  [[0, -2.5, 1.1], [0, 2, 1.03]],
+  [[2.5, 0, 1.03], [-2.5, 0, 1.1]],
+  [[0, 0, 1.1],    [1.5, 2, 1]],
+];
+
+function kenBurnsAllowed(){
+  return !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function loadKenBurns(){
+  try { return localStorage.getItem('tripKenBurns') === '1'; } catch(e){ return false; }
+}
+
+function syncKenBurnsButton(){
+  const btn = document.getElementById('slideshow-kb');
+  if(!btn) return;
+  btn.hidden = !kenBurnsAllowed();
+  btn.classList.toggle('on', kenBurns);
+  btn.setAttribute('aria-pressed', kenBurns ? 'true' : 'false');
+}
+
+function clearKenBurns(){
+  const media = document.getElementById('slideshow-media');
+  if(!media) return;
+  media.classList.remove('kb-on');
+  const img = media.querySelector('img');
+  if(img) img.classList.remove('kb', 'kb-paused');
+}
+
+// (Re)start the movement on the photo that is shown, or remove it where it doesn't belong.
+function applyKenBurns(){
+  clearKenBurns();
+  const item = SLIDES[currentSlide];
+  const media = document.getElementById('slideshow-media');
+  const img = media && media.querySelector('img');
+  if(!img || !item || item.type !== 'image') return;
+  if(!playing || !kenBurns || !kenBurnsAllowed() || ZOOM.scale > 1.01) return;
+  const [from, to] = KB_MOVES[((currentSlide % KB_MOVES.length) + KB_MOVES.length) % KB_MOVES.length];
+  img.style.setProperty('--kb-x0', from[0] + '%');
+  img.style.setProperty('--kb-y0', from[1] + '%');
+  img.style.setProperty('--kb-s0', from[2]);
+  img.style.setProperty('--kb-x1', to[0] + '%');
+  img.style.setProperty('--kb-y1', to[1] + '%');
+  img.style.setProperty('--kb-s1', to[2]);
+  img.style.setProperty('--kb-ms', (playMs + 800) + 'ms');     // still moving as it moves on
+  // begin once the photo is there, or the first seconds would play on an empty screen
+  const go = () => {
+    if(!img.isConnected || !playing || !kenBurns || ZOOM.scale > 1.01) return;
+    media.classList.add('kb-on');       // (the photo grows within its frame, not over the buttons)
+    img.classList.add('kb');
+  };
+  if(img.complete) go(); else img.addEventListener('load', go, {once: true});
+}
+
+// Pausing keeps the photo where it is instead of snapping back.
+function freezeKenBurns(){
+  const img = document.querySelector('#slideshow-media img.kb');
+  if(img) img.classList.add('kb-paused');
+}
+
+function toggleKenBurns(){
+  kenBurns = !kenBurns;
+  try { localStorage.setItem('tripKenBurns', kenBurns ? '1' : '0'); } catch(e){ /* private browsing, etc. */ }
+  syncKenBurnsButton();
+  applyKenBurns();
 }
 
 // ---------- autoplay ----------
@@ -656,6 +767,7 @@ function setPlaying(on){
     btn.classList.toggle('on', playing);
   }
   if(spd){ spd.hidden = !playing; spd.textContent = (playMs / 1000) + 's'; }
+  if(playing) applyKenBurns(); else freezeKenBurns();
   scheduleAdvance();
 }
 
@@ -671,6 +783,7 @@ function cycleSpeed(){
   playMs = PLAY_SPEEDS[(i + 1) % PLAY_SPEEDS.length];
   try { localStorage.setItem('tripSlideMs', String(playMs)); } catch(e){}
   document.getElementById('slideshow-speed').textContent = (playMs / 1000) + 's';
+  applyKenBurns();         // so the movement takes as long as the photo now stays
   scheduleAdvance();
 }
 
@@ -743,6 +856,7 @@ function renderSlide(){
     clearLoading();
   }
 
+  applyKenBurns();
   renderCaption();
   if(infoPanelOpen) renderInfoPanel();
   syncEditBar();
@@ -1063,6 +1177,10 @@ function initSlideshow(items, opts){
   initFavFilter();
   if(EDITABLE) initEditBar();
   playMs = loadPlayMs();
+  kenBurns = loadKenBurns();
+  syncKenBurnsButton();
+  const kbBtn = document.getElementById('slideshow-kb');
+  if(kbBtn) kbBtn.addEventListener('click', toggleKenBurns);
   document.getElementById('slideshow-close').addEventListener('click', () => closeSlideshow());
   document.getElementById('slideshow-play').addEventListener('click', togglePlaying);
   document.getElementById('slideshow-speed').addEventListener('click', cycleSpeed);
@@ -1094,6 +1212,7 @@ function initSlideshow(items, opts){
     else if(e.key.toLowerCase() === 'f') toggleFullscreen();
     else if(e.key.toLowerCase() === 'i') toggleInfoPanel();
     else if(e.key.toLowerCase() === 'l') playLive();
+    else if(e.key.toLowerCase() === 'k') toggleKenBurns();
     else if(e.key.toLowerCase() === 's' && EDITABLE) toggleFavorite();
     else if(e.key === '+' || e.key === '=') zoomBy(0.4);
     else if(e.key === '-' || e.key === '_') zoomBy(-0.4);
@@ -1248,13 +1367,13 @@ function initJournalOverviewMap(elId, days){
     const anchor = jrAnchor(day);
     const stretches = (day.track || []).filter(s => s.length > 1);
     stretches.forEach(s => { jrLine(map, s, accent, false); s.forEach(p => all.push(p)); });
-    if(!stretches.length && day.route.length > 1) jrLine(map, day.route, accent, false);
+    if(!stretches.length) splitLongHops(day.route).forEach(line => jrLine(map, line, accent, false));
     (day.route || []).forEach(p => all.push(p));
     if(anchor) joined.push(anchor);
   });
-  if(joined.length > 1){
-    L.polyline(joined, {color: '#7b899c', weight: 2, opacity: .9, dashArray: '2 8', lineCap: 'round', interactive: false}).addTo(map);
-  }
+  splitLongHops(joined).forEach(line => {      // (no line across the world between two days)
+    L.polyline(line, {color: '#7b899c', weight: 2, opacity: .9, dashArray: '2 8', lineCap: 'round', interactive: false}).addTo(map);
+  });
   days.forEach((day, i) => {
     const anchor = jrAnchor(day);
     if(!anchor) return;
@@ -1321,7 +1440,7 @@ function initJournalDayMap(elId, route, thumbs, slideIndices, track){
 
   const all = [];
   (track || []).filter(s => s.length > 1).forEach(s => { jrLine(map, s, accent, false); s.forEach(p => all.push(p)); });
-  if(!all.length && route.length > 1) jrLine(map, route, accent, true);
+  if(!all.length) splitLongHops(route).forEach(line => jrLine(map, line, accent, true));
 
   route.forEach((p, i) => {
     all.push(p);

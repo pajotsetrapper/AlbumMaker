@@ -164,6 +164,17 @@ img,video{max-width:100%; display:block;}
 .slideshow-media img, .slideshow-media video{max-width:100%; max-height:100%; object-fit:contain; border-radius:4px;}
 .slideshow-media img{transition:transform .15s ease-out; cursor:zoom-in;}
 .slideshow-media img.zoomed{cursor:grab; transition:none;}
+/* Ken Burns (see script.js): a slow pan and zoom while playing, fading in from black. The moves come in
+   as --kb-* variables; the frame clips what grows past it, and a paused slideshow holds the photo still. */
+.slideshow-media.kb-on{overflow:hidden;}
+.slideshow-media img.kb{transition:none; animation:kb-move var(--kb-ms,6s) linear both, kb-fade .7s ease-out both; will-change:transform;}
+.slideshow-media img.kb-paused{animation-play-state:paused;}
+@keyframes kb-move{
+  from{transform:translate(var(--kb-x0,0%), var(--kb-y0,0%)) scale(var(--kb-s0,1));}
+  to{transform:translate(var(--kb-x1,0%), var(--kb-y1,0%)) scale(var(--kb-s1,1.1));}
+}
+@keyframes kb-fade{from{opacity:0;} to{opacity:1;}}
+@media (prefers-reduced-motion:reduce){ .slideshow-media img.kb{animation:none;} }
 .slideshow-media img.zoomed:active{cursor:grabbing;}
 .slideshow-bar{display:flex; align-items:center; justify-content:space-between; padding:.9rem 1.4rem; font-family:var(--mono); font-size:.75rem; color:var(--cream); opacity:.85;}
 .slideshow-hint{opacity:.6;}
