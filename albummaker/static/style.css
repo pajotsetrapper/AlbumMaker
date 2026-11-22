@@ -272,6 +272,9 @@ img,video{max-width:100%; display:block;}
 .day-editor input, .day-editor textarea{width:100%; font-family:var(--sans); font-size:1rem; color:var(--ink); background:#fbf7ec; border:1px solid rgba(31,42,61,.25); border-radius:8px; padding:.55rem .75rem; margin-bottom:.9rem;}
 .day-editor textarea{resize:vertical; line-height:1.5;}
 .day-editor-actions{display:flex; gap:.6rem;}
+.trip-edit-row{margin:.6rem 0 1rem;}
+.trip-edit-row[hidden]{display:none;}
+html body .day-editor.trip-editor{max-width:640px; text-align:left;}
 .editor-btn{background:var(--navy); color:var(--cream); border:none; border-radius:6px; padding:.5rem 1rem; font-family:var(--mono); font-size:.8rem; cursor:pointer;}
 .editor-btn.secondary{background:rgba(31,42,61,.1); color:var(--ink);}
 .toast{position:fixed; left:50%; bottom:1.5rem; transform:translateX(-50%); display:none; background:var(--navy-light); color:var(--cream); border:1px solid var(--gold-dim); padding:.55rem 1rem; border-radius:8px; font-family:var(--mono); font-size:.78rem; z-index:2000; box-shadow:0 6px 20px rgba(0,0,0,.4); max-width:90vw;}

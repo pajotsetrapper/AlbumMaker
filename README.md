@@ -278,7 +278,7 @@ Saved in plain JSON next to your photos (or wherever `-c` points), and never los
   }
 }
 ```
-Photos are identified by their path relative to the photos folder. The trip `title` and `subtitle` are edited in this file (not in the browser); everything else can be edited in the page on the live server. A `"template"` key, if present, is ignored: the template is chosen when you run the program (see below).
+Photos are identified by their path relative to the photos folder. The trip `title` and `subtitle` can be edited on the trip's main page of the live server ("Edit title & subtitle"), and so can everything else in this file except the `"template"` key. A `"template"` key, if present, is ignored: the template is chosen when you run the program (see below).
 
 ### 3b. Templates (`--template NAME`)
 Both scripts, the library builds and the desktop app (*Site template*) take a template. All templates show the same content and keep the viewer, maps and in-page editing; only the look changes. The whole site (every trip of a library) uses one template.

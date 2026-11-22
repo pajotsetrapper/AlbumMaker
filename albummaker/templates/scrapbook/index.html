@@ -17,6 +17,7 @@
     <div class="sb-hand sb-eyebrow">a trip in {{ day_count }} day{{ 's' if day_count != 1 else '' }}</div>
     <h1>{{ title }}</h1>
     {% if subtitle %}<p class="sb-sub">{{ subtitle }}</p>{% endif %}
+    {% include "trip_editor.html" %}
     <div class="sb-stamps">
       <span class="sb-stamp"><b>{{ day_count }}</b>day{{ 's' if day_count != 1 else '' }}</span>
       {% if place_count %}<span class="sb-stamp"><b>{{ place_count }}</b>place{{ 's' if place_count != 1 else '' }}</span>{% endif %}
@@ -63,6 +64,8 @@
 <script src="{{ js_href }}"></script>
 <script>
 initSharpThumbs();
+{% if editable %}window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+initTripEditor();{% endif %}
 {% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
 try { initScrapbookOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }

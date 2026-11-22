@@ -1157,6 +1157,33 @@ function initDayEditor(dateKey){
   });
 }
 
+// The trip's own title and subtitle, edited from its main page. Same rules as the day
+// editor: only changed fields are sent, with the text the form started from, so the server
+// can refuse (409) if trip_content.json was changed elsewhere meanwhile.
+function initTripEditor(){
+  const openBtn = document.getElementById('trip-edit');
+  const box = document.getElementById('trip-editor');
+  if(!openBtn || !box) return;
+  const title = document.getElementById('trip-edit-title');
+  const subtitle = document.getElementById('trip-edit-subtitle');
+  const fields = [title, subtitle].filter(Boolean);
+  const close = () => { box.hidden = true; openBtn.hidden = false; };
+  openBtn.addEventListener('click', () => { box.hidden = false; openBtn.hidden = true; title.focus(); title.select(); });
+  document.getElementById('trip-cancel').addEventListener('click', () => { fields.forEach(f => { f.value = f.defaultValue; }); close(); });
+  fields.forEach(f => f.addEventListener('keydown', (e) => {
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('trip-save').click(); }
+    else if(e.key === 'Escape'){ e.preventDefault(); document.getElementById('trip-cancel').click(); }
+  }));
+  document.getElementById('trip-save').addEventListener('click', async () => {
+    const body = {};
+    if(title.value !== title.defaultValue){ body.title = title.value; body.original_title = title.defaultValue; }
+    if(subtitle && subtitle.value !== subtitle.defaultValue){ body.subtitle = subtitle.value; body.original_subtitle = subtitle.defaultValue; }
+    if(!('title' in body) && !('subtitle' in body)){ close(); return; }
+    const res = await apiPost('/api/trip', body);
+    if(res) location.reload();      // not saved: the toast says why, and the typed text stays in the form
+  });
+}
+
 function initSlideshow(items, opts){
   opts = opts || {};
   SLIDES = items;

@@ -242,7 +242,7 @@ def _time_range(d: DayGroup) -> str:
     return first if first == last else f"{first} \u2013 {last}"
 
 
-def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
+def build_index_context(days: list, content: dict, urls: SiteUrls, editable: bool = False) -> dict:
     """Template variables for the template's index page."""
     ranks = _day_ranks(days)
     previews = urls.template.info.previews
@@ -292,6 +292,10 @@ def build_index_context(days: list, content: dict, urls: SiteUrls) -> dict:
         tile_url_json=script_json(urls.tile_url),
         footer=urls.footer,
         title=trip_title(content),
+        editable=editable,
+        raw_title=_text(content.get("title")).strip(),
+        raw_subtitle=_text(content.get("subtitle")).strip(),
+        api_base_json=script_json(urls.api_base),
         subtitle=_text(content.get("subtitle")),
         day_count=len(ranks),
         photo_count=sum(d.photo_count for d in days),

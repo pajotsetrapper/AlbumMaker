@@ -257,6 +257,130 @@ class EditApiSafetyTests(EditingTestCase):
         self.assertTrue(c["days"]["2026-05-01"]["title"].startswith("t"))
 
 
+class TripTitleEditTests(EditingTestCase):
+    """The trip's own title, edited from its main page, saved as the top-level "title"."""
+
+    def test_the_title_is_saved_in_the_trip_content_file_and_shown_at_once(self):
+        self.reset({"title": "Old name", "subtitle": "keep me"})
+        status, reply = self.post("/api/trip", {"title": "  Benelux 2026  "})
+        self.assertEqual((status, reply), (200, {"ok": True, "title": "Benelux 2026"}))
+        saved = self.saved()
+        self.assertEqual((saved["title"], saved["subtitle"]), ("Benelux 2026", "keep me"))
+        self.assertIn("<h1>Benelux 2026</h1>", self.server.text("/"))
+        self.assertIn("Benelux 2026</title>", self.server.text("/day/2026-05-01"))
+
+    def test_other_content_is_left_exactly_as_it_was(self):
+        self.reset({"title": "Old", "future_key": {"a": [1, 2]}, "cover": "a2.jpg",
+                    "days": {"2026-05-01": {"title": "Day one", "description": "text"}},
+                    "photos": {A1: {"caption": "c", "favorite": True}}})
+        before = self.saved()
+        self.assertEqual(self.post("/api/trip", {"title": "New"})[0], 200)
+        after = self.saved()
+        self.assertEqual(after["title"], "New")
+        for key, value in before.items():                  # (the writer may add defaults, e.g. an empty subtitle)
+            if key != "title":
+                self.assertEqual(after[key], value, key)
+
+    def test_a_title_with_line_breaks_becomes_one_line(self):
+        self.assertEqual(self.post("/api/trip", {"title": "Line\r\nTwo"})[0], 200)
+        self.assertEqual(self.saved()["title"], "Line  Two")
+
+    def test_non_ascii_is_kept_as_typed(self):
+        self.post("/api/trip", {"title": "Gen\u00e8ve \u2603"})
+        self.assertIn("Gen\u00e8ve \u2603", self.server.content.read_text(encoding="utf-8"))
+
+    def test_bad_titles_are_refused_and_change_nothing(self):
+        for body in ({}, {"title": 5}, {"title": None}, {"title": ["x"]}, {"title": ""}, {"title": "   "},
+                     {"title": "x" * 201}, {"title": "ok", "original_title": 5},
+                     {"subtitle": 5}, {"subtitle": None}, {"subtitle": "x" * 301},
+                     {"title": "ok", "subtitle": 5}, {"subtitle": "ok", "original_subtitle": 5}):
+            with self.subTest(body=body):
+                before = self.server.content.read_bytes()
+                status, reply = self.post("/api/trip", body)
+                self.assertEqual(status, 400, reply)
+                self.assertEqual(self.server.content.read_bytes(), before)
+
+    def test_a_title_changed_elsewhere_meanwhile_is_not_overwritten(self):
+        self.reset({"title": "Typed by hand"})
+        before = self.server.content.read_bytes()
+        status, reply = self.post("/api/trip", {"title": "Mine", "original_title": "What the page showed"})
+        self.assertEqual(status, 409)
+        self.assertIn("changed elsewhere", reply["error"])
+        self.assertEqual(self.server.content.read_bytes(), before)
+        self.assertEqual(self.post("/api/trip", {"title": "Mine", "original_title": "Typed by hand"})[0], 200)
+
+    def test_the_subtitle_is_saved_alone_shown_and_can_be_cleared(self):
+        self.reset({"title": "Keep", "subtitle": "Old"})
+        status, reply = self.post("/api/trip", {"subtitle": "  Two weeks away  "})
+        self.assertEqual((status, reply), (200, {"ok": True, "subtitle": "Two weeks away"}))
+        saved = self.saved()
+        self.assertEqual((saved["title"], saved["subtitle"]), ("Keep", "Two weeks away"))
+        self.assertIn("Two weeks away", self.server.text("/"))
+        self.assertEqual(self.post("/api/trip", {"subtitle": ""})[0], 200)
+        self.assertEqual(self.saved()["subtitle"], "")
+
+    def test_title_and_subtitle_can_be_saved_together(self):
+        status, reply = self.post("/api/trip", {"title": "T", "subtitle": "S\nline"})
+        self.assertEqual((status, reply), (200, {"ok": True, "title": "T", "subtitle": "S line"}))
+
+    def test_a_subtitle_changed_elsewhere_meanwhile_is_not_overwritten(self):
+        self.reset({"title": "T", "subtitle": "By hand"})
+        before = self.server.content.read_bytes()
+        status, reply = self.post("/api/trip", {"subtitle": "Mine", "original_subtitle": "What the page showed"})
+        self.assertEqual(status, 409)
+        self.assertIn("subtitle", reply["error"])
+        self.assertEqual(self.server.content.read_bytes(), before)
+        # an untouched title is never checked, so it can't make a subtitle edit fail
+        self.assertEqual(self.post("/api/trip", {"subtitle": "Mine", "original_subtitle": "By hand",
+                                                 "original_title": "stale"})[0], 200)
+
+    def test_a_file_with_a_syntax_error_is_never_overwritten(self):
+        broken = '{"title": "half done",}'
+        self.server.content.write_text(broken, encoding="utf-8")
+        self.assertEqual(self.post("/api/trip", {"title": "x"})[0], 409)
+        self.assertEqual(self.server.content.read_text(encoding="utf-8"), broken)
+
+    def test_the_editor_sees_the_title_editor_on_the_main_page(self):
+        self.reset({"title": 'Quotes "and" <tags>'})
+        html = self.server.text("/")
+        for needle in ('id="trip-editor"', 'id="trip-edit-title"', "initTripEditor();", "window.API_BASE"):
+            self.assertIn(needle, html)
+        self.assertIn('value="Quotes &#34;and&#34; &lt;tags&gt;"', html)
+
+    def test_the_visitor_preview_has_no_title_editor(self):
+        html = self.server.text("/?preview=1")
+        for needle in ("trip-editor", "trip-edit-title", "initTripEditor"):
+            self.assertNotIn(needle, html)
+
+
+class _TripEditorInTemplate:
+    """The trip title editor is on the main page of every site template."""
+
+    def test_main_page_has_the_title_editor_for_the_editor_only(self):
+        html = self.server.text("/")
+        for needle in ('id="trip-edit"', 'id="trip-editor"', 'id="trip-edit-title"', 'id="trip-edit-subtitle"',
+                       "initTripEditor();"):
+            self.assertIn(needle, html)
+        self.assertLess(html.index("window.API_BASE"), html.index("initTripEditor();"))
+        self.assertNotIn("trip-editor", self.server.text("/?preview=1"))
+
+
+class TripEditorClassicTests(_TripEditorInTemplate, EditingTestCase):
+    server_args = ("--template", "classic")
+
+
+class TripEditorCinemaTests(_TripEditorInTemplate, EditingTestCase):
+    server_args = ("--template", "cinema")
+
+
+class TripEditorJournalTests(_TripEditorInTemplate, EditingTestCase):
+    server_args = ("--template", "journal")
+
+
+class TripEditorScrapbookTests(_TripEditorInTemplate, EditingTestCase):
+    server_args = ("--template", "scrapbook")
+
+
 class EditorAndVisitorViewTests(EditingTestCase):
     def setUp(self):
         self.reset({"photos": {A3: {"hidden": True}}})
@@ -326,6 +450,7 @@ class ReadOnlyServerTests(EditingTestCase):
         html = self.server.text("/day/2026-05-01")
         for needle in ("day-editor", "edit-caption", '"rel"', "a3.jpg"):
             self.assertNotIn(needle, html)
+        self.assertNotIn("trip-editor", self.server.text("/"))
 
     def test_hidden_files_cannot_be_fetched_even_by_working_out_their_key(self):
         # a URL key is a hash of the file's path, so anyone who can guess the

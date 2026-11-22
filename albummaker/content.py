@@ -80,6 +80,10 @@ def trip_title(content: dict) -> str:
     return _text(content.get("title")).strip() or "My Trip"
 
 
+def trip_subtitle(content: dict) -> str:
+    return _text(content.get("subtitle")).strip()
+
+
 def day_text(content: dict, date_key: str) -> tuple:
     """(title, description) for a day, both plain strings."""
     entry = content.get("days", {}).get(date_key)
@@ -95,6 +99,7 @@ def day_text(content: dict, date_key: str) -> tuple:
 #                 {"caption": "...", "favorite": true, "hidden": true} }
 #   "days":   { "<date>": {"title": "...", "description": "...",
 #                          "cover": "<same kind of relative path>"} }
+#   "title", "subtitle": the trip's own, also editable from the trip's main page
 #
 # Only values that differ from the defaults are stored. Anything else in the
 # file (including keys this code doesn't know) is left exactly as it was.
@@ -192,6 +197,20 @@ def set_trip_cover(content: dict, rel: Optional[str]):
         content["cover"] = rel
     else:
         content.pop("cover", None)
+
+
+TRIP_TITLE_MAX = 200
+TRIP_SUBTITLE_MAX = 300
+
+
+def set_trip_text(content: dict, title=None, subtitle=None):
+    """Set the trip's own title and/or subtitle (the top-level \"title\" and
+    \"subtitle\" in trip_content.json). Everything else in the file, including
+    keys this code doesn't know, stays."""
+    if title is not None:
+        content["title"] = title.strip()
+    if subtitle is not None:
+        content["subtitle"] = subtitle.strip()
 
 
 def set_day_text(content: dict, date_key: str, title=None, description=None):

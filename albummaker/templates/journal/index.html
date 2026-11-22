@@ -15,6 +15,7 @@
     {% if date_span %}<div class="jr-pill">{{ date_span }}</div>{% endif %}
     <h1>{{ title }}</h1>
     {% if subtitle %}<p class="jr-hero-sub">{{ subtitle }}</p>{% endif %}
+    {% include "trip_editor.html" %}
   </div>
 </section>
 
@@ -63,6 +64,8 @@
 <script src="{{ js_href }}"></script>
 <script>
 initSharpThumbs();
+{% if editable %}window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+initTripEditor();{% endif %}
 {% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
 try { initJournalOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }

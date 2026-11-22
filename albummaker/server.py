@@ -47,7 +47,8 @@ from .cli import (add_content_arg, add_date_check_args, add_location_args, add_o
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, hidden_rels, is_hidden,
                       load_or_init_content, photo_entry, parse_content_file, report_unknown_photo_keys,
-                      resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, write_content)
+                      resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, set_trip_text,
+                      trip_subtitle, trip_title, write_content, TRIP_SUBTITLE_MAX, TRIP_TITLE_MAX)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
 from .locations import describe_days, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
@@ -588,7 +589,8 @@ class App:
         content = self.content.get()
         days = visible_days(self.days, content, editable)
         urls = self.urls(origin)
-        return self.template.index.render(**build_index_context(days, content, urls), **self.page_extras())
+        return self.template.index.render(**build_index_context(days, content, urls, editable=editable),
+                                          **self.page_extras())
 
     def render_day(self, date_key: str, editable: bool = False, origin: Optional[str] = None) -> Optional[str]:
         content = self.content.get()
@@ -1122,7 +1124,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         else:
             self._app, path = self._select_trip(raw)
         if self._app is None or path not in ("/api/photo", "/api/cover", "/api/day", "/api/trip-cover",
-                                             "/api/library-template"):
+                                             "/api/trip", "/api/library-template"):
             return self._fail(404, "Not found")
         if self.headers.get("Content-Type", "").split(";")[0].strip().lower() != "application/json":
             return self._fail(415, "Expected application/json")
@@ -1145,6 +1147,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 result = self._api_cover(body)
             elif path == "/api/trip-cover":
                 result = self._api_trip_cover(body)
+            elif path == "/api/trip":
+                result = self._api_trip(body)
             elif path == "/api/library-template":
                 result = self._api_library_template(body)
             else:
@@ -1231,6 +1235,37 @@ class RequestHandler(BaseHTTPRequestHandler):
             set_trip_cover(c, rel)
         self.app.content.update(mutate)
         return {}
+
+    def _api_trip(self, body: dict) -> dict:
+        """Change the trip's own title and/or subtitle (the top-level \"title\" and
+        \"subtitle\" in trip_content.json)."""
+        fields, originals = {}, {}
+        for key, limit in (("title", TRIP_TITLE_MAX), ("subtitle", TRIP_SUBTITLE_MAX)):
+            original = _original_text(body, key)
+            if key in body:
+                value = body[key]
+                if not isinstance(value, str):
+                    raise ValueError(f"{key} must be text")
+                if len(value) > limit:
+                    raise ValueError(f"{key} is too long (max {limit} characters)")
+                value = value.replace("\r", " ").replace("\n", " ").strip()
+                if key == "title" and not value:
+                    raise ValueError("The trip needs a title")
+                fields[key] = value
+                if original is not None:
+                    originals[key] = original
+        if not fields:
+            raise ValueError("Nothing to change")
+
+        def mutate(c):
+            # only the fields being changed are checked, against the file as it is now
+            if "title" in originals:
+                _check_unchanged(trip_title(c), originals["title"], "The trip's title", single_line=True)
+            if "subtitle" in originals:
+                _check_unchanged(trip_subtitle(c), originals["subtitle"], "The trip's subtitle", single_line=True)
+            set_trip_text(c, **fields)
+        self.app.content.update(mutate)
+        return dict(fields)
 
     def _api_day(self, body: dict) -> dict:
         date = body.get("date")

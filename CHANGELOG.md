@@ -5,6 +5,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 ## [3.2.0] - TBD 
 
 ### Added
+- **Edit the trip title and subtitle from the main page:** The live server's main trip page (in every template) now has an "Edit title & subtitle" button next to "Preview as visitor", like the day pages. They are saved as the top-level `title` and `subtitle` in that trip's `trip_content.json` (via the new `/api/trip` endpoint), the rest of the file is left untouched, and a save is refused if the text was changed elsewhere since the page was loaded. The subtitle may be left empty.
 - **Social link previews:** Added shared Open Graph and Twitter card metadata (`templates/social_meta.html`) for trip and day pages, including 1200 px cover preview thumbnails and live-server URL generation from `Host` and `X-Forwarded-Proto` headers[cite: 1].
 - **GUI progress, completion, and error modals:** Added a blocking "Please wait" progress modal (with progress bar, current step, elapsed timer, keep-open note, and `Cancel` option) during server startup and static builds, followed by completion dialogs ("Your trips are ready!" / "Your site is ready!") or a red error dialog with a "Show activity" action on failure[cite: 1].
 - **Taskbar/Dock attention alerts:** Flashed the taskbar or Dock icon when background server startup or build tasks complete or fail while the window is unfocused[cite: 1].

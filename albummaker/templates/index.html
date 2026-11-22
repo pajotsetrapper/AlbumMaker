@@ -11,6 +11,7 @@
   <div class="eyebrow">{{ day_count }} day{{ 's' if day_count != 1 else '' }} on the road</div>
   <h1>{{ title }}</h1>
   {% if subtitle %}<p class="subtitle">{{ subtitle }}</p>{% endif %}
+  {% include "trip_editor.html" %}
   <div class="stats">
     <div class="stat"><div class="n">{{ day_count }}</div><div class="l">Days</div></div>
     <div class="stat"><div class="n">{{ photo_count }}</div><div class="l">Photos</div></div>
@@ -63,6 +64,8 @@
 <script>
 initSizeControls();
 initSharpThumbs();
+{% if editable %}window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a trip in a library has its own)
+initTripEditor();{% endif %}
 {% if library_href %}initHomeNav({{ library_href_json }});{% endif %}
 try { initOverviewMap('overview-map', {{ days_json }}); }
 catch(e) { console.error('Map failed to load (check your internet connection):', e); }
