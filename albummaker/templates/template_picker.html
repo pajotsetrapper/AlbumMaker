@@ -1,10 +1,14 @@
-{# The owner's template picker on a library page (shared by every template; styled in style.css).
-   Only the live server gives an editor `editable` and the choices; a static site shows nothing. #}
-{% if editable and template_choices %}
-<div class="template-picker" id="template-picker">
+{# The template picker on a library page (shared by every template; styled in style.css).
+   Only the live server passes `template_choices`; a static site shows nothing. Everyone who opens the
+   live library sees it, so the look is easy to find from a phone or another computer, but the choice
+   applies to the whole site, so it is only enabled for the owner (`editable`). Anyone else sees the
+   current look, greyed out, with a note on how to change it. #}
+{% if template_choices %}
+<div class="template-picker{{ '' if editable else ' locked' }}" id="template-picker">
   <label for="template-select">Template</label>
-  <select id="template-select" title="Pick the look of the whole site; it is remembered">
+  <select id="template-select"{{ '' if editable else ' disabled' }} title="{{ 'Pick the look of the whole site; it is remembered' if editable else 'Only the owner can change the look of this site' }}">
     {% for t in template_choices %}<option value="{{ t.name }}" title="{{ t.description }}"{{ ' selected' if t.name == current_template else '' }}>{{ t.label }}</option>{% endfor %}
   </select>
+  {% if not editable %}<span class="template-note">Only the owner can change this. Open the private editor link in this browser to unlock it.</span>{% endif %}
 </div>
 {% endif %}

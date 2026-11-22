@@ -381,8 +381,11 @@ page listing all trips. Defaults to <code>Trips</code>.</li>
 <li><b>Trip library page &rarr; Site template:</b> the look of the static sites you create: Classic,
 Journal, Scrapbook or Cinema. All four show the same content; only the layout and styling differ.
 Defaults to Cinema (a setting saved earlier, such as Classic, is kept). The live server does not use
-this setting: it shows the template picked in the <b>Template</b> menu on the trip list page (shown
-only to someone who may edit) and remembers it; until one is picked it uses Cinema.</li>
+this setting: it shows the template picked in the <b>Template</b> menu at the bottom of the trip list
+page and remembers it; until one is picked it uses Cinema. Everyone who opens the page sees the menu,
+but it is only enabled for you (on this computer, or in a browser opened with the editor link), because
+the choice applies to the whole site. On another device or phone it is greyed out until you open the
+editor link there.</li>
 <li><b>Video time handling &rarr; Default video UTC offset:</b> optional fixed fallback for videos in
 trips whose time zone is Automatic. Enter hours east of UTC, such as <code>2</code> or
 <code>-5.5</code>. A time zone chosen for a trip takes precedence. Leave blank to use automatic
