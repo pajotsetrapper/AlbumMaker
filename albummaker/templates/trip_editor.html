@@ -1,0 +1,13 @@
+{% if editable %}
+<div class="trip-edit-row"><button type="button" class="day-edit-btn" id="trip-edit">Edit title &amp; subtitle</button><a class="day-edit-btn" href="?preview=1">Preview as visitor</a></div>
+<div class="day-editor trip-editor" id="trip-editor" hidden>
+  <label for="trip-edit-title">Trip title</label>
+  <input id="trip-edit-title" type="text" maxlength="200" value="{{ raw_title }}" placeholder="Trip title">
+  <label for="trip-edit-subtitle">Subtitle <span>(optional)</span></label>
+  <input id="trip-edit-subtitle" type="text" maxlength="300" value="{{ raw_subtitle }}" placeholder="e.g. Two weeks through the Benelux">
+  <div class="day-editor-actions">
+    <button type="button" class="editor-btn" id="trip-save">Save</button>
+    <button type="button" class="editor-btn secondary" id="trip-cancel">Cancel</button>
+  </div>
+</div>
+{% endif %}
