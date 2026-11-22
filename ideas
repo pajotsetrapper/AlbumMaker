@@ -1,8 +1,6 @@
 # Fixes
     - FIXME: Docs: update the site: Explore the live sample trip and Try the demo bottons link to classic view. This may make people think it is the only one, so update that so that prospects can easily find the different demo sites with the existing templates
 
-    - FIXME: If a GPX file now has 'a long distance' between 2 points - we get a long straight line on the map. That is not nice. Amend that & filter out such items, handle it smart. Probably need to treat this as 2 seperate gpx files in that case.
-
 # Best value first
 
 0. Update the gui: Make it clear to the end uset that the server is preparing the sites & make it more clear when done (in your face pop-up?)

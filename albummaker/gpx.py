@@ -23,7 +23,8 @@ from xml.parsers import expat
 from bisect import bisect_left
 from collections import Counter
 from datetime import datetime, timedelta, timezone
-from math import cos, radians
+from math import asin, cos, radians, sin, sqrt
+from statistics import median
 from pathlib import Path
 from typing import Optional
 
@@ -35,6 +36,14 @@ from .timezones import get_timezone
 MAX_GAP_S = 10 * 60       # between two track points, a photo's position is interpolated ...
 EDGE_S = 2 * 60           # ... and just before/after a stretch of track, its end point is used
 BREAK_S = 15 * 60         # a longer pause in the recording starts a new line on the map
+# A "jump" is a hop between two consecutive points that is far longer than the track suggests it
+# should be (a GPS fix that went astray, a signal lost for a while and found again far away).
+# Drawn as it is, it becomes a long straight line across the map, so the recording is cut there
+# and the two parts are used as separate recordings.
+JUMP_MIN_M = 1500         # a shorter hop is never a jump
+JUMP_FACTOR = 25          # a hop this many times longer than the hops around it is a jump ...
+JUMP_CONTEXT = 5          # ... where "around it" is this many hops on each side (needs at least 4 in all)
+MAX_SPEED_KMH = 1000      # a hop that would need more than this (faster than an airliner) is a jump too
 MAX_GPX_BYTES = 200_000_000
 
 _TIME_RE = re.compile(r"^(\d{4})-(\d\d)-(\d\d)T(\d\d):(\d\d):(\d\d)(?:[.,](\d+))?"
@@ -148,6 +157,41 @@ def find_gpx_files(input_dir: Path, extra=(), exclude_dirs=()) -> list:
     return sorted(unique.values())
 
 
+def _distance_m(a: tuple, b: tuple) -> float:
+    """Great-circle distance in metres between two (lat, lon) positions."""
+    la1, lo1, la2, lo2 = map(radians, (a[0], a[1], b[0], b[1]))
+    h = sin((la2 - la1) / 2) ** 2 + cos(la1) * cos(la2) * sin((lo2 - lo1) / 2) ** 2
+    return 2 * 6_371_000 * asin(sqrt(h))
+
+
+def split_at_jumps(points: list) -> tuple:
+    """Cut a recording, [(utc seconds, lat, lon), ...] in time order, wherever consecutive points
+    are a long way apart: [[...], [...]]. A hop is a jump when it is at least JUMP_MIN_M and either
+    needs an impossible speed or is JUMP_FACTOR times longer than the hops around it (normal for
+    the recording: a car's 1-minute hops are long but so are their neighbours, a walker's are
+    short). A lone stray point between two jumps ends up as a piece of its own and is dropped.
+    Returns (the pieces, how many cuts were made); without a jump the recording comes back whole."""
+    n = len(points)
+    if n < 2:
+        return [points], 0
+    hops = [_distance_m(points[i][1:], points[i + 1][1:]) for i in range(n - 1)]
+    cuts = []
+    for i, d in enumerate(hops):
+        if d < JUMP_MIN_M:
+            continue
+        dt = points[i + 1][0] - points[i][0]
+        if dt <= 0 or d / dt * 3.6 > MAX_SPEED_KMH:
+            cuts.append(i + 1)
+            continue
+        around = hops[max(0, i - JUMP_CONTEXT):i] + hops[i + 1:i + 1 + JUMP_CONTEXT]
+        if len(around) >= 4 and d > JUMP_FACTOR * median(around):
+            cuts.append(i + 1)
+    if not cuts:
+        return [points], 0
+    pieces = [points[a:b] for a, b in zip([0] + cuts, cuts + [n])]
+    return [p for p in pieces if len(p) >= 2], len(cuts)
+
+
 class _Recording:
     """One GPX segment: points in time order."""
 
@@ -161,15 +205,19 @@ class Track:
     """Every recorded segment of every GPX file. Each is used on its own, so
     two devices recording at the same time (or one file given twice) never
     get their points mixed, and no position is made up across a gap in a
-    recording."""
+    recording. A recording with a long jump in it (see split_at_jumps) is
+    used as separate recordings, so neither the map nor a photo's position
+    crosses the jump."""
 
     def __init__(self, segments: list):
-        seen, self.recordings = set(), []
+        seen, self.recordings, self.jumps = set(), [], 0
         for seg in segments:
             key = tuple(seg)
             if seg and key not in seen:          # the same track given twice counts once
                 seen.add(key)
-                self.recordings.append(_Recording(seg))
+                pieces, cuts = split_at_jumps(sorted(seg))
+                self.jumps += cuts
+                self.recordings += [_Recording(p) for p in pieces]
 
     def __len__(self):
         return sum(len(r.t) for r in self.recordings)
@@ -277,6 +325,9 @@ def load_tracks(files: list) -> Optional[Track]:
     track = Track(segments)
     if len(track):
         print(f"Read {len(track)} track point(s) from {len(files)} GPX file(s).")
+        if track.jumps:
+            print(f"  Cut the track at {track.jumps} long jump(s) between points, so the maps don't draw "
+                  f"a straight line across them.")
     return track if len(track) else None
 
 

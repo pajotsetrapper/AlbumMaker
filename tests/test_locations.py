@@ -7,10 +7,12 @@ lines, naming places, and how both scripts show the result.
     python -m unittest tests.test_locations
 """
 import gzip
+import io
 import json
 import re
 import unittest
-from datetime import datetime
+from contextlib import redirect_stdout
+from datetime import datetime, timezone
 from pathlib import Path
 from types import SimpleNamespace
 from types import SimpleNamespace
@@ -166,6 +168,72 @@ class TrackTests(unittest.TestCase):
         self.assertEqual(len(track), 10)
         self.assertEqual(len(track.stretches(0, 4e9)), 1)
 
+    def _walk(self, start_min, count, lat0, step=0.0001):
+        """A walker's points, one every 10 s, heading north from lat0 (about 11 m a step)."""
+        return [(ts("2026-05-01T09:00:00Z") + start_min * 60 + 10 * i, lat0 + i * step, 4.0) for i in range(count)]
+
+    def test_a_long_jump_between_two_points_cuts_the_track_in_two(self):
+        # 20 steps, then 50 km further 10 s later (a GPS fix that went astray), then 20 more steps
+        before = self._walk(0, 20, 50.0)
+        after = [(before[-1][0] + 10 + 10 * i, 50.45 + i * 0.0001, 4.0) for i in range(20)]
+        track = gpx.Track([before + after])
+        self.assertEqual(track.jumps, 1)
+        self.assertEqual(len(track.recordings), 2)
+        stretches = track.stretches(0, 4e9)
+        self.assertEqual([len(s) for s in stretches], [20, 20])
+        self.assertLess(stretches[0][-1][0], 50.01)               # no line from the one to the other
+        self.assertGreater(stretches[1][0][0], 50.4)
+
+    def test_a_photo_is_not_placed_on_the_line_across_a_jump(self):
+        before = self._walk(0, 20, 50.0)
+        after = [(before[-1][0] + 10 + 10 * i, 50.45 + i * 0.0001, 4.0) for i in range(20)]
+        track = gpx.Track([before + after])
+        middle = before[-1][0] + 5                                 # between the two parts: 5 s from either end
+        pos = track.position_at(middle)
+        self.assertTrue(pos == before[-1][1:] or pos == after[0][1:])   # an end, never halfway
+        self.assertIsNone(track.position_at(before[-1][0] + 10 * 60))   # and nothing further out
+
+    def test_a_lone_stray_point_is_dropped(self):
+        walk = self._walk(0, 40, 50.0)
+        walk[20] = (walk[20][0], 51.0, 5.0)                        # one fix 130 km away
+        track = gpx.Track([walk])
+        self.assertEqual(track.jumps, 2)
+        self.assertEqual(sorted(len(s) for s in track.stretches(0, 4e9)), [19, 20])
+        self.assertEqual(len(track), 39)
+
+    def test_a_signal_lost_for_a_while_and_found_far_away_is_a_jump(self):
+        before = self._walk(0, 20, 50.0)
+        after = [(before[-1][0] + 8 * 60 + 10 * i, 50.02 + i * 0.0001, 4.0) for i in range(20)]   # 8 min, 2 km on
+        track = gpx.Track([before + after])
+        self.assertEqual(len(track.stretches(0, 4e9)), 2)
+
+    def test_fast_and_sparse_recordings_are_not_cut(self):
+        # a car recorded once a minute: every hop is 1.7 km, the same as its neighbours
+        car = [(ts("2026-05-01T09:00:00Z") + 60 * i, 50 + i * 0.015, 4.0) for i in range(30)]
+        track = gpx.Track([car])
+        self.assertEqual(track.jumps, 0)
+        self.assertEqual([len(s) for s in track.stretches(0, 4e9)], [30])
+        # a walk and then a car in one recording: the change of pace is not a jump
+        mixed = self._walk(0, 30, 50.0) + [(ts("2026-05-01T09:00:00Z") + 300 + 20 * i, 50.003 + i * 0.002, 4.0) for i in range(1, 30)]
+        self.assertEqual(gpx.Track([mixed]).jumps, 0)
+
+    def test_a_flight_recorded_densely_is_one_line(self):
+        plane = [(ts("2026-05-01T09:00:00Z") + 10 * i, 50 + i * 0.02, 4.0) for i in range(60)]   # ~2.2 km / 10 s = 800 km/h
+        self.assertEqual(gpx.Track([plane]).jumps, 0)
+
+    def test_the_build_says_when_it_cut_a_track(self):
+        import tempfile
+        before = self._walk(0, 20, 50.0)
+        after = [(before[-1][0] + 10 + 10 * i, 50.45 + i * 0.0001, 4.0) for i in range(20)]
+        fmt = lambda pts: [(datetime.fromtimestamp(t, timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"), la, lo) for t, la, lo in pts]
+        with tempfile.TemporaryDirectory() as d:
+            f = make_gpx(Path(d) / "t.gpx", [fmt(before + after)])
+            out = io.StringIO()
+            with redirect_stdout(out):
+                track = gpx.load_tracks([f])
+        self.assertEqual(track.jumps, 1)
+        self.assertIn("1 long jump", out.getvalue())
+
     def test_simplify_drops_points_on_a_straight_line_and_keeps_corners(self):
         line = [(50.0, 4.0 + i * 0.001) for i in range(100)]
         self.assertEqual(len(gpx.simplify(line, 5)), 2)
@@ -226,7 +294,8 @@ class TimeZoneTests(unittest.TestCase):
             ("2026-03-29T22:00:00Z", 2.0, 1.0),
             ("2026-03-29T22:05:00Z", 2.0, 2.0),
         ]
-        track = gpx.Track([[(ts(when), lat, lon) for when, lat, lon in points]])
+        # (scaled to about a hundred metres between points: a real track, not a series of jumps)
+        track = gpx.Track([[(ts(when), lat / 1000, lon / 1000) for when, lat, lon in points]])
         day = SimpleNamespace(date_key="2026-03-29", is_unknown=False)
         zones = gpx.TimeZones(
             [item("2026-03-29 12:00", offset=120, src="exif")],
@@ -235,7 +304,7 @@ class TimeZoneTests(unittest.TestCase):
         gpx.attach_day_tracks([day], track, zones)
         self.assertEqual(
             day.track,
-            [[[0.0, 1.0], [0.0, 2.0]], [[1.0, 1.0], [1.0, 2.0]]],
+            [[[0.0, 0.001], [0.0, 0.002]], [[0.001, 0.001], [0.001, 0.002]]],
         )
 
 
