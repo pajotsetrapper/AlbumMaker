@@ -55,7 +55,19 @@
   {% endif %}
 
   {% if items %}
-  <div class="cn-gallery-head"><h2>The frames</h2><button type="button" class="fav-filter" id="fav-filter" hidden></button></div>
+  <div class="cn-gallery-head">
+    <h2>The frames</h2>
+    <div class="cn-gallery-tools">
+      <button type="button" class="fav-filter" id="fav-filter" hidden></button>
+      <span class="cn-size-label">Frame size</span>
+      <div class="size-toggle" role="group" aria-label="Thumbnail size" data-target="thumb-grid" data-store="tripThumbSize">
+        <button type="button" class="size-btn" data-size="small">S</button>
+        <button type="button" class="size-btn" data-size="medium">M</button>
+        <button type="button" class="size-btn" data-size="large">L</button>
+        <button type="button" class="size-btn" data-size="xl">XL</button>
+      </div>
+    </div>
+  </div>
   {% endif %}
   <div class="cn-gallery" id="thumb-grid">
     {% for item in items %}
@@ -92,6 +104,7 @@ window.API_BASE = {{ api_base_json }};   // where this trip's edits are saved (a
 // slideshow first: it must keep working even if the map/tiles can't load (no internet, blocked CDN, etc.)
 initSlideshow({{ slides_json }}, {editable: {{ 'true' if editable else 'false' }}, dayKey: {{ date_key_json }}});
 openSlideshowFromHash();
+initSizeControls();
 initSharpThumbs();
 initDayNav({{ prev_href_json }}, {{ next_href_json }}, {{ home_href_json }});
 {% if editable %}initDayEditor({{ date_key_json }});{% endif %}

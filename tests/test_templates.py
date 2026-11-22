@@ -192,6 +192,18 @@ class CinemaTests(TempDirMixin, unittest.TestCase):
                 for size in ("small", "large", "xl"):
                     self.assertIn(f"{grid}.size-{size}", css)
 
+    def test_cinema_day_pages_have_the_thumbnail_size_control(self):
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        build("-i", str(photos), "-o", str(tmp / "site"), "--template", "cinema")
+        day = (tmp / "site" / "days" / "2026-05-01.html").read_text(encoding="utf-8")
+        self.assertEqual(size_toggle(day, "thumb-grid"), ("tripThumbSize", [("small", "S"), ("medium", "M"), ("large", "L"), ("xl", "XL")]))
+        self.assertIn("initSizeControls();", day)
+        css = (tmp / "site" / "assets" / "style.css").read_text(encoding="utf-8")
+        for size in ("small", "large", "xl"):
+            self.assertIn(f".cn-gallery.size-{size}", css)
+
     def test_a_scene_can_animate_in_every_time_it_is_reached(self):
         js = (Path(__file__).resolve().parent.parent / "albummaker" / "static" / "cinema.js").read_text(encoding="utf-8")
         self.assertIn("classList.remove('in-view')", js)
