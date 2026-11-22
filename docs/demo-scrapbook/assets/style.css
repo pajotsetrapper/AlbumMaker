@@ -488,6 +488,16 @@ body.tpl-scrapbook .size-btn.active{background:var(--sb-red); color:#fff;}
 
 /* ---------- library ---------- */
 .sb-trips{max-width:var(--sb-max); margin:0 auto 3rem; padding:1rem var(--sb-pad); display:grid; gap:3rem 2.4rem; grid-template-columns:repeat(auto-fill,minmax(min(100%,300px),1fr));}
+.sb-trips-bar{max-width:var(--sb-max); margin:0 auto; padding:0 var(--sb-pad); display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.5rem 1rem;}
+/* card size (S / M / L / XL): M is the grid above */
+.sb-trips.size-small{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(200px,15vw,240px)),1fr)); gap:2rem 1.4rem;}
+.sb-trips.size-small .sb-trip h2{font-size:1.2rem;}
+.sb-trips.size-small .sb-trip p{font-size:.85rem;}
+.sb-trips.size-large{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(400px,28vw,500px)),1fr));}
+.sb-trips.size-large .sb-trip h2{font-size:1.9rem;}
+.sb-trips.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(520px,40vw,860px)),1fr)); gap:3.6rem 3rem;}
+.sb-trips.size-xl .sb-trip h2{font-size:2.3rem;}
+.sb-trips.size-xl .sb-trip p{font-size:1.15rem;}
 .sb-trip{display:block; color:inherit !important; text-decoration:none !important; transition:transform .25s ease;}
 .sb-trip .sb-polaroid{transform:rotate(-1.6deg); transition:transform .25s ease; margin-bottom:1rem;}
 .sb-trip:nth-child(even) .sb-polaroid{transform:rotate(1.4deg);}

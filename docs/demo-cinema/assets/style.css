@@ -439,6 +439,28 @@ body.tpl-cinema .cn-mini .leaflet-control-zoom{display:none;}
 
 /* ---------- library ---------- */
 .cn-posters{max-width:var(--cn-max); margin:0 auto; padding:2rem var(--cn-pad) 3rem; display:grid; gap:1.2rem; grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));}
+.cn-posters-bar{max-width:var(--cn-max); margin:0 auto; padding:1.6rem var(--cn-pad) 0; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:.5rem 1rem;}
+.cn-posters-bar + .cn-posters{padding-top:1rem;}
+.cn-size-label{font-size:.72rem; font-weight:700; letter-spacing:.1em; text-transform:uppercase; color:var(--cn-faint);}
+body.tpl-cinema .size-toggle{display:flex; overflow:hidden; border:1px solid var(--cn-line); border-radius:999px; background:var(--cn-bg-2);}
+body.tpl-cinema .size-btn{padding:.32rem .8rem; border:none; border-left:1px solid var(--cn-line); background:none; color:var(--cn-dim); opacity:1;
+  font:700 .78rem var(--cn-sans); cursor:pointer;}
+body.tpl-cinema .size-btn:first-child{border-left:none;}
+body.tpl-cinema .size-btn:hover{background:rgba(244,241,234,.08); color:var(--cn-text);}
+body.tpl-cinema .size-btn.active{background:var(--cn-accent); color:#1a1205;}
+/* card size (S / M / L / XL): M is the grid above */
+.cn-posters.size-small{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(190px,14vw,230px)),1fr)); gap:.9rem;}
+.cn-posters.size-small .cn-poster-text{padding:1rem;}
+.cn-posters.size-small .cn-poster h2{font-size:1.5rem;}
+.cn-posters.size-small .cn-poster p{display:none;}
+.cn-posters.size-large{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(380px,28vw,480px)),1fr));}
+.cn-posters.size-large .cn-poster h2{font-size:2.7rem;}
+.cn-posters.size-xl{grid-template-columns:repeat(auto-fill,minmax(min(100%,clamp(520px,38vw,800px)),1fr)); gap:1.6rem;}
+.cn-posters.size-xl .cn-poster{aspect-ratio:4/3;}
+.cn-posters.size-xl .cn-poster-text{padding:2rem;}
+.cn-posters.size-xl .cn-poster h2{font-size:3.4rem;}
+.cn-posters.size-xl .cn-poster p{font-size:1.1rem;}
+@media (max-width:640px){ .cn-size-label{display:none;} }
 .cn-poster{position:relative; display:block; aspect-ratio:3/4; overflow:hidden; border-radius:14px; background:#1b1d26; color:var(--cn-text) !important; text-decoration:none !important; isolation:isolate;
   transition:transform .35s cubic-bezier(.2,.6,.2,1), box-shadow .35s;}
 .cn-poster:hover{transform:translateY(-6px); box-shadow:0 22px 50px rgba(0,0,0,.6);}

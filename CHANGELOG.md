@@ -4,8 +4,13 @@ All notable changes to AlbumMaker are listed here. The release workflow uses
 the section for a version as that GitHub Release's notes.
 
 ## [3.1.1] - TBD
-- Fix Cinema skin: replay day animation on every visit, remove empty gap on library page
-- Fix Journal, Scrapbook and Cinema template: Use available window width more effectively
+- Fix Cinema skin: replay day animation on every visit, remove empty gap on library page:
+The three templates capped their content at fixed widths (1360px, 1240px, 1300px; 980px on Cinema day pages), leaving large empty margins on wide screens. The caps are now fluid, up to 94% of the viewport with an upper limit, and the stats card, cover photo, day-page columns and Cinema map scale with them. Text keeps its readable line length. Layouts below the old widths are unchanged.
+- Use more of the window width in the Journal, Scrapbook and Cinema templates: 
+The three templates capped their content at fixed widths (1360px, 1240px, 1300px; 980px on Cinema day pages), leaving large empty margins on wide screens. The caps are now fluid, up to 94% of the viewport with an upper limit, and the stats card, cover photo, day-page columns and Cinema map scale with them. Text keeps its readable line length. Layouts below the old widths are unchanged.
+- Add a thumbnail size control (S/M/L/XL) to the Journal and Scrapbook day pages:
+Visitors can now choose the thumbnail size on a day page, as in the classic view. The control reuses the classic size logic (initSizeControls, remembered in the same tripThumbSize storage key). Journal keeps its collage at M and uses even grids for S, L and XL; Scrapbook scales its polaroids, tape and captions. Adds tests and a README note. Also restores consistent CRLF line endings on one line of cinema.css.
+- Add a card size control (S/M/L/XL) to the Journal, Scrapbook and Cinema library pages: Visitors can now choose how large the trip cards are on the library page, as in the classic library. The control reuses the classic size logic and its tripLibrarySize storage key, and each template scales its own cards (Journal cards, Scrapbook polaroids, Cinema poster s)
 
 ## [3.1.0] - 2026-11-20
 
