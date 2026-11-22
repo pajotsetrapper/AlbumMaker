@@ -1,15 +1,19 @@
 # Fixes
     - Fix cinema skin: empty space on top, and animation on day pages needs to work every time -> done
+
     - The Journal, Scrapbook & Cinema templates leave quite some room unused on the left & right. Optimize that -> done
-    - Docs: update the site: Exmplore the live sample trip and Try the demo bottons link to classic view. This may make people thinh it is the one one.
+
+    - FIXME: Docs: update the site: Explore the live sample trip and Try the demo bottons link to classic view. This may make people think it is the only one, so update that so that prospects can easily find the different demo sites with the existing templates
+
+    - FIXME: in Journal template, on the day pages - the 'Large' thumnail size makes no sense. 'M' looks great, 'S' is too small and XL is good as well.
 
 # Best value first
-0. Scrapbook and Journal template: allow end users to select the thumbmail size on the day pages, similar to the classic view
+0. Scrapbook and Journal template: allow end users to select the thumbmail size on the day pages, similar to the classic view -> done
+
 0. Export favorites as printable album
 0. Thumbnail size selection on all templates
 0. Transitioning effect in slideshow (optional). The explore Album Maker 
 
-1. 
 
 1. Link-preview tags (Open Graph/Twitter). When a trip link is pasted into WhatsApp or iMessage, it would show the cover photo, title and date range. It’s a few lines in the shared page head, and every template benefits.
 
