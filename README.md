@@ -38,7 +38,7 @@ The same sample trip in every template: [Classic](https://pajotsetrapper.github.
 - **Four templates.** `classic`, `journal`, `scrapbook` and `cinema`: same
   content, same viewer and editing, a completely different look (see
   [Templates](#3b-templates---template-name)).
-- **A full-screen slideshow.** Keyboard control, autoplay with adjustable speed,
+- **A full-screen slideshow.** Keyboard control, autoplay with adjustable speed and an optional Ken Burns pan-and-zoom that visitors can switch on or off (button or `K`),
   zoom, Live Photo playback, a details panel (camera settings, place, a small
   map, a link to the original file), a favorites-only mode, and a link to any
   single photo.

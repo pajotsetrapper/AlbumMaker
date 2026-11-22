@@ -462,6 +462,7 @@ let playMs = 5000;
 let liveActive = false;   // a Live Photo clip is playing in place of the photo
 let ignoreNextPop = false;
 const PLAY_SPEEDS = [3000, 5000, 8000, 12000];
+let kenBurns = false;     // slow pan and zoom on each photo while the slideshow plays (the visitor's choice)
 
 const INFO_LABELS = {
   filename: 'File', dimensions: 'Dimensions', filesize: 'File size',
@@ -518,6 +519,7 @@ function applyZoomTransform(){
   // apply scale alone first so we can measure the actual on-screen size at
   // this zoom level, then clamp the pan so the image can't be dragged
   // further than its own edge reaching the edge of the viewport
+  if(ZOOM.scale > 1.01) clearKenBurns();   // zooming by hand takes over from the animation
   img.style.transform = `scale(${ZOOM.scale})`;
   const imgRect = img.getBoundingClientRect();
   const stageRect = stage.getBoundingClientRect();
@@ -607,6 +609,7 @@ function closeSlideshow(fromHistory){
   if(!overlay.classList.contains('open')) return;
   stopPlaying();
   overlay.classList.remove('open');
+  clearKenBurns();
   document.getElementById('slideshow-media').innerHTML = '';
   shownSlide = -1;
   document.body.style.overflow = '';
@@ -622,6 +625,83 @@ function closeSlideshow(fromHistory){
       try { history.replaceState(null, '', location.pathname + location.search); } catch(e){}
     }
   }
+}
+
+// ---------- Ken Burns: a slow pan and zoom on each photo while the slideshow plays ----------
+// Off unless the visitor switches it on (button or K), and remembered in the browser. It is a CSS
+// animation on the photo (see .kb in style.css) as long as one photo is shown, so it ends as the
+// slideshow moves on. It only runs while playing, on photos (not videos), never while zoomed in by
+// hand, and never for people who asked their system for less motion. Every photo gets one of a few
+// gentle moves (a scale of 1.0 to 1.1 and a drift of a few percent), in turn, so it keeps varying.
+const KB_MOVES = [          // [x, y, scale] at the start and at the end; x and y in % of the photo
+  [[0, 0, 1],      [-2.5, -2, 1.1]],
+  [[2, 1.5, 1.1],  [0, 0, 1]],
+  [[-2, 2, 1],     [2.5, -1.5, 1.1]],
+  [[0, -2.5, 1.1], [0, 2, 1.03]],
+  [[2.5, 0, 1.03], [-2.5, 0, 1.1]],
+  [[0, 0, 1.1],    [1.5, 2, 1]],
+];
+
+function kenBurnsAllowed(){
+  return !(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+}
+
+function loadKenBurns(){
+  try { return localStorage.getItem('tripKenBurns') === '1'; } catch(e){ return false; }
+}
+
+function syncKenBurnsButton(){
+  const btn = document.getElementById('slideshow-kb');
+  if(!btn) return;
+  btn.hidden = !kenBurnsAllowed();
+  btn.classList.toggle('on', kenBurns);
+  btn.setAttribute('aria-pressed', kenBurns ? 'true' : 'false');
+}
+
+function clearKenBurns(){
+  const media = document.getElementById('slideshow-media');
+  if(!media) return;
+  media.classList.remove('kb-on');
+  const img = media.querySelector('img');
+  if(img) img.classList.remove('kb', 'kb-paused');
+}
+
+// (Re)start the movement on the photo that is shown, or remove it where it doesn't belong.
+function applyKenBurns(){
+  clearKenBurns();
+  const item = SLIDES[currentSlide];
+  const media = document.getElementById('slideshow-media');
+  const img = media && media.querySelector('img');
+  if(!img || !item || item.type !== 'image') return;
+  if(!playing || !kenBurns || !kenBurnsAllowed() || ZOOM.scale > 1.01) return;
+  const [from, to] = KB_MOVES[((currentSlide % KB_MOVES.length) + KB_MOVES.length) % KB_MOVES.length];
+  img.style.setProperty('--kb-x0', from[0] + '%');
+  img.style.setProperty('--kb-y0', from[1] + '%');
+  img.style.setProperty('--kb-s0', from[2]);
+  img.style.setProperty('--kb-x1', to[0] + '%');
+  img.style.setProperty('--kb-y1', to[1] + '%');
+  img.style.setProperty('--kb-s1', to[2]);
+  img.style.setProperty('--kb-ms', (playMs + 800) + 'ms');     // still moving as it moves on
+  // begin once the photo is there, or the first seconds would play on an empty screen
+  const go = () => {
+    if(!img.isConnected || !playing || !kenBurns || ZOOM.scale > 1.01) return;
+    media.classList.add('kb-on');       // (the photo grows within its frame, not over the buttons)
+    img.classList.add('kb');
+  };
+  if(img.complete) go(); else img.addEventListener('load', go, {once: true});
+}
+
+// Pausing keeps the photo where it is instead of snapping back.
+function freezeKenBurns(){
+  const img = document.querySelector('#slideshow-media img.kb');
+  if(img) img.classList.add('kb-paused');
+}
+
+function toggleKenBurns(){
+  kenBurns = !kenBurns;
+  try { localStorage.setItem('tripKenBurns', kenBurns ? '1' : '0'); } catch(e){ /* private browsing, etc. */ }
+  syncKenBurnsButton();
+  applyKenBurns();
 }
 
 // ---------- autoplay ----------
@@ -687,6 +767,7 @@ function setPlaying(on){
     btn.classList.toggle('on', playing);
   }
   if(spd){ spd.hidden = !playing; spd.textContent = (playMs / 1000) + 's'; }
+  if(playing) applyKenBurns(); else freezeKenBurns();
   scheduleAdvance();
 }
 
@@ -702,6 +783,7 @@ function cycleSpeed(){
   playMs = PLAY_SPEEDS[(i + 1) % PLAY_SPEEDS.length];
   try { localStorage.setItem('tripSlideMs', String(playMs)); } catch(e){}
   document.getElementById('slideshow-speed').textContent = (playMs / 1000) + 's';
+  applyKenBurns();         // so the movement takes as long as the photo now stays
   scheduleAdvance();
 }
 
@@ -774,6 +856,7 @@ function renderSlide(){
     clearLoading();
   }
 
+  applyKenBurns();
   renderCaption();
   if(infoPanelOpen) renderInfoPanel();
   syncEditBar();
@@ -1094,6 +1177,10 @@ function initSlideshow(items, opts){
   initFavFilter();
   if(EDITABLE) initEditBar();
   playMs = loadPlayMs();
+  kenBurns = loadKenBurns();
+  syncKenBurnsButton();
+  const kbBtn = document.getElementById('slideshow-kb');
+  if(kbBtn) kbBtn.addEventListener('click', toggleKenBurns);
   document.getElementById('slideshow-close').addEventListener('click', () => closeSlideshow());
   document.getElementById('slideshow-play').addEventListener('click', togglePlaying);
   document.getElementById('slideshow-speed').addEventListener('click', cycleSpeed);
@@ -1125,6 +1212,7 @@ function initSlideshow(items, opts){
     else if(e.key.toLowerCase() === 'f') toggleFullscreen();
     else if(e.key.toLowerCase() === 'i') toggleInfoPanel();
     else if(e.key.toLowerCase() === 'l') playLive();
+    else if(e.key.toLowerCase() === 'k') toggleKenBurns();
     else if(e.key.toLowerCase() === 's' && EDITABLE) toggleFavorite();
     else if(e.key === '+' || e.key === '=') zoomBy(0.4);
     else if(e.key === '-' || e.key === '_') zoomBy(-0.4);

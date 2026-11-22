@@ -204,6 +204,20 @@ class CinemaTests(TempDirMixin, unittest.TestCase):
         for size in ("small", "large", "xl"):
             self.assertIn(f".cn-gallery.size-{size}", css)
 
+    def test_every_template_has_the_ken_burns_switch_in_its_viewer(self):
+        tmp = self.make_tmp()
+        photos = tmp / "trip"
+        standard_trip(photos)
+        for name in ("classic", "journal", "scrapbook", "cinema"):
+            with self.subTest(template=name):
+                build("-i", str(photos), "-o", str(tmp / name), "--template", name)
+                day = (tmp / name / "days" / "2026-05-01.html").read_text(encoding="utf-8")
+                self.assertIn('id="slideshow-kb"', day)
+                css = (tmp / name / "assets" / "style.css").read_text(encoding="utf-8")
+                self.assertIn("@keyframes kb-move", css)
+                self.assertIn("prefers-reduced-motion", css)
+                self.assertIn("applyKenBurns", (tmp / name / "assets" / "script.js").read_text(encoding="utf-8"))
+
     def test_a_scene_can_animate_in_every_time_it_is_reached(self):
         js = (Path(__file__).resolve().parent.parent / "albummaker" / "static" / "cinema.js").read_text(encoding="utf-8")
         self.assertIn("classList.remove('in-view')", js)

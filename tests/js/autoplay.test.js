@@ -228,3 +228,145 @@ test('typing a space in the caption box does not start playback (editor view)', 
   press(w, ' ', cap);
   assert.equal(w.eval('playing'), false);
 });
+
+// ---------- Ken Burns: a slow pan and zoom while playing, the visitor's choice ----------
+
+// jsdom never loads images, so a photo would never count as "there": say it is
+async function kenBurnsPage(opts) {
+  const page = await load(fixture.server, DAY, opts);
+  Object.defineProperty(page.w.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return true; } });
+  page.w.eval('playMs = 4000');
+  return page;
+}
+const kbImg = (w) => w.document.querySelector('#slideshow-media img');
+
+test('Ken Burns is off until the visitor switches it on, and the choice is remembered', async () => {
+  const { w } = await kenBurnsPage();
+  const btn = byId(w, 'slideshow-kb');
+  assert.ok(btn, 'there is a button');
+  assert.equal(btn.hidden, false);
+  assert.equal(btn.getAttribute('aria-pressed'), 'false');
+  btn.click();
+  assert.equal(btn.getAttribute('aria-pressed'), 'true');
+  assert.ok(btn.classList.contains('on'));
+  assert.equal(w.localStorage.getItem('tripKenBurns'), '1');
+  btn.click();
+  assert.equal(btn.getAttribute('aria-pressed'), 'false');
+  assert.equal(w.localStorage.getItem('tripKenBurns'), '0');
+  // the next visit starts as it was left
+  const again = await load(fixture.server, DAY, { storage: { tripKenBurns: '1' } });
+  assert.equal(byId(again.w, 'slideshow-kb').getAttribute('aria-pressed'), 'true');
+});
+
+test('the K key switches it, only with the viewer open', async () => {
+  const { w } = await kenBurnsPage();
+  press(w, 'k');
+  assert.equal(w.eval('kenBurns'), false, 'nothing happens with the viewer closed');
+  thumbs(w)[0].click();
+  press(w, 'k');
+  assert.equal(w.eval('kenBurns'), true);
+  press(w, 'K');
+  assert.equal(w.eval('kenBurns'), false);
+});
+
+test('while playing with it on, each photo gets a slow move that lasts about as long as the photo stays', async () => {
+  const { w } = await kenBurnsPage({ storage: { tripKenBurns: '1' } });
+  thumbs(w)[0].click();
+  assert.ok(!kbImg(w).classList.contains('kb'), 'a still photo is not animated');
+  byId(w, 'slideshow-play').click();
+  const img = kbImg(w);
+  assert.ok(img.classList.contains('kb'));
+  assert.ok(byId(w, 'slideshow-media').classList.contains('kb-on'));
+  assert.equal(img.style.getPropertyValue('--kb-ms'), '4800ms');
+  const scales = ['--kb-s0', '--kb-s1'].map((p) => parseFloat(img.style.getPropertyValue(p)));
+  assert.ok(scales.every((s) => s >= 1 && s <= 1.12), 'a gentle zoom: ' + scales);
+  assert.notEqual(scales[0], scales[1]);
+  // another photo, another move
+  const first = ['--kb-x1', '--kb-y1', '--kb-s1'].map((p) => img.style.getPropertyValue(p)).join();
+  w.eval('stepSlide(1)');
+  const next = kbImg(w);
+  assert.ok(next.classList.contains('kb'));
+  assert.notEqual(['--kb-x1', '--kb-y1', '--kb-s1'].map((p) => next.style.getPropertyValue(p)).join(), first);
+});
+
+test('with it off, playing shows photos as before', async () => {
+  const { w } = await kenBurnsPage();
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  assert.ok(!kbImg(w).classList.contains('kb'));
+  assert.ok(!byId(w, 'slideshow-media').classList.contains('kb-on'));
+});
+
+test('switching it on or off during Play takes effect at once', async () => {
+  const { w } = await kenBurnsPage();
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  byId(w, 'slideshow-kb').click();
+  assert.ok(kbImg(w).classList.contains('kb'));
+  byId(w, 'slideshow-kb').click();
+  assert.ok(!kbImg(w).classList.contains('kb'));
+  assert.ok(!byId(w, 'slideshow-media').classList.contains('kb-on'));
+});
+
+test('pausing holds the photo where it is; playing again starts the move again', async () => {
+  const { w } = await kenBurnsPage({ storage: { tripKenBurns: '1' } });
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  byId(w, 'slideshow-play').click();                       // pause
+  assert.ok(kbImg(w).classList.contains('kb'));
+  assert.ok(kbImg(w).classList.contains('kb-paused'));
+  byId(w, 'slideshow-play').click();                       // play
+  assert.ok(kbImg(w).classList.contains('kb'));
+  assert.ok(!kbImg(w).classList.contains('kb-paused'));
+});
+
+test('zooming in by hand stops it, and it does not come back while zoomed', async () => {
+  const { w } = await kenBurnsPage({ storage: { tripKenBurns: '1' } });
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  assert.ok(kbImg(w).classList.contains('kb'));
+  w.eval('zoomBy(1)');
+  assert.ok(!kbImg(w).classList.contains('kb'));
+  assert.ok(!byId(w, 'slideshow-media').classList.contains('kb-on'));
+  byId(w, 'slideshow-kb').click();
+  byId(w, 'slideshow-kb').click();
+  assert.ok(!kbImg(w).classList.contains('kb'), 'still zoomed in');
+});
+
+test('closing the viewer leaves nothing animated behind', async () => {
+  const { w } = await kenBurnsPage({ storage: { tripKenBurns: '1' } });
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  press(w, 'Escape');
+  assert.equal(w.document.querySelectorAll('.kb, .kb-on').length, 0);
+  thumbs(w)[0].click();
+  assert.ok(!kbImg(w).classList.contains('kb'), 'a newly opened viewer is not playing');
+});
+
+test('a video is never animated', async (t) => {
+  const { w } = await kenBurnsPage({ storage: { tripKenBurns: '1' } });
+  const vi = w.eval('SLIDES.map(s => s.type)').indexOf('video');
+  if (vi < 0) return t.skip('no video in this fixture (ffmpeg missing)');
+  thumbs(w)[vi].click();
+  byId(w, 'slideshow-play').click();
+  assert.equal(w.document.querySelectorAll('.kb, .kb-on').length, 0);
+});
+
+test('people who ask for less motion get no button and no animation', async () => {
+  const page = await load(fixture.server, DAY, { storage: { tripKenBurns: '1' } });
+  const { w } = page;
+  w.matchMedia = (q) => ({ matches: /reduce/.test(q), media: q, addEventListener() {}, removeEventListener() {} });
+  Object.defineProperty(w.HTMLImageElement.prototype, 'complete', { configurable: true, get() { return true; } });
+  w.eval('syncKenBurnsButton()');
+  assert.equal(byId(w, 'slideshow-kb').hidden, true);
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  assert.ok(!kbImg(w).classList.contains('kb'));
+});
+
+test('a browser that cannot store anything still works', async () => {
+  const { w, errors } = await load(fixture.server, DAY, { breakStorage: true });
+  byId(w, 'slideshow-kb').click();
+  assert.equal(w.eval('kenBurns'), true);
+  assert.deepEqual(errors.filter((e) => !/Not implemented|Could not load|ECONNREFUSED/.test(e)), []);
+});
