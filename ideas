@@ -1,5 +1,4 @@
 # Fixes
-    - FIXME: Docs: update the site: Explore the live sample trip and Try the demo bottons link to classic view. This may make people think it is the only one, so update that so that prospects can easily find the different demo sites with the existing templates
 
     - FIXME: Gui, when starting the live-server, the text does not fit the progress window
 

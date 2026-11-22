@@ -24,9 +24,9 @@ use a GPS track from a watch or phone app to put camera photos on the map
 and draw the route you travelled, and can gather all your trips on one
 page, wherever their folders are.
 
-🌐 **[Explore the Live Sample Trip](https://pajotsetrapper.github.io/AlbumMaker/demo/index.html)** · 📖 **[Official Product Page](https://pajotsetrapper.github.io/AlbumMaker/)**
+🌐 **[Explore the Live Sample Trip](https://pajotsetrapper.github.io/AlbumMaker/demo-cinema/index.html)** · 📖 **[Official Product Page](https://pajotsetrapper.github.io/AlbumMaker/)**
 
-The same sample trip in every template: [Classic](https://pajotsetrapper.github.io/AlbumMaker/demo/index.html) · [Journal](https://pajotsetrapper.github.io/AlbumMaker/demo-journal/index.html) · [Scrapbook](https://pajotsetrapper.github.io/AlbumMaker/demo-scrapbook/index.html) · [Cinema](https://pajotsetrapper.github.io/AlbumMaker/demo-cinema/index.html)
+The same sample trip in every template: [Cinema (default)](https://pajotsetrapper.github.io/AlbumMaker/demo-cinema/index.html) · [Journal](https://pajotsetrapper.github.io/AlbumMaker/demo-journal/index.html) · [Scrapbook](https://pajotsetrapper.github.io/AlbumMaker/demo-scrapbook/index.html) · [Classic](https://pajotsetrapper.github.io/AlbumMaker/demo/index.html)
 
 ---
 

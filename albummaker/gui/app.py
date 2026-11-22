@@ -374,13 +374,15 @@ tile provider instead.</p>
 <h3>Options &rarr; General</h3>
 <p>These settings apply to both the live server and static sites.</p>
 <ul>
-<li><b>Appearance &rarr; Color theme:</b> light or dark, for this app.</li>
+<li><b>Appearance &rarr; Color theme:</b> dark or light, for this app only (it does not change the
+sites you make). New installs start in dark.</li>
 <li><b>Trip library page &rarr; Overview page title:</b> the heading and browser-tab title of the
 page listing all trips. Defaults to <code>Trips</code>.</li>
 <li><b>Trip library page &rarr; Site template:</b> the look of the static sites you create: Classic,
 Journal, Scrapbook or Cinema. All four show the same content; only the layout and styling differ.
-Defaults to Classic. The live server does not use this setting: it shows the template picked in the
-<b>Template</b> menu on the trip list page (shown only to someone who may edit) and remembers it.</li>
+Defaults to Cinema (a setting saved earlier, such as Classic, is kept). The live server does not use
+this setting: it shows the template picked in the <b>Template</b> menu on the trip list page (shown
+only to someone who may edit) and remembers it; until one is picked it uses Cinema.</li>
 <li><b>Video time handling &rarr; Default video UTC offset:</b> optional fixed fallback for videos in
 trips whose time zone is Automatic. Enter hours east of UTC, such as <code>2</code> or
 <code>-5.5</code>. A time zone chosen for a trip takes precedence. Leave blank to use automatic
@@ -512,12 +514,22 @@ homepage, with an overview map and a card per day; and a page per day with its m
 <b>XL</b>) make cards and thumbnails bigger or smaller. The browser remembers each choice.</li>
 <li><b>Slideshow:</b> click a photo to open it full-screen. <b>Play</b> (or Space) advances by itself;
 the speed button next to it changes the time per photo. The <b>Live</b> button plays a Live Photo's
-clip.</li>
+clip. The <b>Ken Burns</b> button (or <b>K</b>) adds a slow pan and zoom to each photo while the
+slideshow plays. It is off by default, skips videos, stops when you zoom by hand and is remembered by
+the browser.</li>
 <li><b>Favorites:</b> once a photo is a favorite (&#9733;), a <b>&#9733; Favorites</b> button above the
 thumbnails shows only the favorites, and the slideshow then steps through favorites only.</li>
 <li><b>Locations:</b> each geotagged photo is a point on the maps, and <b>I</b> in the slideshow opens a
 details panel with camera settings, the place, a small map of where it was taken, and a link to
 download the original file. GPS tracks, if any, are drawn on the maps.</li>
+<li><b>Link previews:</b> when a link to a trip or a day is pasted into a chat app such as WhatsApp,
+iMessage, Telegram or Slack, the chat shows the title and dates and, from the live server, the cover
+photo. A static site has no preview picture, because it cannot know where it will be published. For a
+preview picture through a public name, the server must be reachable under that name (see <b>Extra
+allowed host names</b>), and chat apps remember a link's preview for a while.</li>
+<li><b>Routes:</b> a GPS track is cut at stray jumps and signal gaps, and a long hop between distant
+places is drawn as two separate lines instead of one straight line across the map. A note about
+this appears in Activity when it happens.</li>
 <li><b>Links to one photo:</b> opening a photo adds <code>#p=&hellip;</code> to the address. Copy
 the address to share a link that opens that photo; the browser's Back button closes the
 viewer.</li>
@@ -526,7 +538,7 @@ viewer.</li>
 <b>Esc</b> back to the trip homepage (it closes anything open first; on a trip's homepage it goes back
 to the trip list). In the slideshow: <b>&larr;</b> / <b>&rarr;</b> previous / next photo, <b>Space</b>
 play / pause, <b>+</b> / <b>-</b> / <b>0</b> zoom in / out / reset, <b>I</b> details panel, <b>F</b>
-true full-screen, <b>L</b> play a Live Photo's clip, <b>S</b> favorite (when editing), <b>Esc</b> close
+true full-screen, <b>K</b> Ken Burns on / off, <b>L</b> play a Live Photo's clip, <b>S</b> favorite (when editing), <b>Esc</b> close
 the details panel, then the viewer. Shortcuts are off while you type in a caption or title box.</p>
 <p><b>Editing</b> (live server; on this computer, or in a browser opened with the editor link).
 Changes are saved immediately to <code>trip_content.json</code> in the trip's photos folder.</p>

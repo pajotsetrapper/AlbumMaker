@@ -3,11 +3,11 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="AlbumMaker turns a folder of trip photos, videos and GPS tracks into a mapped, day-by-day website in the look you choose: classic, journal, scrapbook or cinema. Private by design: no account, no uploads.">
+  <meta name="description" content="AlbumMaker turns a folder of trip photos, videos and GPS tracks into a mapped, day-by-day website in the look you choose: cinema, journal, scrapbook or classic. Try all four live demos. Private by design: no account, no uploads.">
   <meta name="theme-color" content="#141c30">
   <meta property="og:title" content="AlbumMaker: your trips, told by the photos">
   <meta property="og:description" content="Turn a folder of photos into a mapped, day-by-day travel site in one of four looks. Browse it privately or share it as a self-contained website.">
-  <meta property="og:image" content="assets/trip-library.png">
+  <meta property="og:image" content="assets/template-cinema-home.webp">
   <title>AlbumMaker: your trips, told by the photos</title>
   <link rel="stylesheet" href="demo/assets/vendor/fonts/fonts.css">
   <style>
@@ -111,6 +111,14 @@
     .tplnote p { margin: 0; color: var(--muted); font-size: .95rem; }
     .demo small a { color: inherit; font-weight: 600; }
 
+    .looks { display: flex; flex-wrap: wrap; align-items: center; justify-content: center; gap: 10px; margin: 22px auto 0; }
+    .looks > span { color: var(--muted); font-size: .9rem; margin-right: 4px; }
+    .look { display: inline-flex; align-items: center; gap: 9px; min-height: 40px; padding: 0 16px 0 12px; border: 1px solid var(--line); border-radius: 999px; font: 600 .92rem var(--sans); color: var(--cream); text-decoration: none; transition: background .15s, border-color .15s; }
+    .look:hover { border-color: var(--muted); background: #ffffff0d; }
+    .look .dot { width: 12px; height: 12px; }
+    .look em { font: 600 .68rem var(--sans); font-style: normal; letter-spacing: .06em; text-transform: uppercase; color: var(--ink); background: var(--amber); border-radius: 999px; padding: 2px 8px; }
+    .badge { display: inline-block; margin-left: 10px; vertical-align: middle; font: 600 .68rem var(--sans); letter-spacing: .06em; text-transform: uppercase; color: var(--ink); background: var(--amber); border-radius: 999px; padding: 3px 10px; }
+
     .grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 1px; background: var(--line); border: 1px solid var(--line); border-radius: 14px; overflow: hidden; }
     .grid article { padding: 28px 26px; background: var(--bg); }
     .grid h3 { font-size: 1.2rem; margin-bottom: 8px; }
@@ -123,10 +131,24 @@
     .demo .btn { background: var(--ink); border-color: var(--ink); color: var(--cream); }
     .demo .btn:hover { background: #26335a; }
     .demo small { display: block; margin-top: 18px; color: #55607a; font-size: .82rem; }
-    .photos { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
-    .photos a { display: block; border-radius: 10px; overflow: hidden; box-shadow: 0 10px 30px #14203a33; transition: transform .2s; }
-    .photos a:hover { transform: translateY(-3px); }
-    .photos img { display: block; width: 100%; height: auto; }
+    .demo .head { max-width: 720px; margin-bottom: 34px; }
+    .demo .head p { margin: 14px 0 0; font-size: 1.08rem; }
+    .demo .wrap { display: block; }
+    .picker { display: grid; grid-template-columns: repeat(4, 1fr); gap: 18px; }
+    .pick { display: flex; flex-direction: column; min-width: 0; border: 1px solid #14203a22; border-radius: 14px; overflow: hidden; background: #fbf6ec; box-shadow: 0 14px 36px #14203a22; transition: transform .2s, box-shadow .2s; }
+    .pick:hover { transform: translateY(-4px); box-shadow: 0 22px 46px #14203a38; }
+    .pick .thumb { display: block; position: relative; aspect-ratio: 4 / 3; overflow: hidden; background: var(--ink); }
+    .pick .thumb img { display: block; width: 100%; height: 100%; object-fit: cover; object-position: top; }
+    .pick .thumb .badge { position: absolute; left: 12px; top: 12px; margin: 0; }
+    .pick .body { display: flex; flex: 1; flex-direction: column; padding: 16px 18px 18px; }
+    .pick h3 { color: var(--ink); font-size: 1.35rem; margin-bottom: 4px; }
+    .pick p { margin: 0 0 16px; font-size: .92rem; color: #4a5672; }
+    .pick .go { display: flex; flex-wrap: wrap; gap: 8px; margin-top: auto; }
+    .demo .pick .btn { min-height: 40px; padding: 0 14px; font-size: .9rem; }
+    .demo .pick .btn.ghost { background: transparent; color: var(--ink); border-color: #14203a44; }
+    .demo .pick .btn.ghost:hover { background: #14203a12; }
+    .demo .picker + small { margin-top: 26px; }
+    .demo .head h2 { margin-bottom: 0; }
 
     .steps { display: grid; grid-template-columns: repeat(3, 1fr); gap: 28px; margin: 0 0 44px; padding: 0; list-style: none; counter-reset: s; }
     .steps li { counter-increment: s; padding-top: 18px; border-top: 2px solid var(--amber); }
@@ -181,14 +203,15 @@
       .trust ul { grid-template-columns: 1fr 1fr; }
       .trust li:nth-child(odd) { border-left: 0; padding-left: 0; }
       .trust li:nth-child(n+3) { border-top: 1px solid var(--line); }
-      .row, .row.flip, .demo .wrap, .privacy, .two, .tplpanel, .tplnote { grid-template-columns: 1fr; gap: 28px; }
+      .row, .row.flip, .privacy, .two, .tplpanel, .tplnote { grid-template-columns: 1fr; gap: 28px; }
       .tplstage .float { width: 60%; }
       .row.flip .copy { order: 0; }
       .grid, .steps { grid-template-columns: 1fr; }
+      .picker { grid-template-columns: 1fr 1fr; }
       .privacy { padding: 28px; }
       .support { padding: 40px 22px; }
     }
-    @media (max-width: 480px) { .actions .btn, .support .way, .support .btn { width: 100%; } }
+    @media (max-width: 480px) { .picker { grid-template-columns: 1fr; } .actions .btn, .support .way, .support .btn { width: 100%; } }
   </style>
 </head>
 <body>
@@ -197,12 +220,12 @@
       <a class="brand" href="#top">Album<i>Maker</i></a>
       <nav aria-label="Main">
         <a href="#features">Features</a>
-        <a href="#templates">Looks</a>
+        <a href="#templates">Four looks</a>
         <a href="#how">How it works</a>
         <a href="#privacy">Privacy</a>
         <a href="#get">Get it</a>
         <a href="#support">Support</a>
-        <a class="btn primary" href="demo/index.html">Try the demo</a>
+        <a class="btn primary" href="#demo">Try the demos</a>
       </nav>
     </div>
   </header>
@@ -210,18 +233,25 @@
   <main id="top">
     <section class="hero wrap">
       <h1>Your trips, <em>told by the photos.</em></h1>
-      <p class="lead">Turn your travel photos, videos, and GPS tracks into beautiful interactive travel websites. AlbumMaker automatically builds day-by-day stories with maps, routes, and full-screen galleries, in the look you choose: classic, journal, scrapbook or cinema. Your media stays private with 100% local processing, and you can easily share trips locally or publish them anywhere as a static website.</p>
+      <p class="lead">Turn your travel photos, videos, and GPS tracks into beautiful interactive travel websites. AlbumMaker automatically builds day-by-day stories with maps, routes, and full-screen galleries, in the look you choose: cinematic, journal, scrapbook or classic. Your media stays private with 100% local processing, and you can easily share trips locally or publish them anywhere as a static website.</p>
       <div class="actions">
-        <a class="btn primary" href="demo/index.html">Explore the live sample trip</a>
+        <a class="btn primary" href="#demo">Explore the live demos</a>
         <a class="btn" href="#get">Get AlbumMaker</a>
       </div>
-      <p class="fine">Free for noncommercial use. Windows, macOS and Linux. Four templates to choose from.</p>
+      <div class="looks" aria-label="Open the same sample trip in each look">
+        <span>The same trip, four looks:</span>
+        <a class="look" href="demo-cinema/index.html"><span class="dot" style="background:linear-gradient(135deg,#0b0c10 50%,#ffb347 50%)"></span>Cinema <em>Default</em></a>
+        <a class="look" href="demo-journal/index.html"><span class="dot" style="background:linear-gradient(135deg,#ffffff 50%,#1f6feb 50%)"></span>Journal</a>
+        <a class="look" href="demo-scrapbook/index.html"><span class="dot" style="background:linear-gradient(135deg,#f3ead8 50%,#c4452d 50%)"></span>Scrapbook</a>
+        <a class="look" href="demo/index.html"><span class="dot" style="background:linear-gradient(135deg,#141c30 50%,#e6a23c 50%)"></span>Classic</a>
+      </div>
+      <p class="fine">Free for noncommercial use. Windows, macOS and Linux. Click any look to open a live sample trip.</p>
       <div class="stage">
         <div class="browser">
           <div class="bar"><b></b><b></b><b></b><span>127.0.0.1:8000</span></div>
-          <img src="assets/trip-library.png" width="1440" height="1400" alt="A Weekend at Lake Lucerne: the trip homepage with its title, totals, a map of both days' GPS routes and a card for each day">
+          <img src="assets/template-cinema-home.webp" width="1440" height="1400" alt="A Weekend at Lake Lucerne in the Cinema look: a full-screen opening scene with the trip title, totals and a mini-map, and the first day's scene below it">
         </div>
-        <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="A day page titled Up the Rigi, back by boat, with the day's story, the GPS route across the lake and photo thumbnails" loading="lazy"></div>
+        <div class="float"><img src="assets/template-cinema-day.webp" width="1440" height="1600" alt="A Cinema day page with a full-screen photo, a large title, a drop-cap story, the glowing GPS route and a photo gallery" loading="lazy"></div>
       </div>
     </section>
 
@@ -229,7 +259,7 @@
       <ul class="wrap">
         <li><strong>No account</strong>No sign-up, no subscription, no cloud.</li>
         <li><strong>Your files stay put</strong>Originals are never changed or uploaded.</li>
-        <li><strong>One window</strong>Add folders, press start. Or use the command line.</li>
+        <li><strong>Four looks</strong>Cinema, Journal, Scrapbook or Classic, from the same photos.</li>
         <li><strong>Source-available</strong>Code you can read and change for noncommercial use.</li>
       </ul>
     </div>
@@ -243,16 +273,16 @@
       <div class="row">
         <div class="copy">
           <h3>One overview for the whole journey</h3>
-          <p>The homepage shows the trip title, how many days, photos and kilometres it covers, and a map of where you went. Each day gets its own colour and card.</p>
+          <p>The homepage shows the trip title, how many days, photos and kilometres it covers, and a map of where you went, with a scene or card for every day.</p>
           <ul>
             <li>Routes drawn from a GPX track, or from where your photos were taken, with the distance you covered</li>
-            <li>Card size from S to XL, so large trips stay easy to scan</li>
+            <li>Card size from S to XL on the overview, and thumbnail size from S to XL on every day page, so big trips stay easy to scan</li>
             <li>Several trips can share one library page</li>
           </ul>
         </div>
         <div>
-          <div class="shot crop"><a href="demo/index.html"><img src="assets/trip-library.png" width="1440" height="1400" alt="Trip overview with map and day cards" loading="lazy"></a></div>
-          <p class="caption">Map tiles © OpenStreetMap contributors.</p>
+          <div class="shot crop"><a href="demo-cinema/index.html"><img src="assets/template-cinema-home.webp" width="1440" height="1400" alt="Cinema trip overview with the title, totals, a mini-map and the first day's scene" loading="lazy"></a></div>
+          <p class="caption">Shown in the Cinema look. Map tiles © OpenStreetMap contributors.</p>
         </div>
       </div>
 
@@ -261,11 +291,14 @@
           <h3>A page for every day</h3>
           <p>Photos and videos are grouped by when they were taken, with the place names, your story of the day and the day's route above the gallery.</p>
           <ul>
-            <li>Full-screen slideshow with keyboard, swipe and autoplay</li>
+            <li>Full-screen slideshow with keyboard, swipe, autoplay and an optional slow Ken Burns zoom</li>
             <li>Captions, favourites and camera details for each photo</li>
           </ul>
         </div>
-        <div class="shot crop"><a href="demo/days/2025-05-15.html"><img src="assets/trip-day.png" width="1440" height="1600" alt="Day page with the day's story, its route map and thumbnails" loading="lazy"></a></div>
+        <div>
+          <div class="shot crop"><a href="demo-scrapbook/days/2025-05-15.html"><img src="assets/template-scrapbook-day.webp" width="1440" height="1600" alt="Scrapbook day page with polaroid photos, lined notebook paper for the story and a push-pin route map" loading="lazy"></a></div>
+          <p class="caption">Shown in the Scrapbook look.</p>
+        </div>
       </div>
       <div class="row">
         <div class="copy">
@@ -278,10 +311,16 @@
             <li>Place names for every day with a location, looked up offline</li>
           </ul>
         </div>
-        <div class="shot crop"><a href="demo/days/2025-05-14.html"><img src="assets/trip-story.png" width="1440" height="1220" alt="Day page titled Bridges and the old town, with a three-paragraph story and the walk through Lucerne drawn from a GPX track" loading="lazy"></a></div>
+        <div>
+          <div class="shot crop"><a href="demo-journal/days/2025-05-14.html"><img src="assets/template-journal-day.webp" width="1440" height="1600" alt="Journal day page titled Bridges and the old town, with a cover photo, the day's story and the walk through Lucerne drawn from a GPX track" loading="lazy"></a></div>
+          <p class="caption">Shown in the Journal look.</p>
+        </div>
       </div>
 
       <div class="grid">
+        <article><h3>Links that look great in chat</h3><p>Paste a trip or day link into WhatsApp, iMessage, Telegram or Slack and friends see the cover photo, the title and the dates, in every look.</p></article>
+        <article><h3>A slideshow with a slow zoom</h3><p>Switch on the optional Ken Burns pan and zoom with one button or the <code>K</code> key. It is off by default, remembered by the browser and skips videos.</p></article>
+        <article><h3>Routes that make sense</h3><p>Stray GPS jumps are cut out of your track, and a flight between continents is drawn as two routes instead of one line straight across the map.</p></article>
         <article><h3>Edit right in the page</h3><p>With the live server, write day titles and stories, add captions, mark favourites, hide photos and choose covers without opening a file.</p></article>
         <article><h3>Photos and video together</h3><p>Handles common photo and video formats, pairs Live Photos, and skips duplicates and system clutter on its own.</p></article>
         <article><h3>Place names built in</h3><p>Photos with GPS get a place name from a bundled database, so this step does not need the internet.</p></article>
@@ -294,35 +333,36 @@
     <section id="templates" class="wrap">
       <div class="head">
         <h2>One trip. Four looks.</h2>
-        <p>Pick the look that suits the trip. Every template shows the same days, photos, maps and stories, with the same full-screen viewer and in-page editing. Only the feel changes.</p>
+        <p>Pick the look that suits the trip. Every template shows the same days, photos, maps and stories, with the same full-screen viewer and in-page editing. Only the feel changes. Click a tab, then open its live sample.</p>
       </div>
       <div class="tpl" id="tpl">
         <div class="tabs" role="tablist" aria-label="Templates">
-        <button class="tab" role="tab" id="tab-classic" aria-controls="panel-classic" aria-selected="true"><span class="dot" style="background:linear-gradient(135deg,#141c30 50%,#e6a23c 50%)"></span>Classic</button>
+        <button class="tab" role="tab" id="tab-cinema" aria-controls="panel-cinema" aria-selected="true"><span class="dot" style="background:linear-gradient(135deg,#0b0c10 50%,#ffb347 50%)"></span>Cinema<span class="badge" style="margin:0">Default</span></button>
         <button class="tab" role="tab" id="tab-journal" aria-controls="panel-journal" aria-selected="false" tabindex="-1"><span class="dot" style="background:linear-gradient(135deg,#ffffff 50%,#1f6feb 50%)"></span>Journal</button>
         <button class="tab" role="tab" id="tab-scrapbook" aria-controls="panel-scrapbook" aria-selected="false" tabindex="-1"><span class="dot" style="background:linear-gradient(135deg,#f3ead8 50%,#c4452d 50%)"></span>Scrapbook</button>
-        <button class="tab" role="tab" id="tab-cinema" aria-controls="panel-cinema" aria-selected="false" tabindex="-1"><span class="dot" style="background:linear-gradient(135deg,#0b0c10 50%,#ffb347 50%)"></span>Cinema</button>
+        <button class="tab" role="tab" id="tab-classic" aria-controls="panel-classic" aria-selected="false" tabindex="-1"><span class="dot" style="background:linear-gradient(135deg,#141c30 50%,#e6a23c 50%)"></span>Classic</button>
         </div>
-        <div class="tplpanel" role="tabpanel" id="panel-classic" aria-labelledby="tab-classic">
+        <div class="tplpanel" role="tabpanel" id="panel-cinema" aria-labelledby="tab-cinema">
           <div class="copy">
-            <h3>Classic: dark, calm and focused</h3>
-            <p>The original look: dark navy pages, parchment text panels and a card for every day, with a map of the whole route.</p>
+            <h3>Cinema: every day, a full-screen scene <span class="badge">Default</span></h3>
+            <p>Dark and cinematic. Each day is a full-screen scene with a big photo, an outlined day number and a film strip of more photos, fading in as you scroll.</p>
             <ul>
-            <li>A card per day, with a colour for each day on the map</li>
-            <li>Bundled fonts that work offline</li>
-            <li>The default, so nothing changes if you never pick another</li>
+            <li>A mini-map that flies to the day you are reading, then opens to show the whole route</li>
+            <li>Day pages with a drop-cap story and a glowing route</li>
+            <li>Galleries in rows that follow each photo's shape</li>
             </ul>
             <div class="actions">
-              <a class="btn primary" href="demo/index.html">Open the classic sample</a>
-              <span class="usage">The default look</span>
+              <a class="btn primary" href="demo-cinema/index.html">Open the Cinema sample</a>
+              <a class="btn" href="demo-cinema/days/2025-05-14.html">Day page</a>
+              <span class="usage">The default for new installs, or <code>--template cinema</code></span>
             </div>
           </div>
           <div class="tplstage">
             <div class="browser">
               <div class="bar"><b></b><b></b><b></b><span>127.0.0.1:8000</span></div>
-              <img src="assets/trip-library.png" width="1440" height="1400" alt="Classic template: the trip homepage with the title, totals, a map of both days' routes and a card for each day" loading="lazy">
+              <img src="assets/template-cinema-home.webp" width="1440" height="1400" alt="Cinema template: a dark full-screen opening scene with a large title, trip statistics, a mini-map and the first day's film strip" loading="lazy">
             </div>
-            <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="Classic template: a day page with the story, the route map and thumbnails" loading="lazy"></div>
+            <div class="float"><img src="assets/template-cinema-day.webp" width="1440" height="1600" alt="Cinema template: a day page with a full-screen photo, a large title, a drop-cap story, a glowing route map and a photo gallery" loading="lazy"></div>
           </div>
         </div>
         <div class="tplpanel" role="tabpanel" id="panel-journal" aria-labelledby="tab-journal">
@@ -336,6 +376,7 @@
             </ul>
             <div class="actions">
               <a class="btn primary" href="demo-journal/index.html">Open the Journal sample</a>
+              <a class="btn" href="demo-journal/days/2025-05-14.html">Day page</a>
               <span class="usage">Use it: <code>--template journal</code></span>
             </div>
           </div>
@@ -358,6 +399,7 @@
             </ul>
             <div class="actions">
               <a class="btn primary" href="demo-scrapbook/index.html">Open the Scrapbook sample</a>
+              <a class="btn" href="demo-scrapbook/days/2025-05-14.html">Day page</a>
               <span class="usage">Use it: <code>--template scrapbook</code></span>
             </div>
           </div>
@@ -369,32 +411,33 @@
             <div class="float"><img src="assets/template-scrapbook-day.webp" width="1440" height="1600" alt="Scrapbook template: a day page with polaroid photos, lined notebook paper for the story and a push-pin route map" loading="lazy"></div>
           </div>
         </div>
-        <div class="tplpanel" role="tabpanel" id="panel-cinema" aria-labelledby="tab-cinema">
+        <div class="tplpanel" role="tabpanel" id="panel-classic" aria-labelledby="tab-classic">
           <div class="copy">
-            <h3>Cinema: every day, a full-screen scene</h3>
-            <p>Dark and cinematic. Each day is a full-screen scene with a big photo, an outlined day number and a film strip of more photos, fading in as you scroll.</p>
+            <h3>Classic: dark, calm and focused</h3>
+            <p>The original look and still a favourite: dark navy pages, parchment text panels and a card for every day, with a map of the whole route.</p>
             <ul>
-            <li>A mini-map that flies to the day you are reading, then opens to show the whole route</li>
-            <li>Day pages with a drop-cap story and a glowing route</li>
-            <li>Galleries in rows that follow each photo's shape</li>
+            <li>A card per day, with a colour for each day on the map</li>
+            <li>Bundled fonts that work offline</li>
+            <li>Nothing changes for libraries already set to Classic</li>
             </ul>
             <div class="actions">
-              <a class="btn primary" href="demo-cinema/index.html">Open the Cinema sample</a>
-              <span class="usage">Use it: <code>--template cinema</code></span>
+              <a class="btn primary" href="demo/index.html">Open the Classic sample</a>
+              <a class="btn" href="demo/days/2025-05-14.html">Day page</a>
+              <span class="usage">Use it: <code>--template classic</code></span>
             </div>
           </div>
           <div class="tplstage">
             <div class="browser">
               <div class="bar"><b></b><b></b><b></b><span>127.0.0.1:8000</span></div>
-              <img src="assets/template-cinema-home.webp" width="1440" height="1400" alt="Cinema template: a dark full-screen opening scene with a large title, trip statistics, a mini-map and the first day's film strip" loading="lazy">
+              <img src="assets/trip-library.png" width="1440" height="1400" alt="Classic template: the trip homepage with the title, totals, a map of both days' routes and a card for each day" loading="lazy">
             </div>
-            <div class="float"><img src="assets/template-cinema-day.webp" width="1440" height="1600" alt="Cinema template: a day page with a full-screen photo, a large title, a drop-cap story, a glowing route map and a photo gallery" loading="lazy"></div>
+            <div class="float"><img src="assets/trip-day.png" width="1440" height="1600" alt="Classic template: a day page with the story, the route map and thumbnails" loading="lazy"></div>
           </div>
         </div>
         <p class="caption">Screenshots of the sample trip, a fictional weekend at Lake Lucerne. Maps © OpenStreetMap contributors.</p>
         <div class="tplnote">
           <div><h3>Same content, any look</h3><p>Switch template at any time. Titles, stories, captions, favourites and covers live in one <code>trip_content.json</code> and carry over untouched.</p></div>
-          <div><h3>Pick it where you like</h3><p>Use <code>--template</code> on the command line, the <b>Site template</b> setting in the desktop app, or, with several trips on the live server, a menu on the library page that remembers your choice.</p></div>
+          <div><h3>Pick it where you like</h3><p>Cinema is used unless you choose otherwise. Use <code>--template</code> on the command line, the <b>Site template</b> setting in the desktop app, or, with several trips on the live server, a menu on the library page that remembers your choice.</p></div>
           <div><h3>Works offline too</h3><p>Journal, Scrapbook and Cinema use only system fonts, so there is nothing extra to download. Add your own template as a folder of pages and a stylesheet.</p></div>
         </div>
       </div>
@@ -402,19 +445,33 @@
 
     <div class="demo" id="demo">
       <div class="wrap">
-        <div>
-          <h2>Open a real AlbumMaker site.</h2>
-          <p>The sample is a finished two-day trip built by AlbumMaker itself: a walk through Lucerne and a day up the Rigi, with a story for each day and the route from a GPS track. Zoom the map, switch the card size, open a photo and use the arrow keys.</p>
-          <a class="btn" href="demo/index.html">Open the sample trip</a>
-          <small>Prefer another look? Open the same trip as <a href="demo-journal/index.html">Journal</a>, <a href="demo-scrapbook/index.html">Scrapbook</a> or <a href="demo-cinema/index.html">Cinema</a>.</small>
-          <small>The photos are generated illustrations, not a real trip. The GPS track, route and story are fictional.</small>
+        <div class="head">
+          <h2>Open a real AlbumMaker site. Pick your look.</h2>
+          <p>Every sample below is the same finished two-day trip, built by AlbumMaker itself: a walk through Lucerne and a day up the Rigi, with a story for each day and the route from a GPS track. Open all four, zoom the map, switch the card size, open a photo and use the arrow keys.</p>
         </div>
-        <div class="photos">
-          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_4102.jpg" width="400" height="300" alt="Illustration of a lakeside town at sunrise" loading="lazy"></a>
-          <a href="demo/days/2025-05-14.html" aria-label="Open day 1 of the sample trip"><img src="demo/thumbs/IMG_4138.jpg" width="400" height="300" alt="Illustration of an old town glowing across a river" loading="lazy"></a>
-          <a href="demo/days/2025-05-15.html" aria-label="Open day 2 of the sample trip"><img src="demo/thumbs/IMG_5201.jpg" width="400" height="300" alt="Illustration of snowy peaks above a lake" loading="lazy"></a>
-          <a href="demo/index.html" aria-label="Open the sample trip"><img src="demo/thumbs/IMG_5244.jpg" width="400" height="300" alt="Illustration of mountains over a lake in the evening" loading="lazy"></a>
+        <div class="picker">
+          <article class="pick">
+            <a class="thumb" href="demo-cinema/index.html" aria-label="Open the Cinema sample trip"><span class="badge">Default</span><img src="assets/template-cinema-home.webp" width="1440" height="1400" alt="Cinema look: a dark full-screen opening scene with a large title" loading="lazy"></a>
+            <div class="body"><h3>Cinema</h3><p>Dark and cinematic. Every day is a full-screen scene.</p>
+              <div class="go"><a class="btn" href="demo-cinema/index.html">Open sample</a><a class="btn ghost" href="demo-cinema/days/2025-05-15.html">Day page</a></div></div>
+          </article>
+          <article class="pick">
+            <a class="thumb" href="demo-journal/index.html" aria-label="Open the Journal sample trip"><img src="assets/template-journal-home.webp" width="1440" height="1400" alt="Journal look: a light trip page with a cover photo and a timeline of days" loading="lazy"></a>
+            <div class="body"><h3>Journal</h3><p>A bright travel diary with a timeline and a map that follows you.</p>
+              <div class="go"><a class="btn" href="demo-journal/index.html">Open sample</a><a class="btn ghost" href="demo-journal/days/2025-05-15.html">Day page</a></div></div>
+          </article>
+          <article class="pick">
+            <a class="thumb" href="demo-scrapbook/index.html" aria-label="Open the Scrapbook sample trip"><img src="assets/template-scrapbook-home.webp" width="1440" height="1400" alt="Scrapbook look: warm paper with taped polaroid photos and a push-pin map" loading="lazy"></a>
+            <div class="body"><h3>Scrapbook</h3><p>Polaroids, rubber stamps and notebook paper. Cosy and personal.</p>
+              <div class="go"><a class="btn" href="demo-scrapbook/index.html">Open sample</a><a class="btn ghost" href="demo-scrapbook/days/2025-05-15.html">Day page</a></div></div>
+          </article>
+          <article class="pick">
+            <a class="thumb" href="demo/index.html" aria-label="Open the Classic sample trip"><img src="assets/trip-library.png" width="1440" height="1400" alt="Classic look: dark navy pages with a route map and a card for each day" loading="lazy"></a>
+            <div class="body"><h3>Classic</h3><p>The original: calm, dark and focused, with a card for every day.</p>
+              <div class="go"><a class="btn" href="demo/index.html">Open sample</a><a class="btn ghost" href="demo/days/2025-05-15.html">Day page</a></div></div>
+          </article>
         </div>
+        <small>The photos are generated illustrations, not a real trip. The GPS track, route and story are fictional.</small>
       </div>
     </div>
 
@@ -425,12 +482,12 @@
       </div>
       <ol class="steps">
         <li><h3>Choose your trip folders</h3><p>Add one folder, or several to build a library. Set a time zone for each trip if you need to.</p></li>
-        <li><h3>Pick live or static, and a look</h3><p>Browse and edit on a live server, or create a standalone site to share or publish. Choose a template for how it looks.</p></li>
-        <li><h3>Press start</h3><p>AlbumMaker reads your files and makes the thumbnails. Open the live site with one button, or find the static site in the folder you chose.</p></li>
+        <li><h3>Pick live or static, and a look</h3><p>Browse and edit on a live server, or create a standalone site to share or publish. Choose Cinema, Journal, Scrapbook or Classic for how it looks.</p></li>
+        <li><h3>Press start</h3><p>A clear “please wait” window shows what AlbumMaker is doing, and a big message (plus a flashing taskbar icon) tells you the moment your trips are ready. Open the live site with one button, or find the static site in the folder you chose.</p></li>
       </ol>
       <div class="app">
         <div class="shot"><img src="assets/desktop-app.png" width="1160" height="900" alt="The AlbumMaker desktop app showing a trip folder with its time zone, the live server and static site choices, and a Start live server button" loading="lazy"></div>
-        <p class="caption">The desktop app also has a dark theme.</p>
+        <p class="caption">Shown in the light theme. The desktop app opens in a dark theme by default, and you can switch in Options.</p>
       </div>
     </section>
 
@@ -468,7 +525,7 @@ python album_server.py -i /path/to/photos
 <span># then open http://127.0.0.1:8000/</span></pre>
           <ul>
             <li>Install FFmpeg for video details and previews (<code>python -m albummaker install-ffmpeg</code> does it with winget or Homebrew)</li>
-            <li>Add <code>--template journal</code> (or <code>scrapbook</code>, <code>cinema</code>) for another look</li>
+            <li>Cinema is the default look; add <code>--template journal</code> (or <code>scrapbook</code>, <code>classic</code>) for another</li>
             <li>Add <code>requirements-gui.txt</code> for the desktop interface</li>
             <li>Check your version with <code>--version</code></li>
           </ul>

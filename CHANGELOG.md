@@ -1,8 +1,8 @@
 # Changelog
 
-All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
+All notable changes to AlbumMaker are documented in this file.
 
-## [3.2.0] - TBD 
+## [3.2.0] - 2026-11-22 
 
 ### Added
 - **Social link previews:** Added shared Open Graph and Twitter card metadata (`templates/social_meta.html`) for trip and day pages, including 1200 px cover preview thumbnails and live-server URL generation from `Host` and `X-Forwarded-Proto` headers[cite: 1].
@@ -16,6 +16,8 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 - **Default template set to `cinema`:** Updated default template configuration and fallbacks to `cinema` for new installations while preserving existing `classic` library and GUI settings[cite: 1].
 - **Long-hop threshold lowered:** Lowered the distance threshold for long hops from 1000 km to 250 km[cite: 1].
 - **Fluid template widths and Cinema polish:** Expanded container widths up to 94% of the viewport with upper caps in Journal, Scrapbook, and Cinema, replayed Cinema day entrance animations on revisit, fixed library intro visibility/height, and redesigned Journal `L` and `S` layouts and favourites-only grid behavior[cite: 1].
+- **Product page:** The demo buttons now lead to a picker with a live sample of every template (Cinema, Journal, Scrapbook and Classic) instead of only the Classic one. Cinema is shown first as the default, and the page now covers link previews, the Ken Burns slideshow, thumbnail sizes, GPS route cleanup and the desktop progress window.
+- **Dark GUI theme by default:** The desktop app now starts in the dark theme for new installs; saved settings keep their theme.
 - **GUI controls and demo site:** Updated run button labels (`Cancel` while preparing, `Stop server` when ready), status copy, help text, tests, `README`, and demo outputs[cite: 1].
 
 ### Fixed
