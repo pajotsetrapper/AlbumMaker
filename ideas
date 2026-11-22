@@ -1,34 +1,22 @@
-# Fixes
-
-    - FIXME: Gui, when starting the live-server, the text does not fit the progress window
-
 # Best value first
 
-0. Allow the browser to read the descriptions out loud, default language is the browser language, but let the user select the language from a selector in the website and persist that in the trip's json (and would be even better if language could be detected).
+0. Translation: Translated interface text (both GUI and website). Add support for Dutch (Belgium), French and Spanish
 
-0. Print or PDF “photo book” view. A print stylesheet for scrapbook and journal that produces clean pages (one day per page, with map and story). People often want a physical or PDF keepsake, and the scrapbook look suits it. Check what online print services offer as options & tailor it to that. You probably want to support different sizes. The photo book needs to have a nice trip cover & back. Chapters per day, with the descriptions and contai, the pictures that have been favourited.
+1. Print or PDF “photo book” view. A print stylesheet for scrapbook and journal that produces clean pages (one day per page, with map and story). People often want a physical or PDF keepsake, and the scrapbook look suits it. Check what online print services offer as options & tailor it to that. You probably want to support different sizes. The photo book needs to have a nice trip cover & back. Chapters per day, with the descriptions and contai, the pictures that have been favourited.
 
-2. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
+2. Allow the browser to read the descriptions out loud, default language is the browser language, but let the user select the language from a selector in the website and persist that in the trip's json (and would be even better if language could be detected).
 
-3. Elevation and route extras. The GPX data would give an elevation profile on day pages, plus ascent, descent and speed. The library page could show a “countries visited” stat.
+3. Steps within a day. Split a day into several steps by place or by gaps in time (“Morning in Florence”, “Evening at Piazzale Michelangelo”), each with its own text and map pin. The journal template already has the timeline layout for this.
 
-# Templates themselves
+4. Elevation and route extras. The GPX data would give an elevation profile on day pages, plus ascent, descent and speed. The library page could show a “countries visited” stat.
 
-1. A light/dark switch following the system setting for journal and scrapbook.
-2. Simple customization from trip_content.json (accent colour, title font, hide the statistics) and an optional custom.css picked up automatically.
-3. Small preview thumbnails in the template menu instead of just names.
 
 # Sharing and viewing
-
 1. Password or private-link sharing for the live server, and a “download this day as a zip” button.
 2. A route replay: an animated line that travels the trip on the map, which would suit cinema.
-3. Autoplay in the viewer with a slow zoom, optionally with music.
-4. Search across the whole library (captions, places, dates), and a favorites page that spans all trips.
+3. Search across the whole library (captions, places, dates), and a favorites page that spans all trips.
 
 # Performance and polish
 
 1. Blurred placeholders while photos load, and srcset/WebP so phones download smaller images.
-2. A PWA mode so a published site can be opened offline.
-Translated interface text and local date formats.
-
-If I had to start with two, I’d do link previews and per-trip templates, sin
+2. A PWA (Progressive Web App) mode so a published site can be opened offline.
