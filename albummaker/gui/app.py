@@ -338,6 +338,11 @@ next to it says what is still missing, if anything.</li>
 ready. It shows what is happening (and how far along it is, when that is known) and how long it has
 taken. Large albums can take several minutes, especially the first time. Keep AlbumMaker open; the
 <b>Cancel</b> button in that window stops everything.</li>
+<li>When the live server is ready, the <b>Your trips are ready!</b> window shows the address of the site and,
+when editing is on, the private editing link, with a button for each. If <b>Allow other devices on my
+network to connect</b> is on, the addresses use this computer's network address instead of
+<code>127.0.0.1</code>, so you can type them on another computer or phone. Otherwise only this computer
+can open the site, and the window says so.</li>
 <li>When it is done, a <b>Your trips are ready!</b> (or <b>Your site is ready!</b>) window appears, and
 the AlbumMaker icon in your taskbar or Dock flashes if the app is behind other windows. If something
 went wrong you get a window saying so, and the Activity log has the details.</li>
@@ -756,6 +761,7 @@ class MainWindow(QMainWindow):
         self._server_ready = False
         self._server_url = ""
         self._editor_url = ""
+        self._server_lan = False            # the running server accepts other devices (--lan)
         self._stopping = False
         self._last_problem = ""            # the last "! ..." line the task printed, for the problem pop-up
         self._progress: Optional[RunProgress] = None       # what the running task says it is doing
@@ -1933,6 +1939,7 @@ class MainWindow(QMainWindow):
         self._server_ready = False
         self._server_url = ""
         self._editor_url = ""
+        self._server_lan = "--lan" in arguments
         self._last_problem = ""
         self.site_link_button.hide()
         self.editor_link_button.hide()
@@ -2158,14 +2165,32 @@ class MainWindow(QMainWindow):
         dialog.present()
 
     def _show_server_ready(self) -> None:
-        url = self._server_url
-        self._present_result(ResultDialog(
-            self, True, "Your trips are ready!",
-            "The server is running. Click \u201cOpen trip site\u201d to see your trips in your web browser.\n\n"
-            "Keep AlbumMaker open: if you close it or stop the server, your trips go offline.",
-            [("Open trip site", lambda: self._open_server_link(url), "serverLink", True),
-             ("Close", None, None, True)],
-            address=url))
+        """The big 'your trips are ready' window. With 'Allow other devices on my network' on, it shows
+        this computer's network address (what another computer or phone types), not 127.0.0.1, which
+        only works on this computer. The private editor link is added when editing is on."""
+        local_url = self._server_url
+        url = local_url
+        if self._server_lan:
+            ip = _lan_ip()
+            if ip:
+                url = f"http://{ip}:{self.port.value()}/"
+        editor_url = self._editor_url
+        message = ("The server is running. Click \u201cOpen trip site\u201d to see your trips in your web browser.\n\n"
+                   "Keep AlbumMaker open: if you close it or stop the server, your trips go offline.")
+        addresses = [("Trip site" + (" (also for other devices on your network)" if url != local_url else ""), url)]
+        if editor_url:
+            addresses.append(("Editing link (private: anyone with it can edit your trips; it changes every start)",
+                              editor_url))
+        if not self._server_lan:
+            message += ("\n\nOnly this computer can open the site. To let other computers and phones on your "
+                        "network open it, turn on \u201cAllow other devices on my network to connect\u201d in "
+                        "Options \u2192 Live server, then start the server again.")
+        buttons = [("Open trip site", lambda: self._open_server_link(url), "serverLink", True)]
+        if editor_url:
+            buttons.append(("Open editing link (private)", lambda: self._open_server_link(editor_url), "serverLink", True))
+        buttons.append(("Close", None, None, True))
+        self._present_result(ResultDialog(self, True, "Your trips are ready!", message, buttons,
+                                          addresses=addresses))
 
     def _show_build_done(self) -> None:
         folder = self.output_dir.text().strip()
@@ -2346,6 +2371,16 @@ class MainWindow(QMainWindow):
                 self._kill_process_tree()
                 self._process.waitForFinished(1000)
         event.accept()
+
+
+def _lan_ip() -> Optional[str]:
+    """This computer's address on the local network (what another device types), or None."""
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
+            probe.connect(("8.8.8.8", 80))      # no packet is sent; this only picks the outgoing interface
+            return probe.getsockname()[0]
+    except OSError:
+        return None
 
 
 def _port_in_use(port: int) -> bool:

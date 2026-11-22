@@ -535,6 +535,31 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("https://github.com/pajotsetrapper/AlbumMaker/issues", _help_html())
         self.assertIn("PolyForm Noncommercial 1.0.0", _about_text())
 
+    def test_ready_window_shows_the_network_address_and_the_editing_link(self):
+        from unittest import mock
+        from albummaker.gui import app as gui_app
+        window = self.make_window()
+        window.port.setValue(8123)
+        shown = []
+        window._present_result = shown.append
+        window._server_url = "http://127.0.0.1:8123/"
+        window._editor_url = "http://192.168.1.20:8123/?key=abc"
+        window._server_lan = True
+        with mock.patch.object(gui_app, "_lan_ip", return_value="192.168.1.20"):
+            window._show_server_ready()
+        texts = [label.text() for label in shown[-1].findChildren(gui_app.QLabel)]
+        self.assertIn("http://192.168.1.20:8123/", texts)
+        self.assertIn("http://192.168.1.20:8123/?key=abc", texts)
+        self.assertNotIn("http://127.0.0.1:8123/", texts)
+        # without LAN access only this computer can connect, so the local address stays and says why
+        window._server_lan = False
+        window._editor_url = ""
+        window._show_server_ready()
+        texts = " ".join(label.text() for label in shown[-1].findChildren(gui_app.QLabel))
+        self.assertIn("http://127.0.0.1:8123/", texts)
+        self.assertIn("Allow other devices on my network", texts)
+        self.assertNotIn("Editing link", texts)
+
     def test_support_dialog_offers_both_donation_links(self):
         from unittest import mock
         from PySide6.QtWidgets import QDialog, QPushButton

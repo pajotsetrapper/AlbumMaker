@@ -163,7 +163,7 @@ class ResultDialog(QDialog):
     buttons: (text, callback, object name, closes the dialog). The first one is the default."""
 
     def __init__(self, parent: QWidget, ok: bool, title: str, message: str, buttons: list,
-                 address: Optional[str] = None):
+                 address: Optional[str] = None, addresses: Optional[list] = None):
         super().__init__(parent)
         self.setObjectName("statusDialog")
         self.setWindowTitle("AlbumMaker \u2013 " + ("ready" if ok else "problem"))
@@ -177,6 +177,12 @@ class ResultDialog(QDialog):
                          0, Qt.AlignmentFlag.AlignHCenter)
         layout.addWidget(_label(title, "statusHeadingOk" if ok else "statusHeadingError"))
         layout.addWidget(_label(message, "statusDetail"))
+        # addresses: [(what it is, the address), ...]; address: one bare address (a folder, say)
+        for caption, text in (addresses or []):
+            layout.addWidget(_label(caption, "statusDetail"))
+            box = _label(text, "addressBox")
+            box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
+            layout.addWidget(box)
         if address:
             box = _label(address, "addressBox")
             box.setTextInteractionFlags(Qt.TextInteractionFlag.TextSelectableByMouse)
