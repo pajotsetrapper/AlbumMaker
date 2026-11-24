@@ -68,7 +68,7 @@ class InstallCommandTests(unittest.TestCase):
 
     def test_does_nothing_when_ffmpeg_is_present(self):
         with mock.patch.object(ffmpeg_setup, "ffmpeg_missing", return_value=False), mock.patch(
-            "albummaker.metadata.find_multimedia_tool", return_value="/usr/bin/ffmpeg"
+            "albummaker.ffmpeg_setup.find_multimedia_tool", return_value="/usr/bin/ffmpeg"
         ), mock.patch.object(ffmpeg_setup.subprocess, "run") as run:
             code, out = self.run_main(["--yes"])
         self.assertEqual(code, 0)

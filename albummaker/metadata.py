@@ -10,7 +10,6 @@ import json
 import math
 import os
 import re
-import shutil
 import subprocess
 import sys
 from datetime import datetime, timedelta, timezone
@@ -19,6 +18,7 @@ from typing import Optional
 
 from PIL import Image
 from PIL.ExifTags import GPSTAGS
+from .ffmpeg_setup import find_multimedia_tool    # re-exported: it used to be defined here
 from .timezones import get_timezone
 from .util import external_tool_env
 
@@ -106,25 +106,6 @@ def check_ffmpeg():
               f"without date, location or preview frame. Install FFmpeg to fix this: run "
               f"`albummaker install-ffmpeg` or see https://ffmpeg.org/download.html.",
               file=sys.stderr)
-
-
-def find_multimedia_tool(name: str) -> Optional[str]:
-    """Find a bundled tool, then one the user placed in AlbumMaker's own folder,
-    then one on the PATH, then one in the usual install folders."""
-    if name not in ("ffmpeg", "ffprobe"):
-        raise ValueError(f"Unsupported multimedia tool: {name}")
-    frozen_dir = getattr(sys, "_MEIPASS", None)
-    if frozen_dir:
-        executable = f"{name}.exe" if os.name == "nt" else name
-        bundled = Path(frozen_dir) / "ffmpeg" / executable
-        if bundled.is_file():
-            return str(bundled)
-    from .ffmpeg_setup import system_search_dirs, user_search_dirs
-    return (
-        shutil.which(name, path=os.pathsep.join(user_search_dirs()))
-        or shutil.which(name)
-        or shutil.which(name, path=os.pathsep.join(system_search_dirs()))
-    )
 
 
 def multimedia_tool(name: str) -> str:

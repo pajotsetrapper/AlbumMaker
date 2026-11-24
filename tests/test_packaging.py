@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
-from albummaker.metadata import find_multimedia_tool
+from albummaker.ffmpeg_setup import find_multimedia_tool
 from tools import build_executable
 
 
@@ -116,20 +116,20 @@ class BundledMultimediaToolTests(unittest.TestCase):
             suffix = ".exe" if os.name == "nt" else ""
             ffprobe = tool_dir / f"ffprobe{suffix}"
             ffprobe.touch()
-            with mock.patch("albummaker.metadata.sys._MEIPASS", tmp, create=True), mock.patch(
-                "albummaker.metadata.shutil.which", return_value="/system/ffprobe"
+            with mock.patch("albummaker.ffmpeg_setup.sys._MEIPASS", tmp, create=True), mock.patch(
+                "albummaker.ffmpeg_setup.shutil.which", return_value="/system/ffprobe"
             ):
                 self.assertEqual(find_multimedia_tool("ffprobe"), str(ffprobe))
 
     def test_falls_back_to_system_tools_outside_the_app_bundle(self):
-        with mock.patch("albummaker.metadata.sys._MEIPASS", None, create=True), mock.patch(
-            "albummaker.metadata.shutil.which", return_value="/system/ffmpeg"
+        with mock.patch("albummaker.ffmpeg_setup.sys._MEIPASS", None, create=True), mock.patch(
+            "albummaker.ffmpeg_setup.shutil.which", return_value="/system/ffmpeg"
         ):
             self.assertEqual(find_multimedia_tool("ffmpeg"), "/system/ffmpeg")
 
     def test_reports_when_no_system_or_bundled_tool_exists(self):
-        with mock.patch("albummaker.metadata.sys._MEIPASS", None, create=True), mock.patch(
-            "albummaker.metadata.shutil.which", return_value=None
+        with mock.patch("albummaker.ffmpeg_setup.sys._MEIPASS", None, create=True), mock.patch(
+            "albummaker.ffmpeg_setup.shutil.which", return_value=None
         ):
             self.assertIsNone(find_multimedia_tool("ffprobe"))
 
@@ -141,7 +141,7 @@ class BundledMultimediaToolTests(unittest.TestCase):
             tool.touch()
             tool.chmod(0o755)
             with mock.patch.dict(os.environ, {"ALBUMMAKER_CONFIG_DIR": tmp}), mock.patch(
-                "albummaker.metadata.sys._MEIPASS", None, create=True
+                "albummaker.ffmpeg_setup.sys._MEIPASS", None, create=True
             ):
                 self.assertEqual(
                     os.path.normcase(find_multimedia_tool("ffmpeg")), os.path.normcase(str(tool))

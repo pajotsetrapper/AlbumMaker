@@ -81,8 +81,29 @@ def mark_declined() -> None:
         pass
 
 
+def find_multimedia_tool(name: str) -> Optional[str]:
+    """Find a bundled tool, then one the user placed in AlbumMaker's own folder,
+    then one on the PATH, then one in the usual install folders.
+
+    Lives here, not in metadata.py: the desktop app asks this while its window
+    is opening, and metadata.py imports Pillow and the HEIF plugin, which the
+    window has no other use for."""
+    if name not in TOOLS:
+        raise ValueError(f"Unsupported multimedia tool: {name}")
+    frozen_dir = getattr(sys, "_MEIPASS", None)
+    if frozen_dir:
+        executable = f"{name}.exe" if os.name == "nt" else name
+        bundled = Path(frozen_dir) / "ffmpeg" / executable
+        if bundled.is_file():
+            return str(bundled)
+    return (
+        shutil.which(name, path=os.pathsep.join(user_search_dirs()))
+        or shutil.which(name)
+        or shutil.which(name, path=os.pathsep.join(system_search_dirs()))
+    )
+
+
 def ffmpeg_missing() -> bool:
-    from .metadata import find_multimedia_tool
     return any(find_multimedia_tool(tool) is None for tool in TOOLS)
 
 
@@ -154,7 +175,6 @@ def main(argv: Optional[list[str]] = None) -> int:
                         help="only show the command that would be run")
     args = parser.parse_args(sys.argv[1:] if argv is None else argv)
 
-    from .metadata import find_multimedia_tool
     if not ffmpeg_missing():
         print(f"FFmpeg is already installed: {find_multimedia_tool('ffmpeg')}")
         return 0

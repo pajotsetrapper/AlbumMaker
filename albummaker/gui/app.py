@@ -12,6 +12,7 @@ import socket
 import subprocess
 import sys
 import traceback
+from contextlib import contextmanager
 from datetime import datetime
 from html import escape as _escape_html
 from pathlib import Path
@@ -56,6 +57,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from .dialogs import PreparingDialog, ResultDialog
+from .ffmpeg_check import FfmpegChecker
 from .folders import FolderChecker
 from .progress import RunProgress
 from .commands import (
@@ -73,6 +75,8 @@ from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
 
 PROJECT_ROOT = project_dir()
+_THEME_PROPERTY = "albummakerTheme"          # set on the application once a theme is in place
+_default_palette: Optional[QPalette] = None  # the platform's own palette, kept for the light theme
 
 def _dark_palette() -> QPalette:
     """Palette for the dark theme, so widgets the stylesheet does not cover
@@ -284,6 +288,36 @@ THEME_STYLES = {
         QLabel#stepNumber { color: #a9c2ff; font-size: 12px; font-weight: 700; }
     """,
 }
+
+
+def apply_theme(theme: str) -> None:
+    """Style the whole application as light or dark. A new style sheet restyles
+    every widget that already exists, so main() calls this before the window is
+    built; the window's own call afterwards then finds the theme in place and
+    does nothing."""
+    global _default_palette
+    application = QApplication.instance()
+    if application is None:
+        return
+    if _default_palette is None:
+        _default_palette = QPalette(application.palette())   # before the dark palette replaces it
+    if application.property(_THEME_PROPERTY) == theme:
+        return
+    application.setPalette(_dark_palette() if theme == "dark" else _default_palette)
+    application.setStyleSheet(THEME_STYLES[theme])
+    application.setProperty(_THEME_PROPERTY, theme)
+
+
+@contextmanager
+def _signals_blocked(*widgets: QWidget):
+    """Silence the widgets' signals for a moment (and restore them as they were)."""
+    previous = [(widget, widget.blockSignals(True)) for widget in widgets]
+    try:
+        yield
+    finally:
+        for widget, was_blocked in previous:
+            widget.blockSignals(was_blocked)
+
 
 HELP_HTML = """
 <h2>AlbumMaker help</h2>
@@ -885,6 +919,12 @@ class MainWindow(QMainWindow):
         self._folder_timer = QTimer(self)
         self._folder_timer.setInterval(150)
         self._folder_timer.timeout.connect(self._apply_folder_results)
+        # Whether FFmpeg is missing is looked up in the background too, after the window shows.
+        self._ffmpeg_checker = FfmpegChecker()
+        self._ffmpeg_timer = QTimer(self)
+        self._ffmpeg_timer.setInterval(100)
+        self._ffmpeg_timer.timeout.connect(self._apply_ffmpeg_result)
+        self._offer_ffmpeg_when_known = False
 
         self.setWindowTitle(f"AlbumMaker {__version__}")
         self.setWindowIcon(_application_icon())
@@ -937,7 +977,7 @@ class MainWindow(QMainWindow):
         )
         self.ffmpeg_button.clicked.connect(lambda: self._offer_ffmpeg_install(force=True))
         header_layout.addWidget(self.ffmpeg_button)
-        self._update_ffmpeg_button()
+        self.ffmpeg_button.setVisible(False)     # shown if the check, once the window is up, finds FFmpeg missing
         self.support_button = QPushButton("\u2665 Support")
         self.support_button.setObjectName("support")
         self.support_button.setToolTip(
@@ -1411,6 +1451,16 @@ class MainWindow(QMainWindow):
         return row
 
     def _load_ui(self) -> None:
+        """Fill the widgets from the settings. Setting a value must not count as
+        a change: it would save the settings again 500 ms after every start and
+        refresh the server status once per cache field, so the signals of the
+        widgets that are already connected are blocked. The caller refreshes the
+        status once, with _update_actions(), when everything is in place."""
+        with _signals_blocked(self.theme_combo, self.template_combo,
+                              self.index_cache, self.tile_cache):
+            self._fill_widgets_from_settings()
+
+    def _fill_widgets_from_settings(self) -> None:
         self.trip_table.setUpdatesEnabled(False)       # one repaint for all rows, not one per row
         try:
             for trip in self.settings["trips"]:
@@ -1461,8 +1511,6 @@ class MainWindow(QMainWindow):
         self._update_date_controls()
         self.gpx_files.setEnabled(not self.no_gpx.isChecked())
         self._update_trip_count()
-        self._update_server_setup()
-        self._update_workflow()
 
     def _connect_persistence(self) -> None:
         for widget in (
@@ -1640,15 +1688,7 @@ class MainWindow(QMainWindow):
     def _apply_theme(self, *_args) -> None:
         if not hasattr(self, "theme_combo"):
             return
-        theme = self.theme_combo.currentData() or "dark"
-        application = QApplication.instance()
-        if application is not None:
-            if not hasattr(self, "_default_palette"):
-                self._default_palette = QPalette(application.palette())
-            application.setPalette(
-                _dark_palette() if theme == "dark" else self._default_palette
-            )
-            application.setStyleSheet(THEME_STYLES[theme])
+        apply_theme(self.theme_combo.currentData() or "dark")
 
     def _offline_assets_ready(self) -> bool:
         self._offline_asset_error = ""
@@ -1911,10 +1951,33 @@ class MainWindow(QMainWindow):
         layout.addWidget(close)
         dialog.exec()
 
-    def _update_ffmpeg_button(self) -> None:
-        """Show the Install FFmpeg button only while FFmpeg cannot be found."""
-        from ..ffmpeg_setup import ffmpeg_missing
-        self.ffmpeg_button.setVisible(ffmpeg_missing())
+    def _update_ffmpeg_button(self, force: bool = False) -> None:
+        """Show the Install FFmpeg button only while FFmpeg cannot be found. The
+        search runs in the background and the button follows its answer; a
+        recent answer is reused unless `force` (after installing FFmpeg)."""
+        if self._ffmpeg_checker.request(force=force) or self._ffmpeg_checker.busy:
+            self._ffmpeg_timer.start()
+
+    def _apply_ffmpeg_result(self) -> None:
+        missing = self._ffmpeg_checker.poll()
+        if missing is not None:
+            self.ffmpeg_button.setVisible(missing)
+            if self._offer_ffmpeg_when_known:
+                self._offer_ffmpeg_when_known = False
+                if missing:
+                    QTimer.singleShot(600, self._offer_ffmpeg_install)
+        if not self._ffmpeg_checker.busy:
+            self._ffmpeg_timer.stop()
+
+    def _check_ffmpeg_at_startup(self) -> None:
+        """Once the window is up: look for FFmpeg and, if it is missing, offer to install it."""
+        known = self._ffmpeg_checker.fresh()
+        if known is not None:        # the check made when the window was first activated has answered
+            if known:
+                QTimer.singleShot(600, self._offer_ffmpeg_install)
+            return
+        self._offer_ffmpeg_when_known = True
+        self._update_ffmpeg_button()
 
     def changeEvent(self, event) -> None:
         # FFmpeg may have been installed outside AlbumMaker (for example in a
@@ -1935,7 +1998,10 @@ class MainWindow(QMainWindow):
             suggested_command,
             was_declined,
         )
-        if not ffmpeg_missing():
+        missing = None if force else self._ffmpeg_checker.fresh()
+        if missing is None:
+            missing = ffmpeg_missing()
+        if not missing:
             if force:
                 QMessageBox.information(self, "FFmpeg", "FFmpeg is already installed.")
             return
@@ -2231,7 +2297,7 @@ class MainWindow(QMainWindow):
         if kind == "offline assets":
             self._update_server_setup()
         if kind == "ffmpeg setup":
-            self._update_ffmpeg_button()
+            self._update_ffmpeg_button(force=True)
         self._append_log(f"{_task_name(kind)} finished with exit code {exit_code}.")
         self._cleanup_process()
         self._update_actions()
@@ -2410,9 +2476,10 @@ class MainWindow(QMainWindow):
     def _update_actions(self) -> None:
         running = bool(self._process and self._process.state() != QProcess.ProcessState.NotRunning)
         self.offline_button.setEnabled(not running)
-        if not running:
-            self._update_server_setup()
-        self._update_workflow()
+        if running:
+            self._update_workflow()
+        else:
+            self._update_server_setup()      # ends with _update_workflow()
 
     def _update_server_setup(self, *_args) -> None:
         assets_ready = self._offline_assets_ready()
@@ -2537,6 +2604,9 @@ def main() -> int:
     app.setOrganizationName("AlbumMaker")
     app.setWindowIcon(_application_icon())
     loaded = load_settings_or_recover()
+    # Before the window exists, so the style sheet does not have to restyle it afterwards.
+    theme = loaded.settings.get("appearance", {}).get("theme")
+    apply_theme(theme if theme in THEME_STYLES else "dark")
     blocked = "" if loaded.can_save else (loaded.move_error or "unknown error")
     # The packaged app includes the map library and fonts: put them in place
     # before the window checks whether the live server is ready to start.
@@ -2554,7 +2624,7 @@ def main() -> int:
             message = settings_recovery_message(loaded)
             window._append_log("Settings problem: " + message.replace("\n\n", " ").replace("\n", " "))
             QMessageBox.warning(window, "AlbumMaker settings were reset", message)
-        QTimer.singleShot(600, window._offer_ffmpeg_install)
+        window._check_ffmpeg_at_startup()
 
     QTimer.singleShot(0, after_show)
     return app.exec()
