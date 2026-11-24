@@ -32,7 +32,7 @@ from albummaker.gui.settings import (
 )
 from albummaker.app_paths import config_dir, offline_assets_dir
 from albummaker.library import read_trip_list, trip_args
-from albummaker.timezones import get_timezone, timezone_choices, timezone_search_choices
+from albummaker.timezones import get_timezone, timezone_choices, timezone_label, timezone_search_choices
 
 
 class GuiSettingsTests(unittest.TestCase):
@@ -51,6 +51,17 @@ class GuiSettingsTests(unittest.TestCase):
         self.assertEqual(suggestions["Brussels (Europe/Brussels)"], "Europe/Brussels")
         self.assertIn("Bangkok (Asia/Bangkok)", suggestions)
         self.assertEqual(suggestions["Bangkok (Asia/Bangkok)"], "Asia/Bangkok")
+
+    def test_timezone_search_choices_are_built_once(self):
+        # the app asks for them whenever a time zone is edited; reading the whole
+        # time-zone database each time made a long trip list slow to open
+        self.assertIs(timezone_search_choices(), timezone_search_choices())
+
+    def test_timezone_label_matches_the_search_choices_and_names_automatic(self):
+        self.assertEqual(timezone_label(""), "Automatic")
+        self.assertEqual(timezone_label("America/Los_Angeles"), "Los Angeles (America/Los_Angeles)")
+        for label, zone in list(timezone_search_choices())[:20]:
+            self.assertEqual(timezone_label(zone), label)
 
     def test_metadata_cache_folder_is_created_and_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -614,6 +625,73 @@ class MainWindowTests(unittest.TestCase):
                     missing.append(f"QLineEdit {widget.placeholderText()}")
         self.assertEqual(missing, [])
 
+
+    def test_trip_rows_hold_plain_text_and_no_per_row_widgets(self):
+        from albummaker.gui.app import ZONE_ROLE
+        window = self.make_window()
+        window._add_trip_item(str(Path.home()), "")
+        window._add_trip_item(str(Path.home() / "x"), "Europe/Paris")
+        table = window.trip_table
+        self.assertIsNone(table.cellWidget(0, 1))      # the 500-entry combo is made only when editing
+        self.assertIsNone(table.cellWidget(1, 1))
+        self.assertEqual(table.item(0, 1).text(), "Automatic")
+        self.assertEqual(table.item(1, 1).text(), "Paris (Europe/Paris)")
+        self.assertEqual(table.item(1, 1).data(ZONE_ROLE), "Europe/Paris")
+        self.assertEqual([t["timezone"] for t in window._settings_from_ui()["trips"]], ["", "Europe/Paris"])
+
+    def test_editing_a_time_zone_resolves_what_was_picked_or_typed(self):
+        from albummaker.gui.app import TimeZoneDelegate, ZONE_ROLE
+        window = self.make_window()
+        window._add_trip_item(str(Path.home()), "Europe/Paris")
+        model = window.trip_table.model()
+        index = model.index(0, 1)
+        delegate = TimeZoneDelegate(window.trip_table)
+
+        def edit(text=None, current=None):
+            editor = delegate.createEditor(window.trip_table, None, index)
+            delegate.setEditorData(editor, index)
+            if current is not None:
+                editor.setCurrentIndex(current)
+            if text is not None:
+                editor.setCurrentIndex(-1)
+                editor.setEditText(text)
+            delegate.setModelData(editor, model, index)
+            return index.data(ZONE_ROLE), index.data()
+
+        # the editor opens on the trip's current zone
+        editor = delegate.createEditor(window.trip_table, None, index)
+        delegate.setEditorData(editor, index)
+        self.assertEqual(editor.currentData(), "Europe/Paris")
+        self.assertEqual(edit(text="brussels (europe/brussels)"), ("Europe/Brussels", "Brussels (Europe/Brussels)"))
+        self.assertEqual(edit(text="Asia/Bangkok"), ("Asia/Bangkok", "Bangkok (Asia/Bangkok)"))
+        self.assertEqual(edit(text="not a zone"), ("Asia/Bangkok", "Bangkok (Asia/Bangkok)"))   # unchanged
+        self.assertEqual(edit(text=""), ("", "Automatic"))
+
+    def test_a_changed_time_zone_is_saved(self):
+        from albummaker.gui.app import ZONE_ROLE
+        window = self.make_window()
+        window._add_trip_item(str(Path.home()), "")
+        window._connect_persistence()
+        window._save_timer.stop()
+        item = window.trip_table.item(0, 1)
+        item.setData(ZONE_ROLE, "Asia/Tokyo")
+        item.setText("Tokyo (Asia/Tokyo)")
+        self.assertTrue(window._save_timer.isActive())
+
+    def test_missing_folders_are_reported_by_the_background_check(self):
+        import time
+        window = self.make_window()
+        here = str(Path.home())
+        gone = str(Path(tempfile.gettempdir()) / "albummaker-no-such-folder-xyz")
+        window._add_trip_item(here)
+        window._add_trip_item(gone)
+        window._check_folders(window._trip_paths())
+        deadline = time.monotonic() + 5
+        while window._folder_checker.busy and time.monotonic() < deadline:
+            time.sleep(0.02)
+        window._apply_folder_results()
+        self.assertNotIn("Folder not found", window.trip_table.item(0, 0).toolTip())
+        self.assertIn("Folder not found", window.trip_table.item(1, 0).toolTip())
 
 
 class RunProgressTests(unittest.TestCase):

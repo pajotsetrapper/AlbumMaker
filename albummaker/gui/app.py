@@ -44,6 +44,7 @@ from PySide6.QtWidgets import (
     QScrollArea,
     QSizePolicy,
     QSpinBox,
+    QStyledItemDelegate,
     QTableWidget,
     QTableWidgetItem,
     QTabWidget,
@@ -55,6 +56,7 @@ from PySide6.QtWidgets import (
 
 from .. import __version__
 from .dialogs import PreparingDialog, ResultDialog
+from .folders import FolderChecker
 from .progress import RunProgress
 from .commands import (
     build_command,
@@ -66,7 +68,7 @@ from .settings import (LoadedSettings, SettingsError, default_settings, load_set
                        prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
                        validate_settings, write_library_file)
 from ..site_templates import DEFAULT_TEMPLATE, TEMPLATES
-from ..timezones import timezone_search_choices
+from ..timezones import timezone_label, timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
 
@@ -308,14 +310,11 @@ or <i>Completed</i>.</li>
 Each row is one trip.</li>
 <li><b>Trip folder</b> column: the folder's name; hover over it to see the full path, or
 <i>Folder not found</i> if it is missing.</li>
-<li><b>Time zone</b> column: search by typing a region or city, or open the list, and choose a zone
-such as <code>Europe/Paris</code>. It is saved with the folder and handles daylight-saving changes.
-<b>Automatic</b> does not guess the trip's location. Photo EXIF times stay as recorded. For videos,
-the <b>Default video UTC offset</b> (Options &rarr; General) is used if set; otherwise iPhone local
-timestamps are kept as recorded and other UTC capture times use this computer's time zone. Choose a
-named zone when you want a consistent trip-local time, especially for video. For GPS-track matching,
-AlbumMaker uses offsets recorded in the files first, then the same day's media, then the trip zone or
-default offset, and finally the trip's overall media offsets when available.</li>
+<li><b>Time zone</b> column: shows <b>Automatic</b> unless you chose a zone. Double-click it to search
+by typing a region or city (such as <code>Paris</code>), or open the list, and choose a zone such as
+<code>Europe/Paris</code>; clear the box to go back to Automatic. It is saved with the folder and handles
+daylight-saving changes. Most trips should stay on Automatic: see <b>Time zones: do I need to set
+one?</b> below.</li>
 <li><b>Remove:</b> removes the selected folders from the list; it never deletes photos or
 generated files.</li>
 </ul>
@@ -356,6 +355,62 @@ every time the server starts.</li>
 <li><b>Show activity</b> / <b>Hide activity</b> shows or hides the Activity log: progress, errors, the
 commands AlbumMaker runs, and server requests. It opens by itself when a task starts.</li>
 </ul>
+
+<h3>Time zones: do I need to set one?</h3>
+<p><b>Usually not.</b> Leave a trip on <b>Automatic</b> and AlbumMaker works out the time difference
+from your own files. It never guesses where a trip took place. Set a zone only in the cases listed at
+the end of this section.</p>
+
+<p><b>What a time zone changes.</b> The time shown on a photo is always the time the camera wrote into
+it, which is the clock time where you were, whatever you choose here. A time zone matters in three
+places only:</p>
+<ul>
+<li><b>Videos</b> that record their time only in UTC (world time), as many cameras, drones and some
+phones do. A time zone turns that into your trip's local time.</li>
+<li><b>Placing photos on a GPS track.</b> A GPX file records every point in UTC. To find where a photo
+without a location was taken, AlbumMaker must know how far the camera's clock was from UTC. That
+difference is the <i>UTC offset</i>, for example +2 hours in Paris in summer.</li>
+<li><b>Which part of a GPS track belongs to which day</b>, because a day runs from local midnight to
+local midnight.</li>
+</ul>
+
+<p><b>How Automatic finds the UTC offset.</b> For each photo it uses the first of these that applies:</p>
+<ol>
+<li><b>The file says.</b> Most phones and newer cameras store the offset inside every photo (or the GPS
+clock time, which gives it away).</li>
+<li><b>Other files from the same day say.</b> If most of that day's files state the same offset, a file
+that does not state one gets it too.</li>
+<li><b>You said.</b> The time zone chosen for the trip, or else the <b>Default video UTC offset</b>
+(Options &rarr; General).</li>
+<li><b>The rest of the trip says.</b> The offset that most of the trip's files state.</li>
+<li>Otherwise the offset is <b>unknown</b>, and that photo cannot be placed on the GPS track. The
+Activity log says so: <i>their time zone is unknown</i>.</li>
+</ol>
+
+<p><b>Videos</b> work a little differently. A video that stores its own local time (an iPhone video)
+keeps it under Automatic. A video that stores only a UTC time is converted using the trip's time zone;
+if there is none, the Default video UTC offset; if that is blank too, <b>this computer's time zone</b>.
+So if you edit your photos in a different time zone from where you took them, video times can be off by
+the difference. Choosing the trip's zone fixes that.</p>
+
+<p><b>Set a zone for a trip when:</b></p>
+<ul>
+<li>you use a GPS track and your photos come from a camera that does not record a UTC offset (many
+standalone cameras), and nothing else in the trip does. Automatic cannot know the offset then, so those
+photos are not placed on the track and some days show no route. Choose the zone you were in.</li>
+<li>your videos have only a UTC time and this computer is not in the trip's time zone.</li>
+<li>you want every video shown in one consistent local time.</li>
+</ul>
+
+<p><b>Leave it on Automatic when</b> the trip crosses several time zones (flights, a road trip across
+borders). Automatic follows what each file says, while a chosen zone is applied to every file that
+does not say. Also, with a named zone, iPhone videos are shown in that zone's time instead of the
+phone's own local time, which on a trip across zones makes them disagree with your photos.</p>
+
+<p><b>Good to know.</b> A named zone follows daylight saving; the Default video UTC offset is a fixed
+number of hours that never changes, and it applies to every video with a time, iPhone videos included. You
+can change a trip's zone or the offset at any time: its videos are read again the next time you start
+the server or build the site, and photos are not affected.</p>
 
 <h3>Viewing a static site: maps need a web server</h3>
 <p>Static sites load map tiles straight from OpenStreetMap. OpenStreetMap refuses tile requests that
@@ -744,6 +799,59 @@ def settings_recovery_message(loaded: LoadedSettings) -> str:
     )
 
 
+ZONE_ROLE = Qt.ItemDataRole.UserRole      # the trip's IANA zone name ("" = Automatic), kept on the Time zone cell
+
+
+class TimeZoneDelegate(QStyledItemDelegate):
+    """The Time zone column is plain text. The searchable list of every zone is
+    built only when someone edits a cell, so a long trip list costs nothing at
+    start-up (a combo box with ~500 entries in every row used to)."""
+
+    def createEditor(self, parent, option, index):
+        combo = QComboBox(parent)
+        combo.setEditable(True)
+        combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
+        combo.addItem(timezone_label(""), "")
+        for label, zone_name in timezone_search_choices():
+            combo.addItem(label, zone_name)
+        combo.setMaxVisibleItems(20)
+        combo.lineEdit().setPlaceholderText("Search or choose a time zone")
+        completer = QCompleter(combo.model(), combo)
+        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
+        completer.setFilterMode(Qt.MatchFlag.MatchContains)
+        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
+        combo.setCompleter(completer)
+        combo.setToolTip(
+            "Search by typing a region or city, or open the dropdown to browse all IANA time zones. "
+            "Automatic does not infer a trip location."
+        )
+        # choosing from the list or the suggestions is final; typing is final on Enter
+        combo.activated.connect(lambda *_args, editor=combo: self._finish(editor))
+        return combo
+
+    def _finish(self, editor) -> None:
+        self.commitData.emit(editor)
+        self.closeEditor.emit(editor, QStyledItemDelegate.EndEditHint.NoHint)
+
+    def setEditorData(self, editor, index) -> None:
+        found = editor.findData(index.data(ZONE_ROLE) or "")
+        editor.setCurrentIndex(found if found >= 0 else 0)
+
+    def setModelData(self, editor, model, index) -> None:
+        text = editor.currentText().strip()
+        if not text:
+            zone = ""                                   # cleared: back to Automatic
+        else:
+            found = editor.findText(text, Qt.MatchFlag.MatchFixedString)   # the label, any case
+            if found < 0:
+                found = editor.findData(text)                              # or a typed zone name
+            if found < 0:
+                return                                  # not a zone: the cell keeps what it had
+            zone = editor.itemData(found) or ""
+        model.setData(index, zone, ZONE_ROLE)
+        model.setData(index, timezone_label(zone), Qt.ItemDataRole.DisplayRole)
+
+
 class MainWindow(QMainWindow):
     def __init__(self, settings: dict, save_blocked_reason: str = ""):
         super().__init__()
@@ -771,6 +879,12 @@ class MainWindow(QMainWindow):
         self._save_timer.setSingleShot(True)
         self._save_timer.setInterval(500)
         self._save_timer.timeout.connect(self._save_from_ui)
+        # Folders are checked for existence in the background (a sleeping NAS can take
+        # seconds to answer); the answers are applied here as they arrive.
+        self._folder_checker = FolderChecker()
+        self._folder_timer = QTimer(self)
+        self._folder_timer.setInterval(150)
+        self._folder_timer.timeout.connect(self._apply_folder_results)
 
         self.setWindowTitle(f"AlbumMaker {__version__}")
         self.setWindowIcon(_application_icon())
@@ -905,15 +1019,21 @@ class MainWindow(QMainWindow):
         layout.setContentsMargins(18, 16, 18, 16)
         layout.setSpacing(10)
         layout.addWidget(_label("STEP 1  ·  Choose your trip folders", "stepNumber"))
-        layout.addWidget(_label("Add one or more photo folders. You can set a time zone for each trip.", "muted"))
+        layout.addWidget(_label("Add one or more photo folders. Automatic time zone suits most trips; "
+                                "double-click a trip's time zone to set one.", "muted"))
         self.trip_table = QTableWidget(0, 2)
         self.trip_table.setHorizontalHeaderLabels(["Trip folder", "Time zone"])
         self.trip_table.setToolTip(
-            "Each row is one trip. Select its time zone in the second column."
+            "Each row is one trip. Double-click its time zone in the second column to change it."
         )
         self.trip_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.trip_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.trip_table.setEditTriggers(QAbstractItemView.EditTrigger.NoEditTriggers)
+        self.trip_table.setItemDelegateForColumn(1, TimeZoneDelegate(self.trip_table))
+        self.trip_table.setEditTriggers(
+            QAbstractItemView.EditTrigger.DoubleClicked
+            | QAbstractItemView.EditTrigger.SelectedClicked
+            | QAbstractItemView.EditTrigger.EditKeyPressed
+        )   # (only the Time zone cells are editable)
         self.trip_table.setAlternatingRowColors(True)
         self.trip_table.verticalHeader().setVisible(False)
         header = self.trip_table.horizontalHeader()
@@ -1291,8 +1411,13 @@ class MainWindow(QMainWindow):
         return row
 
     def _load_ui(self) -> None:
-        for trip in self.settings["trips"]:
-            self._add_trip_item(trip["path"], trip["timezone"])
+        self.trip_table.setUpdatesEnabled(False)       # one repaint for all rows, not one per row
+        try:
+            for trip in self.settings["trips"]:
+                self._add_trip_item(trip["path"], trip["timezone"])
+        finally:
+            self.trip_table.setUpdatesEnabled(True)
+        self._check_folders(self._trip_paths())
         self.output_dir.setText(self.settings["output_dir"])
         self.theme_combo.setCurrentIndex(
             max(0, self.theme_combo.findData(self.settings["appearance"]["theme"]))
@@ -1357,6 +1482,7 @@ class MainWindow(QMainWindow):
             self.no_places, self.force,
         ):
             widget.toggled.connect(self._schedule_save)
+        self.trip_table.itemChanged.connect(self._on_trip_item_changed)
         self.gpx_files.textChanged.connect(self._schedule_save)
         self.allow_hosts.textChanged.connect(self._schedule_save)
         self.no_date_check.toggled.connect(self._update_date_controls)
@@ -1376,52 +1502,38 @@ class MainWindow(QMainWindow):
         trip_item = QTableWidgetItem(folder.name or str(folder))
         trip_item.setFlags(trip_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
         trip_item.setData(Qt.ItemDataRole.UserRole, str(folder))
-        trip_item.setToolTip(
-            f"{folder}\nFolder not found" if not folder.is_dir() else str(folder)
-        )
+        trip_item.setToolTip(str(folder))     # "Folder not found" is added once the background check says so
         self.trip_table.setItem(row, 0, trip_item)
 
-        zone_combo = QComboBox()
-        zone_combo.setEditable(True)
-        zone_combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        zone_combo.addItem("Automatic", "")
-        for label, zone_name in timezone_search_choices():
-            zone_combo.addItem(label, zone_name)
-        if timezone_name:
-            zone_combo.setCurrentIndex(zone_combo.findData(timezone_name))
-        zone_combo.setProperty("timezoneValue", zone_combo.currentData() or "")
-        zone_combo.setMaxVisibleItems(20)
-        zone_combo.lineEdit().setPlaceholderText("Search or choose a time zone")
-        completer = QCompleter(zone_combo.model(), zone_combo)
-        completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
-        completer.setFilterMode(Qt.MatchFlag.MatchContains)
-        completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
-        zone_combo.setCompleter(completer)
-        zone_combo.setToolTip(
-            "Search by typing a region or city, or open the dropdown to browse all IANA time zones. "
-            "Automatic does not infer a trip location."
+        zone_item = QTableWidgetItem(timezone_label(timezone_name))
+        zone_item.setData(ZONE_ROLE, timezone_name or "")
+        zone_item.setToolTip(
+            "Double-click to change this trip's time zone. Automatic uses what the photos and "
+            "videos themselves say; see Help \u2192 Time zones."
         )
-        zone_combo.currentIndexChanged.connect(
-            lambda *_args, combo=zone_combo: self._on_timezone_changed(combo)
-        )
-        zone_combo.activated.connect(
-            lambda *_args, combo=zone_combo: self._on_timezone_changed(combo)
-        )
-        self.trip_table.setCellWidget(row, 1, zone_combo)
+        self.trip_table.setItem(row, 1, zone_item)
         self.trip_table.setRowHeight(row, 34)
 
-    def _on_timezone_changed(self, combo: QComboBox) -> None:
-        if combo.currentIndex() < 0:
-            exact_match = combo.findData(combo.currentText())
-            if exact_match >= 0:
-                combo.setCurrentIndex(exact_match)
-        if combo.currentIndex() >= 0:
-            combo.setProperty("timezoneValue", combo.currentData() or "")
-        position = combo.mapTo(self.trip_table.viewport(), combo.rect().center())
-        index = self.trip_table.indexAt(position)
-        if index.isValid():
-            self.trip_table.selectRow(index.row())
-        self._schedule_save()
+    def _on_trip_item_changed(self, item: QTableWidgetItem) -> None:
+        if item.column() == 1:
+            self._schedule_save()
+
+    def _check_folders(self, paths: list) -> None:
+        """Start asking, in the background, which of these folders are missing."""
+        if paths:
+            self._folder_checker.start(paths)
+            self._folder_timer.start()
+
+    def _apply_folder_results(self) -> None:
+        missing = {path for path, found in self._folder_checker.poll() if not found}
+        if missing:
+            for row in range(self.trip_table.rowCount()):
+                item = self.trip_table.item(row, 0)
+                folder = str(item.data(Qt.ItemDataRole.UserRole)) if item is not None else ""
+                if folder in missing:
+                    item.setToolTip(f"{folder}\nFolder not found")
+        if not self._folder_checker.busy:
+            self._folder_timer.stop()
 
     def _trip_paths(self) -> list[str]:
         return [
@@ -1653,7 +1765,7 @@ class MainWindow(QMainWindow):
             "trips": [
                 {
                     "path": str(self.trip_table.item(row, 0).data(Qt.ItemDataRole.UserRole)),
-                    "timezone": self.trip_table.cellWidget(row, 1).property("timezoneValue") or "",
+                    "timezone": self.trip_table.item(row, 1).data(ZONE_ROLE) or "",
                 }
                 for row in range(self.trip_table.rowCount())
             ],

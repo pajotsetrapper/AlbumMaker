@@ -201,6 +201,25 @@ Static sites load map tiles straight from OpenStreetMap, which refuses tile requ
 
 OpenStreetMap's policy expects light traffic; a heavily visited site should use a commercial tile provider instead (live server: `--tile-url`).
 
+### Time zones: do you need to set one?
+Usually not. A trip's time zone is **Automatic** unless you choose one (in the desktop app, double-click the trip's *Time zone*; on the command line, `--timezone Europe/Paris` or `--tz-offset 2`), and then AlbumMaker works out the time difference from your own files. It never guesses where a trip took place.
+
+**What it changes.** The time shown on a photo is always the time the camera wrote into it, the clock time where you were. A time zone matters only for (1) videos that record their time only in UTC, (2) placing photos that have no location on a GPS track, and (3) which part of a track belongs to which day. A GPX file is in UTC, so to place a photo AlbumMaker needs the camera clock's *UTC offset* (for example +2 hours in Paris in summer).
+
+**How Automatic finds the offset.** For each photo, the first of these that applies:
+
+1. **The file says.** Most phones and newer cameras store the offset in every photo (or the GPS clock time, which gives it away).
+2. **Other files from the same day say.** If most of that day's files state the same offset, a file that does not gets it too.
+3. **You said.** The trip's time zone, or else the default UTC offset (`--tz-offset`, *Default video UTC offset* in the app).
+4. **The rest of the trip says.** The offset most of the trip's files state.
+5. Otherwise it is unknown: that photo is not placed on the track, and the log says *their time zone is unknown*.
+
+**Videos** work a little differently. A video with its own local time (an iPhone video) keeps it under Automatic. A video with only a UTC time is converted using the trip's time zone, else the default UTC offset, else **this computer's time zone**, so editing in a different time zone than where you shot can shift video times.
+
+**Set a zone when** you use a GPS track and your camera does not record a UTC offset (many standalone cameras) and nothing else in the trip does; when your videos have only UTC times and this computer is not in the trip's zone; or when you want all videos in one local time. **Leave it on Automatic** for trips across several time zones: Automatic follows each file, whereas a chosen zone applies to every file that does not say, and with a named zone iPhone videos are shown in that zone instead of the phone's own local time.
+
+A named zone follows daylight saving; a fixed `--tz-offset` does not, and it applies to every video with a time, iPhone videos included. Changing either is safe: the trip's videos are read again on the next start or build, photos are not affected.
+
 ### Where AlbumMaker keeps its files
 The desktop app's settings, the downloaded offline assets (`offline-assets`) and your own FFmpeg (`ffmpeg`) live in one per-user folder: `%APPDATA%\AlbumMaker` on Windows, `~/Library/Application Support/AlbumMaker` on macOS, `~/.config/albummaker` on Linux. Set `ALBUMMAKER_CONFIG_DIR` to use another folder. Your photo folders are only read; the one thing written there is `trip_content.json`.
 
@@ -308,7 +327,7 @@ With `--library`, one template applies to the whole library.
 * `--index-cache PATH` keeps the metadata read from your files (dates, GPS, dimensions, camera, video details) so an unchanged file is not read again on the next start.
 
 ### 5. GPS Tracks & Place Names
-* Drop `.gpx` files into the photos folder (or give `--gpx FILE-OR-FOLDER`, repeatable) to place photos that have no location and to draw your route on the maps. `--no-gpx` ignores tracks. `--timezone` and `--tz-offset` matter here and for video times.
+* Drop `.gpx` files into the photos folder (or give `--gpx FILE-OR-FOLDER`, repeatable) to place photos that have no location and to draw your route on the maps. `--no-gpx` ignores tracks. `--timezone` and `--tz-offset` matter here and for video times (see [Time zones](#time-zones-do-you-need-to-set-one)).
 * Place names come from a built-in list of about 160,000 towns (GeoNames, CC BY 4.0), looked up offline. `--no-places` leaves them out.
 
 ### 6. Dates, duplicates and Live Photos

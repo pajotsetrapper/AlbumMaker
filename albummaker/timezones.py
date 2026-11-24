@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+from functools import lru_cache
 from importlib.resources import files
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError, available_timezones
 
@@ -36,12 +37,19 @@ def timezone_choices() -> list[str]:
     return sorted(zones)
 
 
-def timezone_search_choices() -> list[tuple[str, str]]:
-    """Return human-searchable labels mapped to IANA zone names."""
-    return sorted(
-        (
-            (f"{name.rsplit('/', 1)[-1].replace('_', ' ')} ({name})", name)
-            for name in timezone_choices()
-        ),
+def timezone_label(name: str) -> str:
+    """The text people see and search for: 'Paris (Europe/Paris)'. An empty
+    name is the Automatic setting."""
+    if not name:
+        return "Automatic"
+    return f"{name.rsplit('/', 1)[-1].replace('_', ' ')} ({name})"
+
+
+@lru_cache(maxsize=1)
+def timezone_search_choices() -> tuple[tuple[str, str], ...]:
+    """Human-searchable labels mapped to IANA zone names. Building the list
+    reads the whole time-zone database, so it is done once and kept."""
+    return tuple(sorted(
+        ((timezone_label(name), name) for name in timezone_choices()),
         key=lambda choice: choice[0].casefold(),
-    )
+    ))
