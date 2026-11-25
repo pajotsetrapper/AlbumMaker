@@ -2,7 +2,7 @@
 
 All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
 
-## [3.2.1] - TBD
+## [3.2.1] - 2026-11-25
 
 Maintenance release, focussing on GUI performance improvements
 
