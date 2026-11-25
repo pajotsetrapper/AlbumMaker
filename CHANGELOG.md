@@ -2,6 +2,25 @@
 
 All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
 
+## [3.2.1] - TBD
+
+Maintenance release, focussing on GUI performance improvements
+
+### Added
+- **Optional GUI startup timing log:** Setting an environment variable `ALBUMMAKER_PROFILE_STARTUP=1` writes an `albummaker-startup-timing.txt` profile alongside the settings file.
+- **Time zone documentation:** Added a *"Time zones: do I need to set one?"* section to the desktop app Help window and `README` explaining how Automatic UTC offset detection works and when to set a manual zone.
+
+### Changed
+- **Faster place-name lookups and warm starts:** Cached `Gazetteer.nearest` results per position in `<index-cache>.places.json` (invalidated when the town list changes), precomputed town reach bounds with early distance rejection, memoized exact-coordinate lookups, and sliced relative paths instead of `Path.relative_to` (reducing warm start on a 20,000-photo trip from ~14 s to ~1.6 s).
+- **Faster desktop GUI launch:**
+  - Switched the trip table's Time zone column to plain text with on-demand searchable dropdown editors (`QStyledItemDelegate`), cached timezone choices, and disabled table repainting during initial row population.
+  - Moved trip folder existence checks and FFmpeg detection to background threads so sleeping network drives or tool lookups do not block the window from appearing.
+  - Deferred importing download-only modules (`urllib`, `hashlib`, `tarfile`, `base64`) and Pillow during startup, checked the per-user offline-assets folder first, decoded the app icon once, built the version tooltip on first hover, and blocked signals while loading settings to prevent redundant status refreshes and file saves.
+  - Used `QFontDatabase`'s system `FixedFont` for the activity log to avoid slow Windows font-substitution searches.
+- **Easier time-zone dropdown:** The list now shows only real places (about 420 zones, plus UTC) instead of ~500 entries: old aliases, `Etc/GMT+N` (whose signs are inverted), `Factory`, `localtime` and POSIX-style names such as `EST5EDT` are left out, though a zone already set on a trip, or typed in full, is still accepted. Labels show the UTC offset, like `Brussels · UTC+01:00 · Europe` (offsets are today's and change with daylight saving time); the IANA name is shown when hovering. Automatic comes first, then a group with this computer's zone (where it can be told: from `TZ`, `/etc/localtime`, or the optional `tzlocal` package), the five most recently used zones and UTC, then every other zone from A to Z, with separators between the groups. Recently used zones are saved in the settings file as `recent_time_zones`.
+
+- **Editor link visibility:** Displayed the private editor link in the server console and GUI ready window only when `--lan` or `--editor-link-only` is active, and renamed the GUI setting to *"Only browsers with the editor link can edit (not this computer)"*.
+
 ## [3.2.0] - 2026-11-22 
 
 ### Added

@@ -129,7 +129,8 @@ from .settings import (LoadedSettings, SettingsError, default_settings, load_set
                        prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
                        validate_settings, write_library_file)
 from ..site_templates import DEFAULT_TEMPLATE, TEMPLATES
-from ..timezones import timezone_label, timezone_search_choices
+from ..timezones import (known_timezones, remember_recent_zone, timezone_dropdown_groups,
+                         timezone_label)
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
 
@@ -919,28 +920,49 @@ def settings_recovery_message(loaded: LoadedSettings) -> str:
 ZONE_ROLE = Qt.ItemDataRole.UserRole      # the trip's IANA zone name ("" = Automatic), kept on the Time zone cell
 
 
+def _zone_tooltip(zone_name: str) -> str:
+    text = ("Double-click to change this trip's time zone. Automatic uses what the photos and "
+            "videos themselves say; see Help \u2192 Time zones.")
+    return f"{text}\nTime zone: {zone_name}" if zone_name else text
+
+
 class TimeZoneDelegate(QStyledItemDelegate):
-    """The Time zone column is plain text. The searchable list of every zone is
-    built only when someone edits a cell, so a long trip list costs nothing at
-    start-up (a combo box with ~500 entries in every row used to)."""
+    """The Time zone column is plain text. The searchable list of zones is built only
+    when someone edits a cell, so a long trip list costs nothing at start-up (a combo
+    box with ~500 entries in every row used to).
+
+    The list has three groups, split by separators: Automatic; this computer's zone,
+    the recently used zones and UTC; then every other zone from A to Z. Each zone is
+    listed once. `recent_zones` returns the recently used zone names, and
+    `remember_zone` is told each zone that is picked."""
+
+    def __init__(self, parent=None, recent_zones=None, remember_zone=None):
+        super().__init__(parent)
+        self._recent_zones = recent_zones or (lambda: [])
+        self._remember_zone = remember_zone or (lambda zone_name: None)
 
     def createEditor(self, parent, option, index):
         combo = QComboBox(parent)
         combo.setEditable(True)
         combo.setInsertPolicy(QComboBox.InsertPolicy.NoInsert)
-        combo.addItem(timezone_label(""), "")
-        for label, zone_name in timezone_search_choices():
-            combo.addItem(label, zone_name)
+        for group in timezone_dropdown_groups(index.data(ZONE_ROLE) or "", self._recent_zones()):
+            if combo.count():
+                combo.insertSeparator(combo.count())
+            for label, zone_name in group:
+                combo.addItem(label, zone_name)
+                if zone_name:                      # hovering a row shows the IANA name
+                    combo.setItemData(combo.count() - 1, zone_name, Qt.ItemDataRole.ToolTipRole)
         combo.setMaxVisibleItems(20)
-        combo.lineEdit().setPlaceholderText("Search or choose a time zone")
+        combo.lineEdit().setPlaceholderText("Search by city or region")
         completer = QCompleter(combo.model(), combo)
         completer.setCaseSensitivity(Qt.CaseSensitivity.CaseInsensitive)
         completer.setFilterMode(Qt.MatchFlag.MatchContains)
         completer.setCompletionMode(QCompleter.CompletionMode.PopupCompletion)
         combo.setCompleter(completer)
         combo.setToolTip(
-            "Search by typing a region or city, or open the dropdown to browse all IANA time zones. "
-            "Automatic does not infer a trip location."
+            "Search by typing a city or region, or open the list. This computer's zone and the "
+            "zones you used recently are at the top. UTC offsets are today's and change with "
+            "daylight saving time. Automatic does not infer a trip location."
         )
         # choosing from the list or the suggestions is final; typing is final on Enter
         combo.activated.connect(lambda *_args, editor=combo: self._finish(editor))
@@ -962,17 +984,24 @@ class TimeZoneDelegate(QStyledItemDelegate):
             found = editor.findText(text, Qt.MatchFlag.MatchFixedString)   # the label, any case
             if found < 0:
                 found = editor.findData(text)                              # or a typed zone name
-            if found < 0:
+            if found >= 0:
+                zone = editor.itemData(found) or ""
+            elif text in known_timezones():             # a full name the list leaves out
+                zone = text
+            else:
                 return                                  # not a zone: the cell keeps what it had
-            zone = editor.itemData(found) or ""
+        if zone and zone != (index.data(ZONE_ROLE) or ""):
+            self._remember_zone(zone)                   # only a real change counts as "recent"
         model.setData(index, zone, ZONE_ROLE)
         model.setData(index, timezone_label(zone), Qt.ItemDataRole.DisplayRole)
+        model.setData(index, _zone_tooltip(zone), Qt.ItemDataRole.ToolTipRole)
 
 
 class MainWindow(QMainWindow):
     def __init__(self, settings: dict, save_blocked_reason: str = ""):
         super().__init__()
         self.settings = settings
+        self._recent_zones = list(settings.get("recent_time_zones", []))
         # Set when a damaged settings file could not be moved aside: saving would
         # overwrite it, so settings are kept in memory only.
         self._save_blocked_reason = save_blocked_reason
@@ -1162,7 +1191,9 @@ class MainWindow(QMainWindow):
         )
         self.trip_table.setSelectionBehavior(QAbstractItemView.SelectionBehavior.SelectRows)
         self.trip_table.setSelectionMode(QAbstractItemView.SelectionMode.ExtendedSelection)
-        self.trip_table.setItemDelegateForColumn(1, TimeZoneDelegate(self.trip_table))
+        self.trip_table.setItemDelegateForColumn(1, TimeZoneDelegate(
+            self.trip_table, recent_zones=lambda: self._recent_zones,
+            remember_zone=self._remember_time_zone))
         self.trip_table.setEditTriggers(
             QAbstractItemView.EditTrigger.DoubleClicked
             | QAbstractItemView.EditTrigger.SelectedClicked
@@ -1651,12 +1682,14 @@ class MainWindow(QMainWindow):
 
         zone_item = QTableWidgetItem(timezone_label(timezone_name))
         zone_item.setData(ZONE_ROLE, timezone_name or "")
-        zone_item.setToolTip(
-            "Double-click to change this trip's time zone. Automatic uses what the photos and "
-            "videos themselves say; see Help \u2192 Time zones."
-        )
+        zone_item.setToolTip(_zone_tooltip(timezone_name))
         self.trip_table.setItem(row, 1, zone_item)
         self.trip_table.setRowHeight(row, 34)
+
+    def _remember_time_zone(self, zone_name: str) -> None:
+        """A zone was picked: it goes first in the list of recently used zones."""
+        self._recent_zones = remember_recent_zone(self._recent_zones, zone_name)
+        self._schedule_save()
 
     def _on_trip_item_changed(self, item: QTableWidgetItem) -> None:
         if item.column() == 1:
@@ -1905,6 +1938,7 @@ class MainWindow(QMainWindow):
                 }
                 for row in range(self.trip_table.rowCount())
             ],
+            "recent_time_zones": list(self._recent_zones),
             "output_dir": self.output_dir.text().strip(),
             "server": {
                 "port": self.port.value(),

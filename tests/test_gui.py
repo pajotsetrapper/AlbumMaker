@@ -7,7 +7,7 @@ import re
 import sys
 import tempfile
 import unittest
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from unittest import mock
 
@@ -32,7 +32,18 @@ from albummaker.gui.settings import (
 )
 from albummaker.app_paths import config_dir, offline_assets_dir
 from albummaker.library import read_trip_list, trip_args
-from albummaker.timezones import get_timezone, timezone_choices, timezone_label, timezone_search_choices
+from albummaker import timezones
+from albummaker.timezones import (
+    clean_recent_zones,
+    get_timezone,
+    remember_recent_zone,
+    selectable_timezones,
+    timezone_choices,
+    timezone_dropdown_groups,
+    timezone_label,
+    timezone_search_choices,
+    utc_offset_text,
+)
 
 
 class GuiSettingsTests(unittest.TestCase):
@@ -47,10 +58,11 @@ class GuiSettingsTests(unittest.TestCase):
 
     def test_timezone_search_choices_match_city_and_region_names(self):
         suggestions = dict((label, zone) for label, zone in timezone_search_choices())
-        self.assertIn("Brussels (Europe/Brussels)", suggestions)
-        self.assertEqual(suggestions["Brussels (Europe/Brussels)"], "Europe/Brussels")
-        self.assertIn("Bangkok (Asia/Bangkok)", suggestions)
-        self.assertEqual(suggestions["Bangkok (Asia/Bangkok)"], "Asia/Bangkok")
+        for zone in ("Europe/Brussels", "Asia/Bangkok"):
+            self.assertEqual(suggestions[timezone_label(zone)], zone)
+        brussels = timezone_label("Europe/Brussels")
+        self.assertTrue(brussels.startswith("Brussels \u00b7 UTC"), brussels)
+        self.assertTrue(brussels.endswith(" \u00b7 Europe"), brussels)
 
     def test_timezone_search_choices_are_built_once(self):
         # the app asks for them whenever a time zone is edited; reading the whole
@@ -59,9 +71,109 @@ class GuiSettingsTests(unittest.TestCase):
 
     def test_timezone_label_matches_the_search_choices_and_names_automatic(self):
         self.assertEqual(timezone_label(""), "Automatic")
-        self.assertEqual(timezone_label("America/Los_Angeles"), "Los Angeles (America/Los_Angeles)")
+        winter = datetime(2026, 1, 15, 12, tzinfo=timezone.utc)
+        summer = datetime(2026, 7, 15, 12, tzinfo=timezone.utc)
+        self.assertEqual(timezone_label("America/Los_Angeles", winter),
+                         "Los Angeles \u00b7 UTC-08:00 \u00b7 America")
+        self.assertEqual(timezone_label("America/Los_Angeles", summer),
+                         "Los Angeles \u00b7 UTC-07:00 \u00b7 America")
         for label, zone in list(timezone_search_choices())[:20]:
             self.assertEqual(timezone_label(zone), label)
+
+    def test_utc_offsets_are_shown_with_the_zone_s_own_sign_and_minutes(self):
+        when = datetime(2026, 1, 15, 12, tzinfo=timezone.utc)
+        self.assertEqual(utc_offset_text("Europe/Brussels", when), "UTC+01:00")
+        self.assertEqual(utc_offset_text("America/New_York", when), "UTC-05:00")
+        self.assertEqual(utc_offset_text("Asia/Kolkata", when), "UTC+05:30")
+        self.assertEqual(utc_offset_text("Asia/Kathmandu", when), "UTC+05:45")
+        self.assertEqual(utc_offset_text("not/a_zone", when), "")
+
+    def test_the_full_list_leaves_out_old_aliases_and_oddities_but_keeps_real_places(self):
+        zones = set(selectable_timezones())
+        for kept in ("Europe/Brussels", "America/Argentina/Buenos_Aires", "Asia/Kolkata", "UTC"):
+            self.assertIn(kept, zones)
+        for dropped in ("Factory", "localtime", "EST5EDT", "Etc/GMT+5", "Etc/GMT-2", "GMT"):
+            self.assertNotIn(dropped, zones)
+        self.assertFalse([zone for zone in zones if zone.startswith("Etc/")])
+        self.assertLess(len(zones), len(timezone_choices()))
+        labels = [label for label, _zone in timezone_search_choices()]
+        self.assertEqual(len(labels), len(set(labels)))          # a label names exactly one zone
+        self.assertEqual(timezone_label("UTC"), timezones.UTC_LABEL)
+
+    def test_dropdown_groups_are_automatic_then_pinned_then_everything_else_once(self):
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value="Europe/Brussels"):
+            groups = timezone_dropdown_groups("", ["Asia/Tokyo", "Europe/Brussels", "Europe/Paris"])
+        self.assertEqual(groups[0], [("Automatic", "")])
+        self.assertEqual([zone for _label, zone in groups[1]],
+                         ["Europe/Brussels", "Asia/Tokyo", "Europe/Paris", "UTC"])
+        self.assertTrue(groups[1][0][0].endswith(" \u00b7 this computer"))
+        everything = [zone for group in groups for _label, zone in group if zone]
+        self.assertEqual(len(everything), len(set(everything)))   # no zone twice
+        self.assertEqual(set(everything), set(selectable_timezones()))
+        self.assertEqual([label for label, _ in groups[2]],
+                         sorted((label for label, _ in groups[2]), key=str.casefold))
+
+    def test_dropdown_groups_without_a_known_local_zone_or_recents(self):
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value=""):
+            groups = timezone_dropdown_groups("", [])
+        self.assertEqual([[zone for _label, zone in group][:1] for group in groups[:2]],
+                         [[""], ["UTC"]])
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value=""):
+            groups = timezone_dropdown_groups("", ["nonsense", "Asia/Tokyo"])   # unusable ones are skipped
+        self.assertEqual([zone for _label, zone in groups[1]], ["Asia/Tokyo", "UTC"])
+
+    def test_a_zone_the_full_list_leaves_out_stays_selectable_when_it_is_already_set(self):
+        left_out = next(zone for zone in timezone_choices() if zone.startswith("Etc/GMT+"))
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value=""):
+            groups = timezone_dropdown_groups(left_out, [])
+        self.assertEqual([zone for _label, zone in groups[0]], ["", left_out])
+
+    def test_this_computers_zone_is_read_from_the_environment_and_never_guessed(self):
+        timezones.local_timezone_name.cache_clear()
+        try:
+            with mock.patch.dict(os.environ, {"TZ": ":Europe/Brussels"}):
+                self.assertEqual(timezones.local_timezone_name(), "Europe/Brussels")
+            timezones.local_timezone_name.cache_clear()
+            with mock.patch.dict(os.environ, {"TZ": "Etc/UTC"}):
+                self.assertEqual(timezones.local_timezone_name(), "UTC")
+            timezones.local_timezone_name.cache_clear()
+            with mock.patch.dict(os.environ, {"TZ": "CET-1CEST"}), \
+                    mock.patch("albummaker.timezones._local_timezone_candidates",
+                               return_value=iter(["CET-1CEST", "not/a_zone"])):
+                self.assertEqual(timezones.local_timezone_name(), "")
+        finally:
+            timezones.local_timezone_name.cache_clear()
+
+    def test_recent_zones_go_first_without_repeats_and_are_capped(self):
+        recent = []
+        for zone in ("Asia/Tokyo", "Europe/Paris", "Asia/Tokyo", "Asia/Bangkok", "Africa/Cairo",
+                     "Europe/Rome", "America/Lima"):
+            recent = remember_recent_zone(recent, zone)
+        self.assertEqual(recent, ["America/Lima", "Europe/Rome", "Africa/Cairo",
+                                  "Asia/Bangkok", "Asia/Tokyo"])
+        self.assertEqual(remember_recent_zone(recent, ""), recent)      # Automatic is not "recent"
+
+    def test_recent_zones_in_a_settings_file_are_cleaned_not_rejected(self):
+        self.assertEqual(clean_recent_zones(["Asia/Tokyo", "nonsense", 7, "Asia/Tokyo", ""]), ["Asia/Tokyo"])
+        self.assertEqual(clean_recent_zones("Asia/Tokyo"), [])
+        self.assertEqual(len(clean_recent_zones(["Africa/Cairo", "Asia/Tokyo", "Asia/Bangkok", "Europe/Rome",
+                                                 "Europe/Paris", "America/Lima", "Asia/Seoul"])), 5)
+
+    def test_recent_zones_are_saved_and_loaded_with_the_settings(self):
+        self.assertEqual(default_settings()["recent_time_zones"], [])
+        with tempfile.TemporaryDirectory() as folder:
+            path = Path(folder) / "settings.json"
+            settings = default_settings()
+            settings["recent_time_zones"] = ["Asia/Tokyo", "Europe/Paris"]
+            save_settings(settings, path)
+            self.assertEqual(load_settings(path)["recent_time_zones"], ["Asia/Tokyo", "Europe/Paris"])
+            data = json.loads(path.read_text(encoding="utf-8"))
+            data["recent_time_zones"] = ["Asia/Tokyo", "gone/forever", 5]
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(load_settings(path)["recent_time_zones"], ["Asia/Tokyo"])
+            del data["recent_time_zones"]                        # a file from before this setting
+            path.write_text(json.dumps(data), encoding="utf-8")
+            self.assertEqual(load_settings(path)["recent_time_zones"], [])
 
     def test_metadata_cache_folder_is_created_and_validated(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -661,7 +773,8 @@ class MainWindowTests(unittest.TestCase):
         self.assertIsNone(table.cellWidget(0, 1))      # the 500-entry combo is made only when editing
         self.assertIsNone(table.cellWidget(1, 1))
         self.assertEqual(table.item(0, 1).text(), "Automatic")
-        self.assertEqual(table.item(1, 1).text(), "Paris (Europe/Paris)")
+        self.assertEqual(table.item(1, 1).text(), timezone_label("Europe/Paris"))
+        self.assertIn("Europe/Paris", table.item(1, 1).toolTip())     # the IANA name is on hover
         self.assertEqual(table.item(1, 1).data(ZONE_ROLE), "Europe/Paris")
         self.assertEqual([t["timezone"] for t in window._settings_from_ui()["trips"]], ["", "Europe/Paris"])
 
@@ -688,10 +801,50 @@ class MainWindowTests(unittest.TestCase):
         editor = delegate.createEditor(window.trip_table, None, index)
         delegate.setEditorData(editor, index)
         self.assertEqual(editor.currentData(), "Europe/Paris")
-        self.assertEqual(edit(text="brussels (europe/brussels)"), ("Europe/Brussels", "Brussels (Europe/Brussels)"))
-        self.assertEqual(edit(text="Asia/Bangkok"), ("Asia/Bangkok", "Bangkok (Asia/Bangkok)"))
-        self.assertEqual(edit(text="not a zone"), ("Asia/Bangkok", "Bangkok (Asia/Bangkok)"))   # unchanged
+        brussels, bangkok = timezone_label("Europe/Brussels"), timezone_label("Asia/Bangkok")
+        self.assertEqual(edit(text=brussels.lower()), ("Europe/Brussels", brussels))
+        self.assertEqual(edit(text="Asia/Bangkok"), ("Asia/Bangkok", bangkok))
+        self.assertEqual(edit(text="not a zone"), ("Asia/Bangkok", bangkok))   # unchanged
         self.assertEqual(edit(text=""), ("", "Automatic"))
+
+    def test_the_time_zone_list_has_pinned_zones_separators_and_remembers_picks(self):
+        from PySide6.QtCore import Qt
+        from albummaker.gui.app import TimeZoneDelegate, ZONE_ROLE
+        window = self.make_window()
+        window._add_trip_item(str(Path.home()), "Europe/Paris")
+        model = window.trip_table.model()
+        index = model.index(0, 1)
+        picked = []
+        delegate = TimeZoneDelegate(window.trip_table, recent_zones=lambda: ["Asia/Tokyo"],
+                                    remember_zone=picked.append)
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value="Europe/Brussels"):
+            editor = delegate.createEditor(window.trip_table, None, index)
+        delegate.setEditorData(editor, index)
+        self.assertEqual(editor.itemText(0), "Automatic")
+        self.assertEqual(editor.itemData(2), "Europe/Brussels")       # this computer, after a separator
+        self.assertEqual(editor.itemData(3), "Asia/Tokyo")            # then the recent zones
+        self.assertEqual(editor.itemData(4), "UTC")
+        separators = [row for row in range(editor.count())
+                      if editor.itemData(row, Qt.ItemDataRole.AccessibleDescriptionRole) == "separator"]
+        self.assertEqual(separators, [1, 5])
+        self.assertEqual(editor.currentData(), "Europe/Paris")        # opens on the trip's own zone
+        zones = [editor.itemData(row) for row in range(editor.count()) if row not in separators]
+        self.assertEqual(len(zones), len(set(zones)))                 # nothing listed twice
+        editor.setCurrentIndex(editor.findData("Asia/Tokyo"))
+        delegate.setModelData(editor, model, index)
+        self.assertEqual((index.data(ZONE_ROLE), picked), ("Asia/Tokyo", ["Asia/Tokyo"]))
+        delegate.setModelData(editor, model, index)                   # same zone again: not a new pick
+        self.assertEqual(picked, ["Asia/Tokyo"])
+
+    def test_a_picked_time_zone_is_remembered_and_saved_with_the_settings(self):
+        window = self.make_window()
+        window._connect_persistence()
+        window._save_timer.stop()
+        window._remember_time_zone("Asia/Tokyo")
+        window._remember_time_zone("Europe/Paris")
+        window._remember_time_zone("Asia/Tokyo")
+        self.assertEqual(window._settings_from_ui()["recent_time_zones"], ["Asia/Tokyo", "Europe/Paris"])
+        self.assertTrue(window._save_timer.isActive())
 
     def test_a_changed_time_zone_is_saved(self):
         from albummaker.gui.app import ZONE_ROLE

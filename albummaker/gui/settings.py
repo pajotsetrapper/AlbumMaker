@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import NamedTuple, Optional
 from ..app_paths import config_dir, settings_path
 from ..site_templates import DEFAULT_TEMPLATE, template_info
-from ..timezones import get_timezone
+from ..timezones import clean_recent_zones, get_timezone
 
 SETTINGS_VERSION = 1
 
@@ -26,6 +26,7 @@ def default_settings() -> dict:
     return {
         "version": SETTINGS_VERSION,
         "trips": [],
+        "recent_time_zones": [],
         "output_dir": str(Path.home() / "AlbumMakerSites"),
         "appearance": {"theme": "dark"},
         "library": {"title": "Trips", "template": DEFAULT_TEMPLATE},
@@ -71,7 +72,7 @@ def _merge_defaults(saved: object) -> dict:
             f"Expected version {SETTINGS_VERSION}."
         )
     merged = default_settings()
-    for key in ("trips", "output_dir"):
+    for key in ("trips", "output_dir", "recent_time_zones"):
         if key in saved:
             merged[key] = saved[key]
     if "appearance" in saved:
@@ -106,6 +107,7 @@ def _merge_defaults(saved: object) -> dict:
                 raise SettingsError(str(exc)) from exc
         trips.append({"path": trip["path"], "timezone": timezone_name})
     merged["trips"] = trips
+    merged["recent_time_zones"] = clean_recent_zones(merged["recent_time_zones"])
     if not isinstance(merged["output_dir"], str):
         raise SettingsError("'output_dir' must be a folder path.")
     if merged["appearance"]["theme"] not in ("light", "dark"):
