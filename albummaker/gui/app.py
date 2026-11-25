@@ -372,7 +372,10 @@ ready. It shows what is happening (and how far along it is, when that is known) 
 taken. Large albums can take several minutes, especially the first time. Keep AlbumMaker open; the
 <b>Cancel</b> button in that window stops everything.</li>
 <li>When the live server is ready, the <b>Your trips are ready!</b> window shows the address of the site and,
-when editing is on, the private editing link, with a button for each. If <b>Allow other devices on my
+when it is needed, the private editing link, with a button for each. The editing link is shown when
+<b>Allow other devices on my network to connect</b> is on (it is how another device gets to edit) or when
+<b>Only browsers with the editor link can edit (not this computer)</b> is on. Otherwise this computer
+edits without a link and no link is shown. If <b>Allow other devices on my
 network to connect</b> is on, the addresses use this computer's network address instead of
 <code>127.0.0.1</code>, so you can type them on another computer or phone. Otherwise only this computer
 can open the site, and the window says so.</li>
@@ -383,9 +386,9 @@ went wrong you get a window saying so, and the Activity log has the details.</li
 <b>Stop server</b> (live server, once it is ready) or <b>Stop task</b> (anything
 else, such as creating a site or downloading offline assets). Only one task runs at a time.</li>
 <li>When the live server is ready, <b>Open trip site</b> opens it in your browser. When editing is
-enabled, <b>Open editing link (private)</b> opens the private editor link, which lets any browser
-edit, for example on another computer. Do not share that link: it grants editing access. It changes
-every time the server starts.</li>
+enabled and the link is needed (see above), <b>Open editing link (private)</b> opens the private editor
+link, which lets any browser edit, for example on another computer. Do not share that link: it grants
+editing access. It changes every time the server starts.</li>
 <li><b>Show activity</b> / <b>Hide activity</b> shows or hides the Activity log: progress, errors, the
 commands AlbumMaker runs, and server requests. It opens by itself when a task starts.</li>
 </ul>
@@ -547,9 +550,11 @@ site. Off by default. There is no password, so use it only on a trusted network.
 look but not edit, unless they open the editor link.</li>
 <li><b>Disable all in-page editing:</b> prevents edits to captions, favorites, hidden photos,
 covers, titles and descriptions, for everyone. Off by default.</li>
-<li><b>Require the editor link for editing:</b> editing is allowed only in a browser opened with the
-private editor link (<b>Open editing link (private)</b>, also printed in Activity). Off by default;
-useful behind a reverse proxy or tunnel.</li>
+<li><b>Only browsers with the editor link can edit (not this computer):</b> editing is allowed only in a
+browser opened with the private editor link (<b>Open editing link (private)</b>, also printed in
+Activity), even on this computer. Off by default: this computer can always edit, and the editor link is
+only for other devices (shown when <b>Allow other devices on my network to connect</b> is on). Turn it on
+behind a reverse proxy or tunnel.</li>
 <li><b>Show every request in the activity log:</b> adds all HTTP requests to Activity; otherwise only
 errors and slow requests are shown. On by default in the desktop app.</li>
 </ul>
@@ -904,6 +909,7 @@ class MainWindow(QMainWindow):
         self._server_url = ""
         self._editor_url = ""
         self._server_lan = False            # the running server accepts other devices (--lan)
+        self._server_editor_link_only = False   # ... and only editor-link browsers can edit (--editor-link-only)
         self._stopping = False
         self._last_problem = ""            # the last "! ..." line the task printed, for the problem pop-up
         self._progress: Optional[RunProgress] = None       # what the running task says it is doing
@@ -1385,9 +1391,11 @@ class MainWindow(QMainWindow):
         self.read_only = QCheckBox("Disable all in-page editing")
         self.read_only.setToolTip("Prevent changes to captions, favorites, hidden photos, covers, titles, and descriptions.")
         form.addRow("", self.read_only)
-        self.editor_link_only = QCheckBox("Require the editor link for editing")
+        self.editor_link_only = QCheckBox("Only browsers with the editor link can edit (not this computer)")
         self.editor_link_only.setToolTip(
-            "Useful when using a reverse proxy or tunnel. Editing requires the link printed at startup."
+            "Off: this computer can always edit, and the editor link is for other devices. "
+            "On: even this computer must open the editor link to edit. "
+            "Useful when using a reverse proxy or tunnel."
         )
         form.addRow("", self.editor_link_only)
         self.verbose = QCheckBox("Show every request in the activity log")
@@ -2118,6 +2126,7 @@ class MainWindow(QMainWindow):
         self._server_url = ""
         self._editor_url = ""
         self._server_lan = "--lan" in arguments
+        self._server_editor_link_only = "--editor-link-only" in arguments
         self._last_problem = ""
         self.site_link_button.hide()
         self.editor_link_button.hide()
@@ -2219,7 +2228,7 @@ class MainWindow(QMainWindow):
                     self._server_ready = True
                     self._server_url = expected_url
                     self.site_link_button.show()
-                    self.editor_link_button.setVisible(bool(self._editor_url))
+                    self.editor_link_button.setVisible(self._editor_link_needed())
                     self.server_links.show()
                     self.status_label.setText("Server running")
                     self._update_workflow()
@@ -2342,23 +2351,37 @@ class MainWindow(QMainWindow):
         self._result_dialog = dialog        # kept, so it is not collected while it is on screen
         dialog.present()
 
+    def _editor_link_needed(self) -> bool:
+        """The private editor link is shown only when somebody needs it: other devices may connect
+        (they can edit only through it), or this computer is not an editor by itself (checkbox on).
+        Otherwise this computer edits without it and nobody else can connect."""
+        return bool(self._editor_url) and (self._server_lan or self._server_editor_link_only)
+
     def _show_server_ready(self) -> None:
         """The big 'your trips are ready' window. With 'Allow other devices on my network' on, it shows
         this computer's network address (what another computer or phone types), not 127.0.0.1, which
-        only works on this computer. The private editor link is added when editing is on."""
+        only works on this computer. The private editor link is added only when it is needed."""
         local_url = self._server_url
         url = local_url
         if self._server_lan:
             ip = _lan_ip()
             if ip:
                 url = f"http://{ip}:{self.port.value()}/"
-        editor_url = self._editor_url
+        editor_url = self._editor_url if self._editor_link_needed() else ""
         message = ("The server is running. Click \u201cOpen trip site\u201d to see your trips in your web browser.\n\n"
                    "Keep AlbumMaker open: if you close it or stop the server, your trips go offline.")
         addresses = [("Trip site" + (" (also for other devices on your network)" if url != local_url else ""), url)]
         if editor_url:
-            addresses.append(("Editing link (private: anyone with it can edit your trips; it changes every start)",
-                              editor_url))
+            if self._server_editor_link_only:
+                heading = "Editing link (private: editing only works in a browser opened with it; it changes every start)"
+                message += ("\n\nEditing needs this link, even on this computer. Anyone with it can edit "
+                            "your trips.")
+            else:
+                heading = ("Editing link for other devices (private: anyone with it can edit your trips; "
+                           "it changes every start)")
+                message += ("\n\nThis computer can edit without the link. Other devices can only look, "
+                            "unless they open the editing link.")
+            addresses.append((heading, editor_url))
         if not self._server_lan:
             message += ("\n\nOnly this computer can open the site. To let other computers and phones on your "
                         "network open it, turn on \u201cAllow other devices on my network to connect\u201d in "

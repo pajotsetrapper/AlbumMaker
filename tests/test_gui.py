@@ -570,6 +570,32 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("http://127.0.0.1:8123/", texts)
         self.assertIn("Allow other devices on my network", texts)
         self.assertNotIn("Editing link", texts)
+        # even if a link was reported, it is hidden while nobody needs it (no LAN, checkbox off)
+        window._editor_url = "http://127.0.0.1:8123/?key=abc"
+        window._show_server_ready()
+        texts = " ".join(label.text() for label in shown[-1].findChildren(gui_app.QLabel))
+        self.assertNotIn("Editing link", texts)
+        self.assertNotIn("key=abc", texts)
+        buttons = [b.text() for b in shown[-1].findChildren(gui_app.QPushButton)]
+        self.assertNotIn("Open editing link (private)", buttons)
+        # with LAN on, the link is how other devices edit; this computer does not need it
+        window._server_lan = True
+        window._editor_url = "http://192.168.1.20:8123/?key=abc"
+        with mock.patch.object(gui_app, "_lan_ip", return_value="192.168.1.20"):
+            window._show_server_ready()
+        texts = " ".join(label.text() for label in shown[-1].findChildren(gui_app.QLabel))
+        self.assertIn("Editing link for other devices", texts)
+        self.assertIn("This computer can edit without the link", texts)
+        buttons = [b.text() for b in shown[-1].findChildren(gui_app.QPushButton)]
+        self.assertIn("Open editing link (private)", buttons)
+        # with the checkbox on, even this computer needs it
+        window._server_lan = False
+        window._server_editor_link_only = True
+        window._editor_url = "http://127.0.0.1:8123/?key=abc"
+        window._show_server_ready()
+        texts = " ".join(label.text() for label in shown[-1].findChildren(gui_app.QLabel))
+        self.assertIn("editing only works in a browser opened with it", texts)
+        self.assertIn("Editing needs this link, even on this computer", texts)
 
     def test_support_dialog_offers_both_donation_links(self):
         from unittest import mock

@@ -70,8 +70,10 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
 
     def test_the_startup_message_explains_editing_and_offline_options(self):
         log = self.server.log()
-        self.assertIn("Editing works", log)
-        self.assertRegex(log, rf"Editor link .*: http://127\.0\.0\.1:{self.server.port}/\?key=[\w-]{{20,}}")
+        self.assertIn("Editing works on this computer", log)
+        # only this computer can connect and it edits by itself: no editor link to show
+        self.assertNotIn("Editor link (", log)
+        self.assertIn("No editor link is needed", log)
         self.assertIn("--fetch-offline-assets", log)
         self.assertIn(f"http://127.0.0.1:{self.server.port}/", log)
 
@@ -330,6 +332,15 @@ class ServerStartupTests(TempDirMixin, unittest.TestCase):
         self.addCleanup(server.stop)
         self.assertEqual(server.get("/")[0], 200)
         self.assertRegex(server.log().lower(), r"network|lan")
+
+    def test_the_editor_link_is_printed_only_when_it_is_needed(self):
+        for flag in ("--lan", "--editor-link-only"):
+            with self.subTest(flag=flag):
+                server = AlbumMaker(self.app, self.photos, self.tmp / f"link{flag}", flag).start()
+                self.addCleanup(server.stop)
+                log = server.log()
+                self.assertRegex(log, r"Editor link \(keep it private; it changes every start\): http://[\d.]+:\d+/\?key=[\w-]{20,}")
+                self.assertNotIn("No editor link is needed", log)
 
     def test_a_custom_host_name_can_be_allowed(self):
         server = AlbumMaker(self.app, self.photos, self.tmp / "host", "--allow-host", "trip.home").start()

@@ -1115,7 +1115,8 @@ class RequestHandler(BaseHTTPRequestHandler):
             return self._fail(403, "Unrecognized Host header")
         if not self._can_edit():
             return self._fail(403, "Editing is only available on the computer running the server, or "
-                                   "through the editor link it prints (and is switched off by --read-only).")
+                                   "through the editor link it prints with --lan or --editor-link-only "
+                                   "(and is switched off by --read-only).")
         if not self._origin_ok():
             return self._fail(403, "Cross-origin request refused")
         raw = unquote(urlparse(self.path).path)
@@ -1549,7 +1550,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--editor-link-only", action="store_true",
                         help="Don't make the computer running the server an editor automatically: "
                              "editing only works in a browser that opened the editor link printed at "
-                             "startup. Use this behind a reverse proxy or tunnel.")
+                             "startup. Use this behind a reverse proxy or tunnel. (Without it, the "
+                             "link is printed only together with --lan, for other devices.)")
     parser.add_argument("--allow-host", action="append", default=[], metavar="NAME",
                         help="Extra host name the server should answer to, e.g. a custom local DNS "
                              "name for this computer. IP addresses, 'localhost' and this computer's "
@@ -1693,17 +1695,27 @@ def main(argv=None):
               f"and those areas keep working offline.")
     lan_ip = _lan_ip() if args.lan else None
     if not args.read_only:
-        where = ("in a browser that has opened the editor link below" if args.editor_link_only
-                 else "on this computer, and in a browser that has opened the editor link below")
+        if args.editor_link_only:
+            where = "only in a browser that has opened the editor link below (not on this computer by itself)"
+        elif args.lan:
+            where = "on this computer, and on other devices in a browser that has opened the editor link below"
+        else:
+            where = "on this computer"
         saved = "each trip's own trip_content.json" if library else content_files[0]
         print(f"Editing works {where}: captions, favorites, hiding, cover photos and day text are "
               f"saved into {saved}. Use --read-only to turn it off.")
         if library:
             print(f"The template can be picked on the library page; the choice is remembered in "
                   f"{shared.settings_path}.")
-        link_host = lan_ip if lan_ip else "127.0.0.1"
-        print(f"Editor link (keep it private; it changes every start): "
-              f"http://{link_host}:{args.port}/?key={shared.editor_token}")
+        # The link is only worth showing when somebody needs it: other devices (--lan) or a
+        # server where this computer is not an editor by itself (--editor-link-only).
+        if args.lan or args.editor_link_only:
+            link_host = lan_ip if lan_ip else "127.0.0.1"
+            print(f"Editor link (keep it private; it changes every start): "
+                  f"http://{link_host}:{args.port}/?key={shared.editor_token}")
+        else:
+            print("No editor link is needed: only this computer can connect, and it can edit. "
+                  "--lan or --editor-link-only print an editor link for other devices.")
     print(f"\nServing at http://127.0.0.1:{args.port}/")
     if library:
         for name, trip in library.trips.items():
