@@ -352,6 +352,7 @@ class ServerLibraryTests(TempDirMixin, unittest.TestCase):
         make_jpeg(cls.tmp / "Japan" / "secret.jpg", "2026:06:10 10:00:00", (35.0, 135.7), color=(9, 9, 9))
         write_json(cls.tmp / "Japan" / "trip_content.json", {"title": "Kansai", "photos": {"secret.jpg": {"hidden": True}}})
         trips = trip_list(cls.tmp / "trips.txt", "Belgium\nJapan | japan\n/Volumes/NotPluggedIn/Iceland\n")
+        cls.app, cls.trips = app, trips
         cls.server = AlbumMaker(
             app, None, cls.tmp, "--library", trips, "--library-title", "Family Holidays"
         ).start()
@@ -410,12 +411,17 @@ class ServerLibraryTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(int(count()), before)
 
     def test_the_editor_link_works_at_the_library_page(self):
-        token = re.search(r"\?key=([\w-]+)", self.server.log()).group(1)
-        status, headers, _ = self.server.get(f"/?key={token}", {"Via": "1.1 proxy"})
+        # the editor link is only printed where somebody needs it (--lan, or --editor-link-only,
+        # as behind a proxy); the way a proxy is simulated here is a Via header
+        server = AlbumMaker(self.app, None, self.tmp / "editor-link", "--library", self.trips,
+                            "--library-title", "Family Holidays", "--editor-link-only").start()
+        self.addCleanup(server.stop)
+        token = re.search(r"\?key=([\w-]+)", server.log()).group(1)
+        status, headers, _ = server.get(f"/?key={token}", {"Via": "1.1 proxy"})
         self.assertEqual((status, headers["location"]), (303, "/"))
         cookie = headers["set-cookie"].split(";")[0]
-        status, _ = self.server.post_json("/japan/api/photo", {"rel": "kyoto.jpg", "favorite": True},
-                                          {"Cookie": cookie, "Via": "1.1 proxy"})
+        status, _ = server.post_json("/japan/api/photo", {"rel": "kyoto.jpg", "favorite": True},
+                                     {"Cookie": cookie, "Via": "1.1 proxy"})
         self.assertEqual(status, 200)
 
 
