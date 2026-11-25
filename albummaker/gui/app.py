@@ -75,7 +75,8 @@ class _StartupTimer:
 _startup = _StartupTimer()
 
 from PySide6.QtCore import QEvent, QProcess, QProcessEnvironment, QTimer, Qt, QUrl
-from PySide6.QtGui import QColor, QDesktopServices, QFont, QDoubleValidator, QIcon, QPalette, QPixmap
+from PySide6.QtGui import (QColor, QDesktopServices, QFont, QFontDatabase, QDoubleValidator, QIcon, QPalette,
+                           QPixmap)
 from PySide6.QtWidgets import (
     QApplication,
     QAbstractItemView,
@@ -1117,7 +1118,11 @@ class MainWindow(QMainWindow):
             "Server requests, build progress and errors will appear here."
         )
         self.log_view.setToolTip("Read-only progress, error, and server activity messages.")
-        self.log_view.setFont(QFont("monospace", 10))
+        # The platform's own fixed-width font. (A family called "monospace" does not exist on Windows;
+        # asking for it made Qt search all fonts for a substitute: about 100 ms at every start.)
+        log_font = QFontDatabase.systemFont(QFontDatabase.SystemFont.FixedFont)
+        log_font.setPointSize(10)
+        self.log_view.setFont(log_font)
         self.log_view.setMaximumHeight(150)
         activity_layout.addWidget(self.log_view)
         self.activity_box.setVisible(False)
