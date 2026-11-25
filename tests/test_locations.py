@@ -608,3 +608,67 @@ class ServerLocationTests(TempDirMixin, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class PlaceCacheTests(unittest.TestCase):
+    """The remembered answers behind a restart that doesn't search the town list again."""
+
+    def setUp(self):
+        import tempfile
+        self._tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self._tmp.cleanup)
+        self.path = Path(self._tmp.name) / "trip.places.json"
+        self.g = gazetteer(("Bigtown", "XX", 5000, 1000, 1000000), ("Hamlet", "XX", 5003, 1003, 1000))
+
+    def located(self, *positions):
+        return [item(gps=p) for p in positions]
+
+    def test_cached_answers_equal_fresh_ones_and_skip_the_town_list(self):
+        spots = [(50.035, 10.035), (50.06, 10.0), (50.2, 10.0), (51.0, 10.0)]      # the last has no town
+        fresh = self.located(*spots)
+        places.apply_places(fresh, self.g)
+        first = self.located(*spots)
+        cache = places.PlaceCache(self.path, self.g)
+        places.apply_places(first, self.g, cache=cache)
+        self.assertTrue(self.path.exists())
+
+        again, g2 = self.located(*spots), gazetteer()          # a restart: nothing may be searched
+        g2._load = mock.Mock(side_effect=AssertionError("the town list was loaded"))
+        g2.version = self.g.version                             # (same list, as on a real restart)
+        self.assertEqual(places.apply_places(again, g2, cache=places.PlaceCache(self.path, g2)), 3)
+        for a, b, c in zip(fresh, first, again):
+            self.assertEqual((a.place, a.detail.get("place")), (b.place, b.detail.get("place")))
+            self.assertEqual((a.place, a.detail.get("place")), (c.place, c.detail.get("place")))
+
+    def test_positions_no_longer_in_use_are_dropped_from_the_file(self):
+        cache = places.PlaceCache(self.path, self.g)
+        places.apply_places(self.located((50.035, 10.035), (50.06, 10.0)), self.g, cache=cache)
+        cache = places.PlaceCache(self.path, self.g)
+        places.apply_places(self.located((50.06, 10.0)), self.g, cache=cache)
+        self.assertEqual(list(json.loads(self.path.read_text(encoding="utf-8"))["places"]), ["50.06,10.0"])
+
+    def test_a_different_town_list_or_format_starts_afresh(self):
+        places.apply_places(self.located((50.035, 10.035)), self.g, cache=places.PlaceCache(self.path, self.g))
+        other = gazetteer(("Newtown", "XX", 5000, 1000, 1000000))
+        it = self.located((50.035, 10.035))
+        places.apply_places(it, other, cache=places.PlaceCache(self.path, other))
+        self.assertEqual(it[0].place, "Newtown", "not the old list's answer")
+        data = json.loads(self.path.read_text(encoding="utf-8"))
+        data["format"] = places.PLACE_CACHE_FORMAT + 1
+        self.path.write_text(json.dumps(data), encoding="utf-8")
+        self.assertEqual(places.PlaceCache(self.path, other).entries, {})
+
+    def test_an_unreadable_file_is_ignored_and_replaced(self):
+        self.path.write_text("{not json", encoding="utf-8")
+        it = self.located((50.035, 10.035))
+        with mock.patch("sys.stderr", new=io.StringIO()) as err:
+            places.apply_places(it, self.g, cache=places.PlaceCache(self.path, self.g))
+        self.assertIn("unreadable place cache", err.getvalue())
+        self.assertEqual(it[0].place, "Hamlet")
+        self.assertIn("50.035,10.035", json.loads(self.path.read_text(encoding="utf-8"))["places"])
+
+    def test_without_a_path_nothing_is_written(self):
+        it = self.located((50.035, 10.035))
+        places.apply_places(it, self.g, cache=places.PlaceCache(None, self.g))
+        self.assertEqual(it[0].place, "Hamlet")
+        self.assertEqual(list(Path(self._tmp.name).iterdir()), [])

@@ -18,11 +18,11 @@ def locate_items(items: list, args, exclude_dirs=()) -> tuple:
                      timezone_name=getattr(args, "timezone", None))
 
 
-def describe_days(days: list, items: list, located: tuple, args):
+def describe_days(days: list, items: list, located: tuple, args, place_cache=None):
     """Once the days are known: each day's part of the track, and the place
     names of files and days."""
     track, zones = located
     if track is not None:
         attach_day_tracks(days, track, zones)
     if not args.no_places:
-        apply_places(items)
+        apply_places(items, cache=place_cache)

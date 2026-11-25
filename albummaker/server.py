@@ -56,10 +56,11 @@ from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
 from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
                       read_trip_list, trip_args, trip_summary)
-from .places import ATTRIBUTION as PLACES_ATTRIBUTION
+from .places import ATTRIBUTION as PLACES_ATTRIBUTION, PlaceCache
 from .render import ASSET_VERSION, PREVIEW_IMAGE_SIZE, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
-                   dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, visible_days)
+                   dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, relative_namer,
+                   visible_days)
 from .site_templates import LIBRARY_SETTINGS_NAME, template_choices, template_info
 from .util import atomic_write_bytes, script_json
 
@@ -149,8 +150,7 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
     groups = dedupe_groups(candidates) if dedupe else no_dedupe_groups(candidates)
     cache = cache or MetadataCache(None, tz_offset, timezone_name)
 
-    def rel(p: Path) -> str:
-        return p.relative_to(input_dir).as_posix()
+    rel = relative_namer(input_dir)
 
     todo, metas = [], {}
     for path, media_type, _ in groups:
@@ -1775,7 +1775,10 @@ def load_trip(args, date_range, shared: "Shared", prefix: str = "", index_cache:
           f"{gps_count} with GPS location).")
 
     days = group_by_day(items)
-    describe_days(days, items, located, args)
+    # place names are remembered next to the index cache, so a restart doesn't search the town list again
+    place_cache = (PlaceCache(index_cache.with_name(f"{index_cache.stem}.places.json"))
+                   if index_cache and not args.no_places else None)
+    describe_days(days, items, located, args, place_cache=place_cache)
     print(f"Grouped into {len(days)} day(s).")
 
     try:

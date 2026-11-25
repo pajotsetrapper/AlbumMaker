@@ -306,3 +306,16 @@ class CopyIsCurrentTests(FolderTestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class RelativeNamerTests(unittest.TestCase):
+    def test_it_agrees_with_relative_to_and_copes_with_odd_paths(self):
+        from albummaker import scan   # (helpers puts the project on sys.path)
+        root = Path("/photos/trip")
+        rel = scan.relative_namer(root)
+        for p in (root / "a.jpg", root / "sub" / "dir" / "b.JPG", root / "sp ace" / "c d.jpg"):
+            self.assertEqual(rel(p), p.relative_to(root).as_posix())
+        self.assertEqual(rel(Path("/photos/trip-other/x.jpg")), "x.jpg", "a sibling folder with the same start")
+        self.assertEqual(rel(Path("/elsewhere/y.jpg")), "y.jpg", "outside the folder: its name")
+        here = scan.relative_namer(Path("."))
+        self.assertEqual(here(Path("sub/a.jpg")), "sub/a.jpg")

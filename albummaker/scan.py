@@ -410,15 +410,32 @@ def apply_date_check(items: list, date_range=None, now=None, quiet: bool = False
     return len(report)
 
 
-def assign_rel_paths(items: list, root: Path):
-    """Give every item the key trip_content.json uses for it: its path
-    relative to the photos folder, with forward slashes (and the same for
-    the byte-identical copies that were skipped in its favour)."""
+def relative_namer(root: Path) -> Callable[[Path], str]:
+    """A function giving a path's name relative to root, with forward slashes (a path
+    outside root: just its file name). Slices the text when the path starts with the
+    root's, which is the case for everything found by walking root and much faster than
+    Path.relative_to when done for tens of thousands of files."""
+    prefix = str(root)
+    cut = len(prefix) + 1
+    start = prefix + os.sep
+    slow = os.sep != "/"
+
     def rel(p: Path) -> str:
+        text = str(p)
+        if prefix not in ("", ".") and text.startswith(start):
+            return text[cut:].replace(os.sep, "/") if slow else text[cut:]
         try:
             return p.relative_to(root).as_posix()
         except ValueError:
             return p.name
+    return rel
+
+
+def assign_rel_paths(items: list, root: Path):
+    """Give every item the key trip_content.json uses for it: its path
+    relative to the photos folder, with forward slashes (and the same for
+    the byte-identical copies that were skipped in its favour)."""
+    rel = relative_namer(root)
     for it in items:
         it.rel = rel(it.path)
         it.aliases = [rel(p) for p in it.duplicates]
