@@ -4,17 +4,12 @@
 
 from __future__ import annotations
 
-import base64
-import hashlib
 import io
 import os
 import re
 import sys
-import tarfile
 import tempfile
 import time
-import urllib.error
-import urllib.request
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -105,8 +100,10 @@ def install_bundled_assets(vendor_dir: Optional[Path] = None) -> bool:
     folder is not complete yet. True when it copied them. Never raises: if it
     can't, the assets are simply downloaded as before."""
     vendor_dir = Path(vendor_dir or VENDOR_DIR)
+    if vendor_ready(vendor_dir):        # the usual case after the first start: nothing to look at
+        return False
     source = bundled_assets_dir()
-    if source is None or vendor_ready(vendor_dir):
+    if source is None:
         return False
     try:
         files = [f for f in sorted(source.rglob("*")) if f.is_file()]
@@ -135,6 +132,7 @@ _MAX_PACKAGE_BYTES = 60_000_000
 def _read_url(url: str) -> bytes:
     """One try at downloading `url`, in chunks, with a progress line every few
     seconds; raises TimeoutError when it stalls or takes too long."""
+    import urllib.request       # only a download needs the network code (it is slow to import)
     req = urllib.request.Request(url, headers={"User-Agent": "AlbumMaker-offline-assets/1.0"})
     start = last_report = time.monotonic()
     with urllib.request.urlopen(req, timeout=_DOWNLOAD_TIMEOUT) as resp:
@@ -162,6 +160,7 @@ def _read_url(url: str) -> bytes:
 
 def _download(url: str) -> bytes:
     """_read_url, tried up to _DOWNLOAD_ATTEMPTS times on network trouble."""
+    import urllib.error
     for attempt in range(1, _DOWNLOAD_ATTEMPTS + 1):
         try:
             return _read_url(url)
@@ -178,6 +177,7 @@ def _download(url: str) -> bytes:
 def _download_package(key: str, wanted: set) -> dict:
     """Download one pinned npm package, check it against its published
     checksum, and return {path inside the package: bytes} for the wanted files."""
+    import base64, hashlib, tarfile     # only needed to download and check a package
     name, version, integrity = _VENDOR_PACKAGES[key]
     url = f"{_NPM_REGISTRY}/{name}/-/{name.split('/')[-1]}-{version}.tgz"
     data = _download(url)
@@ -213,6 +213,7 @@ def _font_faces(css_text: str, slug: str, weight: int) -> tuple:
 
 def fetch_offline_assets(vendor_dir: Optional[Path] = None) -> int:
     """Download Leaflet and the fonts into the user data directory by default."""
+    import urllib.error
     vendor_dir = Path(vendor_dir or VENDOR_DIR)
     files = {}   # path inside vendor -> bytes
     try:

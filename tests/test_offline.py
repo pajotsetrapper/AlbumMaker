@@ -298,7 +298,7 @@ class SlowNetworkTests(unittest.TestCase):
     def run_download(self, responses, clock=None):
         out = io.StringIO()
         # (mock raises the exceptions in the list and returns everything else)
-        with mock.patch.object(offline.urllib.request, "urlopen", side_effect=responses) as urlopen, \
+        with mock.patch("urllib.request.urlopen", side_effect=responses) as urlopen, \
                 mock.patch.object(offline, "_RETRY_PAUSE", 0), mock.patch("sys.stdout", out):
             if clock is not None:
                 with mock.patch.object(offline.time, "monotonic", side_effect=clock):

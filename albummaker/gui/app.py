@@ -17,6 +17,62 @@ from datetime import datetime
 from html import escape as _escape_html
 from pathlib import Path
 from typing import Optional
+from time import perf_counter as _perf_counter
+
+_T0 = _perf_counter()       # start of this module's imports, for the optional start-up timing below
+
+
+class _StartupTimer:
+    """With ALBUMMAKER_PROFILE_STARTUP=1 in the environment, notes how long each start-up phase takes
+    (and where the window construction spends its time), and saves it as albummaker-startup-timing.txt
+    next to the settings once the window is up. Without it, every method does nothing."""
+
+    def __init__(self) -> None:
+        self.enabled = bool(os.environ.get("ALBUMMAKER_PROFILE_STARTUP"))
+        self.marks: list = []
+        self.profile_text = ""
+
+    def mark(self, name: str) -> None:
+        if self.enabled:
+            self.marks.append((name, _perf_counter() - _T0))
+
+    def build(self, factory):
+        """factory(), and with timing on, also a profile of what it did."""
+        if not self.enabled:
+            return factory()
+        import cProfile
+        import io
+        import pstats
+        profiler = cProfile.Profile()
+        profiler.enable()
+        try:
+            return factory()
+        finally:
+            profiler.disable()
+            stream = io.StringIO()
+            pstats.Stats(profiler, stream=stream).sort_stats("cumulative").print_stats(30)
+            self.profile_text = stream.getvalue()
+
+    def write(self) -> None:
+        if not self.enabled:
+            return
+        lines = ["AlbumMaker start-up timing (seconds since app.py began to load; each line adds its own part)", ""]
+        previous = 0.0
+        for name, at in self.marks:
+            lines.append(f"{at:8.3f}  +{at - previous:6.3f}  {name}")
+            previous = at
+        if self.profile_text:
+            lines += ["", "Where building the main window spent its time (cProfile, top 30 by cumulative time;",
+                      "this is slower than normal because profiling itself costs time):", "", self.profile_text]
+        try:
+            target = settings_path().parent / "albummaker-startup-timing.txt"
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_text("\n".join(lines), encoding="utf-8")
+        except OSError:
+            pass
+
+
+_startup = _StartupTimer()
 
 from PySide6.QtCore import QEvent, QProcess, QProcessEnvironment, QTimer, Qt, QUrl
 from PySide6.QtGui import QColor, QDesktopServices, QFont, QDoubleValidator, QIcon, QPalette, QPixmap
@@ -55,6 +111,8 @@ from PySide6.QtWidgets import (
     QComboBox,
 )
 
+_startup.mark("PySide6 imported")
+
 from .. import __version__
 from .dialogs import PreparingDialog, ResultDialog
 from .ffmpeg_check import FfmpegChecker
@@ -73,6 +131,8 @@ from ..site_templates import DEFAULT_TEMPLATE, TEMPLATES
 from ..timezones import timezone_label, timezone_search_choices
 from ..offline import VENDOR_DIR, vendor_ready
 from ..util import project_dir, read_resource_bytes
+
+_startup.mark("AlbumMaker modules imported")
 
 PROJECT_ROOT = project_dir()
 _THEME_PROPERTY = "albummakerTheme"          # set on the application once a theme is in place
@@ -792,11 +852,28 @@ def _scroll_page(*widgets: QWidget) -> QScrollArea:
     return scroll
 
 
+_icon_cache: Optional[QIcon] = None
+
+
 def _application_icon() -> QIcon:
-    image = QPixmap()
-    if not image.loadFromData(read_resource_bytes("gui", "assets", "albummaker.ico")):
-        raise RuntimeError("The AlbumMaker application icon could not be loaded.")
-    return QIcon(image)
+    """Decoded once: the application and the window both use it."""
+    global _icon_cache
+    if _icon_cache is None:
+        image = QPixmap()
+        if not image.loadFromData(read_resource_bytes("gui", "assets", "albummaker.ico")):
+            raise RuntimeError("The AlbumMaker application icon could not be loaded.")
+        _icon_cache = QIcon(image)
+    return _icon_cache
+
+
+class _VersionLabel(QLabel):
+    """The version label. Its tooltip (version, Python, Qt and OS, handy in bug reports) is worked out
+    when it is first wanted, because asking the OS for its version at start-up is slow on Windows."""
+
+    def event(self, event) -> bool:
+        if event.type() == QEvent.Type.ToolTip and not self.toolTip():
+            self.setToolTip(_about_text())
+        return super().event(event)
 
 
 def _start_in_own_session(process: QProcess) -> bool:
@@ -936,11 +1013,15 @@ class MainWindow(QMainWindow):
         self.setWindowIcon(_application_icon())
         self.setMinimumSize(680, 580)
         self.resize(920, 820)
+        _startup.mark("MainWindow: fields set")
         self._build_ui()
+        _startup.mark("MainWindow: widgets built (_build_ui)")
         self._load_ui()
+        _startup.mark("MainWindow: settings loaded into widgets (_load_ui)")
         self._connect_persistence()
         self._apply_theme()
         self._update_actions()
+        _startup.mark("MainWindow: connected and status updated")
         if save_blocked_reason:
             self.status_label.setText("Settings are not being saved")
             self.status_label.setToolTip(
@@ -964,8 +1045,8 @@ class MainWindow(QMainWindow):
         title.setFont(QFont(title.font().family(), 21, QFont.Weight.Bold))
         title_block.addWidget(title)
         title_block.addWidget(_label("A simple way to turn your trips into a photo site.", "muted"))
-        version_label = _label(f"Version {__version__}", "muted")
-        version_label.setToolTip(_about_text())
+        version_label = _VersionLabel(f"Version {__version__}")
+        version_label.setObjectName("muted")
         title_block.addWidget(version_label)
         header_layout.addLayout(title_block)
         header_layout.addStretch(1)
@@ -1049,7 +1130,9 @@ class MainWindow(QMainWindow):
         self._main_scroll = scroll
         self.setCentralWidget(scroll)
 
+        _startup.mark("MainWindow: main page built")
         self._build_options_dialog()
+        _startup.mark("MainWindow: Options dialog built")
         for button in self.findChildren(QAbstractButton):
             if not button.toolTip():
                 button.setToolTip(button.text().replace("&", "") or "Activate this control.")
@@ -2622,23 +2705,30 @@ def main() -> int:
         return 0
     if getattr(sys, "frozen", False):
         _install_error_log()
+    _startup.mark("main() started")
     app = QApplication(sys.argv)
     app.setApplicationName("AlbumMaker")
     app.setOrganizationName("AlbumMaker")
     app.setWindowIcon(_application_icon())
+    _startup.mark("QApplication and icon ready")
     loaded = load_settings_or_recover()
+    _startup.mark("settings file read")
     # Before the window exists, so the style sheet does not have to restyle it afterwards.
     theme = loaded.settings.get("appearance", {}).get("theme")
     apply_theme(theme if theme in THEME_STYLES else "dark")
+    _startup.mark("theme applied")
     blocked = "" if loaded.can_save else (loaded.move_error or "unknown error")
     # The packaged app includes the map library and fonts: put them in place
     # before the window checks whether the live server is ready to start.
     from ..offline import install_bundled_assets
     bundled = install_bundled_assets()
-    window = MainWindow(loaded.settings, save_blocked_reason=blocked)
+    _startup.mark("bundled assets checked")
+    window = _startup.build(lambda: MainWindow(loaded.settings, save_blocked_reason=blocked))
+    _startup.mark("MainWindow created")
     if bundled:
         window._append_log("Installed the map library and fonts included with the app.")
     window.show()
+    _startup.mark("window.show() returned")
 
     def after_show() -> None:
         # Only now is the window frame known (on X11 it is not right after show()).
@@ -2648,6 +2738,8 @@ def main() -> int:
             window._append_log("Settings problem: " + message.replace("\n\n", " ").replace("\n", " "))
             QMessageBox.warning(window, "AlbumMaker settings were reset", message)
         window._check_ffmpeg_at_startup()
+        _startup.mark("first event-loop turn done (after_show)")
+        _startup.write()
 
     QTimer.singleShot(0, after_show)
     return app.exec()
