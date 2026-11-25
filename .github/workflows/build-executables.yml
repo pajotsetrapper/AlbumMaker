@@ -13,8 +13,18 @@ permissions:
 
 jobs:
   test:
-    name: Tests (Windows)
-    runs-on: windows-latest
+    name: Tests (${{ matrix.platform }})
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: windows-latest
+            platform: windows-x64
+          - runner: macos-15
+            platform: macos-arm64
+    # Every matrix leg reads the same version from the code, so it does not
+    # matter which leg's output the other jobs end up using.
     outputs:
       version: ${{ steps.version.outputs.version }}
     steps:
