@@ -37,6 +37,7 @@ class Gazetteer:
         self._data = data
         self._cells = None
         self.countries = {}
+        self._memo = {}
 
     def _load(self):
         raw = self._data if self._data is not None else read_resource_bytes("data", "places.tsv.gz")
@@ -51,10 +52,17 @@ class Gazetteer:
                 continue
             name, cc, lat, lon, pop = parts
             lat, lon = int(lat) / 100, int(lon) / 100
-            cells.setdefault((int(lat // 1), int(lon // 1)), []).append((lat, lon, name, cc, int(pop)))
+            cells.setdefault((int(lat // 1), int(lon // 1)), []).append((lat, lon, name, cc, int(pop), reach_km(int(pop))))
         self._cells = cells
 
     def nearest(self, lat: float, lon: float) -> Optional[dict]:
+        key = (lat, lon)
+        if key in self._memo:
+            return self._memo[key]
+        self._memo[key] = result = self._nearest(lat, lon)
+        return result
+
+    def _nearest(self, lat: float, lon: float) -> Optional[dict]:
         """{'name', 'country', 'km', 'inside'} for the town that best describes
         (lat, lon), or None when there is none within SEARCH_KM."""
         if self._cells is None:
@@ -66,19 +74,19 @@ class Gazetteer:
         for dy in (-1, 0, 1):
             for dx in range(-rings, rings + 1):
                 x = (cx + dx + 180) % 360 - 180            # across the date line
-                for p_lat, p_lon, name, cc, pop in self._cells.get((cy + dy, x), ()):
+                for p_lat, p_lon, name, cc, pop, reach in self._cells.get((cy + dy, x), ()):
                     dlon = (p_lon - lon + 180) % 360 - 180
                     km = 111.2 * sqrt((p_lat - lat) ** 2 + (dlon * k) ** 2)
                     if km > SEARCH_KM:
                         continue
-                    score = km / reach_km(pop)
+                    score = km / reach
                     if best_score is None or score < best_score:
-                        best, best_score = (name, cc, km, pop), score
+                        best, best_score = (name, cc, km, reach), score
         if best is None:
             return None
-        name, cc, km, pop = best
+        name, cc, km, reach = best
         return {"name": name, "country": self.countries.get(cc, cc), "km": km,
-                "inside": km <= reach_km(pop)}
+                "inside": km <= reach}
 
 
 _GAZETTEER = Gazetteer()
