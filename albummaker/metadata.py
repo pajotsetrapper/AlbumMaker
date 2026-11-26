@@ -338,7 +338,9 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
         result = subprocess.run(
             [multimedia_tool("ffprobe"), "-v", "quiet", "-print_format", "json",
              "-show_format", "-show_streams", ffmpeg_input(path)],
-            capture_output=True, text=True, errors="replace", timeout=30,
+            # ffprobe writes its JSON as UTF-8 everywhere; the default would be the
+            # ANSI code page on Windows, garbling non-Latin titles and places
+            capture_output=True, text=True, encoding="utf-8", errors="replace", timeout=30,
             env=external_tool_env(),
         )
     except FileNotFoundError:

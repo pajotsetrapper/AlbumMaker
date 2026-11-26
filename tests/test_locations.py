@@ -319,6 +319,12 @@ class OffsetMetadataTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(found["dt"], datetime(2026, 7, 15, 12, 0))
         self.assertEqual(found["utc_offset"], 120)
 
+    def test_ffprobe_output_is_read_as_utf8_on_every_system(self):
+        result = SimpleNamespace(returncode=0, stdout="{}")
+        with mock.patch("albummaker.metadata.subprocess.run", return_value=result) as run:
+            metadata.read_video_metadata(Path("video.mp4"))
+        self.assertEqual(run.call_args.kwargs.get("encoding"), "utf-8")
+
     def test_video_metadata_cache_is_specific_to_named_zone(self):
         found = {"dt": datetime(2026, 7, 15, 12, 0)}
         cached = metadata.meta_to_json(found, timezone_name="Europe/Paris")
