@@ -213,7 +213,7 @@ Usually not. A trip's time zone is **Automatic** unless you choose one (in the d
 4. **The rest of the trip says.** The offset most of the trip's files state.
 5. Otherwise it is unknown: that photo is not placed on the track, and the log says *their time zone is unknown*.
 
-**Videos** work a little differently. A video with its own local time (an iPhone video) keeps it under Automatic. A video with only a UTC time is converted using the trip's time zone, else the default UTC offset, else **this computer's time zone**, so editing in a different time zone than where you shot can shift video times.
+**Videos** work a little differently. A video with its own local time (an iPhone video) keeps it under Automatic. A video with only a UTC time is converted using the trip's time zone, else the default UTC offset, else the UTC offset the trip's photos state (that day's, or the trip's most common one). Only when no photo states an offset is **this computer's time zone** used, so editing in a different time zone than where you shot can then shift video times.
 
 **Set a zone when** you use a GPS track and your camera does not record a UTC offset (many standalone cameras) and nothing else in the trip does; when your videos have only UTC times and this computer is not in the trip's zone; or when you want all videos in one local time. **Leave it on Automatic** for trips across several time zones: Automatic follows each file, whereas a chosen zone applies to every file that does not say, and with a named zone iPhone videos are shown in that zone instead of the phone's own local time.
 

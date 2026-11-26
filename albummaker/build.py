@@ -38,7 +38,7 @@ from .cli import (add_content_arg, add_date_check_args, add_location_args, add_o
 from .content import (ContentFileError, hidden_rels, load_or_init_content, parse_content_file,
                       report_unknown_photo_keys, resolve_content_path)
 from .imaging import display_jpeg, image_thumbnails, open_upright, thumbnails_from, video_thumbnails
-from .locations import describe_days, locate_items
+from .locations import describe_days, localize_items, locate_items
 from .metadata import HEIF_SUPPORT, check_ffmpeg, meta_from_json, meta_to_json, read_metadata
 from .model import BROWSER_NATIVE_IMAGE_EXTS, VIDEO_EXTS, StaticOutputs
 from .offline import VENDOR_DIR, fetch_offline_assets, vendor_ready
@@ -732,7 +732,8 @@ def build_parser() -> argparse.ArgumentParser:
                         help="Fixed UTC offset in hours (e.g. 2 or -5.5) used to convert VIDEO "
                              "timestamps to your trip's local time. Without it, iPhone videos use "
                              "the local time they recorded, and other videos (which only store "
-                             "UTC) are converted using this computer's timezone. With it, every "
+                             "UTC) are converted to the UTC offset the trip's photos state (else "
+                             "this computer's timezone). With it, every "
                              "video uses this offset. Photos are unaffected: camera EXIF "
                              "timestamps are already local.")
     add_timezone_arg(parser)
@@ -835,6 +836,7 @@ def build_trip(args, date_range, library_root: Optional[Path] = None,
     items = sorted(items, key=lambda it: it.path) if args.no_live_photos else pair_live_photos(items)
     assign_rel_paths(items, args.input)
 
+    localize_items(items, args)
     if not args.no_date_check:
         apply_date_check(items, date_range)
     located = locate_items(items, args, exclude_dirs=(args.output,) + ((library_root,) if library_root else ()))

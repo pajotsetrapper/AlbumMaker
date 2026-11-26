@@ -488,9 +488,10 @@ Activity log says so: <i>their time zone is unknown</i>.</li>
 
 <p><b>Videos</b> work a little differently. A video that stores its own local time (an iPhone video)
 keeps it under Automatic. A video that stores only a UTC time is converted using the trip's time zone;
-if there is none, the Default video UTC offset; if that is blank too, <b>this computer's time zone</b>.
-So if you edit your photos in a different time zone from where you took them, video times can be off by
-the difference. Choosing the trip's zone fixes that.</p>
+if there is none, the Default video UTC offset; if that is blank too, the UTC offset the trip's photos
+state (that day's, or else the trip's most common one). Only when no photo states one is <b>this computer's
+time zone</b> used, so if you then edit your photos in a different time zone from where you took them,
+video times can be off by the difference. Choosing the trip's zone fixes that.</p>
 
 <p><b>Set a zone for a trip when:</b></p>
 <ul>

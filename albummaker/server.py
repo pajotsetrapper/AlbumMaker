@@ -50,7 +50,7 @@ from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, 
                       resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, set_trip_text,
                       trip_subtitle, trip_title, write_content, TRIP_SUBTITLE_MAX, TRIP_TITLE_MAX)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
-from .locations import describe_days, locate_items
+from .locations import describe_days, localize_items, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
@@ -1764,6 +1764,7 @@ def load_trip(args, date_range, shared: "Shared", prefix: str = "", index_cache:
     if not items:
         raise TripLoadError("No supported photos or videos found.")
 
+    localize_items(items, args)
     if not args.no_date_check:
         apply_date_check(items, date_range)
     located = locate_items(items, args)

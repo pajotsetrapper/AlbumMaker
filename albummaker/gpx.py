@@ -309,6 +309,33 @@ class TimeZones:
         return (item.dt - timedelta(minutes=offset)).replace(tzinfo=timezone.utc).timestamp()
 
 
+def localize_utc_videos(items: list, tz_offset_hours: Optional[float] = None,
+                        timezone_name: Optional[str] = None) -> int:
+    """Videos that record only a UTC time (most Android phones, GoPro, DJI) were given this
+    computer's offset when read, which puts them on the wrong day when the computer is in
+    another zone than the trip was. Without --timezone or --tz-offset, move them into the
+    zone the trip's own photos state: what the files of that day say most often, else what
+    the whole trip says most often. Returns how many moved; nothing moves when no file
+    states its offset."""
+    if tz_offset_hours is not None or timezone_name:
+        return 0
+    zones = TimeZones(items)
+    if zones.overall is None:
+        return 0
+    moved = 0
+    for it in items:
+        if it.utc_offset_src != "utc" or it.utc_offset is None or it.dt_is_fallback:
+            continue
+        utc = it.dt - timedelta(minutes=it.utc_offset)
+        day = (utc + timedelta(minutes=zones.overall)).strftime("%Y-%m-%d")
+        offset = zones.by_day.get(day, zones.overall)
+        if offset != it.utc_offset:
+            it.dt = utc + timedelta(minutes=offset)
+            it.utc_offset = offset
+            moved += 1
+    return moved
+
+
 # ---------------------------------------------------------------- applying
 
 def load_tracks(files: list) -> Optional[Track]:

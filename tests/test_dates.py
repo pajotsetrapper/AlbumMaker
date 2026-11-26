@@ -187,6 +187,50 @@ class ApplyDateCheckTests(unittest.TestCase):
         self.assertIn("and 4 more", out.getvalue())
 
 
+class UtcVideoTests(unittest.TestCase):
+    """Videos that record only a UTC time, read on a computer in another zone than the trip."""
+
+    def photo(self, name, dt, offset):
+        it = item(name, dt)
+        it.utc_offset, it.utc_offset_src = offset, "exif"
+        return it
+
+    def video(self, name, utc, assumed_offset):
+        # what reading it did: UTC converted with this computer's offset
+        it = item(name, utc + timedelta(minutes=assumed_offset), media="video")
+        it.utc_offset, it.utc_offset_src = assumed_offset, "utc"
+        return it
+
+    def test_a_video_moves_to_the_zone_of_the_trips_photos(self):
+        from albummaker.gpx import localize_utc_videos
+        # shot at 08:00 in Tokyo (23:00 UTC the day before), read on a laptop in New York
+        photos = [self.photo(f"p{i}.jpg", datetime(2026, 5, 2, 9 + i), 540) for i in range(3)]
+        clip = self.video("clip.mp4", datetime(2026, 5, 1, 23), -240)
+        self.assertEqual(clip.dt, datetime(2026, 5, 1, 19))          # the wrong day
+        self.assertEqual(localize_utc_videos(photos + [clip]), 1)
+        self.assertEqual(clip.dt, datetime(2026, 5, 2, 8))
+        self.assertEqual(clip.utc_offset, 540)
+        self.assertEqual(clip.utc_offset_src, "utc")                  # still not a vote
+
+    def test_the_days_own_offset_wins_on_a_trip_across_zones(self):
+        from albummaker.gpx import localize_utc_videos
+        items = [self.photo("a.jpg", datetime(2026, 5, 1, 12), 60),      # mostly in Europe
+                 self.photo("b.jpg", datetime(2026, 5, 2, 12), 60),
+                 self.photo("c.jpg", datetime(2026, 5, 3, 12), 540)]     # then a day in Tokyo
+        clip = self.video("clip.mp4", datetime(2026, 5, 3, 3), 0)
+        localize_utc_videos(items + [clip])
+        self.assertEqual(clip.dt, datetime(2026, 5, 3, 12))
+
+    def test_nothing_moves_with_a_zone_given_or_no_votes(self):
+        from albummaker.gpx import localize_utc_videos
+        photos = [self.photo("p.jpg", datetime(2026, 5, 2, 9), 540)]
+        clip = self.video("clip.mp4", datetime(2026, 5, 1, 23), -240)
+        self.assertEqual(localize_utc_videos(photos + [clip], timezone_name="America/New_York"), 0)
+        self.assertEqual(localize_utc_videos(photos + [clip], tz_offset_hours=-4), 0)
+        self.assertEqual(localize_utc_videos([clip]), 0)
+        self.assertEqual(clip.dt, datetime(2026, 5, 1, 19))
+
+
 class DateRangeArgumentTests(unittest.TestCase):
     def parser(self):
         p = argparse.ArgumentParser()
