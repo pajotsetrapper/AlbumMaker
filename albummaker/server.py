@@ -795,10 +795,33 @@ class TripHTTPServer(ThreadingHTTPServer):
     # below is shown instead.
     allow_reuse_address = sys.platform != "win32"
 
+    # Each connection has a thread of its own, and an idle one lives for the 30 s socket
+    # timeout. A browser uses about six at a time; a device on the network opening
+    # thousands of idle connections must not use up the computer's threads or memory.
+    # Over the limit, a new connection is closed straight away.
+    max_connections = 256
+
     def __init__(self, address, handler, app: App, library: Optional[Library] = None):
         self.app = app              # the trip (in a library: any trip, for the shared settings)
         self.library = library
+        self._connection_slots = threading.BoundedSemaphore(self.max_connections)
         super().__init__(address, handler)
+
+    def process_request(self, request, client_address):
+        if not self._connection_slots.acquire(blocking=False):
+            self.shutdown_request(request)
+            return
+        try:
+            super().process_request(request, client_address)
+        except BaseException:
+            self._connection_slots.release()
+            raise
+
+    def process_request_thread(self, request, client_address):
+        try:
+            super().process_request_thread(request, client_address)
+        finally:
+            self._connection_slots.release()
 
 
 class EditConflict(Exception):

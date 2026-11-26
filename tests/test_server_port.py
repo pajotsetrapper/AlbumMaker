@@ -20,6 +20,35 @@ class PortSharingTests(unittest.TestCase):
 
 
 
+class ConnectionLimitTests(unittest.TestCase):
+    def test_connections_over_the_limit_are_closed_and_slots_come_back(self):
+        import threading
+        import time
+
+        class Server(TripHTTPServer):
+            max_connections = 2
+
+        server = Server(("127.0.0.1", 0), RequestHandler, None)
+        threading.Thread(target=server.serve_forever, daemon=True).start()
+        self.addCleanup(server.server_close)
+        self.addCleanup(server.shutdown)
+        port = server.server_address[1]
+        idle = [socket.create_connection(("127.0.0.1", port)) for _ in range(2)]   # never send anything
+        time.sleep(0.3)
+        extra = socket.create_connection(("127.0.0.1", port))
+        extra.settimeout(5)
+        self.assertEqual(extra.recv(1), b"", "the third connection is closed at once")
+        extra.close()
+        for s in idle:
+            s.close()
+        time.sleep(0.3)
+        again = socket.create_connection(("127.0.0.1", port))   # slots are free again
+        again.settimeout(0.5)
+        with self.assertRaises(socket.timeout):
+            again.recv(1)                                   # kept open, waiting for a request
+        again.close()
+
+
 class PortArgumentTests(unittest.TestCase):
     def test_only_real_port_numbers_are_accepted(self):
         import contextlib
