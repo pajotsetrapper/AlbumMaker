@@ -7,6 +7,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 ### Fixed
 - **Typing this computer's time zone in the desktop app:** This computer's zone is listed as e.g. `Brussels · UTC+01:00 · Europe · this computer`, so typing its plain label matched nothing and the edit was silently dropped. A typed label now also matches without that suffix, and a city on its own (such as `brussels`) is accepted when only one zone has it.
 - **Cinema homepage blank without the map:** When Leaflet could not load (a site without the offline files opened with no internet, or a blocked CDN), every day on the Cinema homepage stayed invisible, because the scenes were only faded in by code that ran after the map was created. The scenes are now set up separately from the map, and the empty map corner is hidden.
+- **Photos with very large EXIF were left out:** A TIFF, HEIC or multi-image JPEG whose EXIF was over 64 KB (Lightroom and Photoshop TIFF exports often carry 100 KB of XMP) failed to convert, because a JPEG cannot hold that much EXIF, so the photo was missing from the site. The display copy now leaves out the bulky blocks (XMP, IPTC, Photoshop data, ICC profile, maker note) and keeps the camera, time and GPS; if it still does not fit, it is written without EXIF.
 
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.

@@ -102,18 +102,47 @@ def thumbnails_from(img: Image.Image, sizes: Iterable[int]) -> dict:
     return out
 
 
+# A JPEG keeps EXIF in one marker segment, which holds at most this many bytes
+# (Pillow refuses to write more).
+MAX_JPEG_EXIF = 65533
+# Large blocks a TIFF or HEIC can carry in its EXIF that a display copy does
+# without: XMP, IPTC, Photoshop resources, an ICC profile, the maker note.
+_BULKY_EXIF_TAGS = (700, 33723, 34377, 34675, 0x927C)
+_EXIF_IFD, _MAKER_NOTE = 0x8769, 0x927C
+
+
+def _display_exif_bytes(exif) -> Optional[bytes]:
+    """The EXIF for a display JPEG, with Orientation reset to "normal" (the pixels are
+    already rotated). When it is too long for a JPEG (Lightroom and Photoshop TIFF
+    exports often carry 100 KB of XMP), the bulky blocks are left out, so the camera,
+    time and GPS are still kept; None if it still does not fit or cannot be written."""
+    try:
+        exif[0x0112] = 1
+        data = exif.tobytes()
+        if len(data) <= MAX_JPEG_EXIF:
+            return data
+        for tag in _BULKY_EXIF_TAGS:
+            exif.pop(tag, None)
+        exif.get_ifd(_EXIF_IFD).pop(_MAKER_NOTE, None)
+        data = exif.tobytes()
+        return data if len(data) <= MAX_JPEG_EXIF else None
+    except Exception:
+        return None
+
+
 def display_jpeg(img: Image.Image, exif) -> bytes:
     """Full-resolution, near-lossless JPEG of an upright image, carrying the
     original EXIF (camera, GPS, timestamp, ...). The pixels are already
     rotated, so Orientation is reset to "normal" to stop EXIF-aware viewers
     rotating the image a second time."""
-    exif_bytes = None
+    exif_bytes = _display_exif_bytes(exif)
     try:
-        exif[0x0112] = 1
-        exif_bytes = exif.tobytes()
-    except Exception:
-        pass
-    return encode_jpeg(img, quality=DISPLAY_QUALITY, exif=exif_bytes)
+        return encode_jpeg(img, quality=DISPLAY_QUALITY, exif=exif_bytes)
+    except ValueError:
+        if not exif_bytes:
+            raise
+        # EXIF Pillow cannot write: the photo matters more than its metadata
+        return encode_jpeg(img, quality=DISPLAY_QUALITY)
 
 
 def display_jpeg_bytes(path: Path) -> bytes:
