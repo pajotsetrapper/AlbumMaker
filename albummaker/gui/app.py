@@ -4,6 +4,7 @@
 
 from __future__ import annotations
 
+import codecs
 import os
 import platform
 import re
@@ -1028,6 +1029,7 @@ class MainWindow(QMainWindow):
         self._process_group = False
         self._process_kind = ""
         self._log_remainder = ""
+        self._output_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._offline_asset_error = ""
         self._pending_server_start = False
         self._server_ready = False
@@ -2281,6 +2283,7 @@ class MainWindow(QMainWindow):
         self.editor_link_button.hide()
         self.server_links.hide()
         self._log_remainder = ""
+        self._output_decoder = codecs.getincrementaldecoder("utf-8")(errors="replace")
         self._append_log(f"Starting {_task_label(kind)}: {self._display_command(arguments)}")
         self.status_label.setText(f"Starting {_task_label(kind)}…")
         self._update_actions()
@@ -2352,7 +2355,8 @@ class MainWindow(QMainWindow):
     def _read_process_output(self) -> None:
         if not self._process:
             return
-        data = bytes(self._process.readAllStandardOutput()).decode("utf-8", errors="replace")
+        # one decoder per task: a character whose bytes arrive in two reads is decoded whole
+        data = self._output_decoder.decode(bytes(self._process.readAllStandardOutput()))
         lines = (self._log_remainder + data).splitlines(keepends=True)
         self._log_remainder = ""
         for line in lines:

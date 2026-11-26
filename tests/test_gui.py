@@ -689,6 +689,18 @@ class MainWindowTests(unittest.TestCase):
         self.assertEqual(window._server_port, "8123")
         ready.assert_called()
 
+    def test_a_character_split_between_two_reads_is_shown_whole(self):
+        window = self.make_window()
+        name = "Trip 1: \u6771\u4eac\n".encode("utf-8")
+        chunks = [name[:10], name[10:]]                   # the cut is inside the first character
+        window._process = mock.Mock()
+        window._process.readAllStandardOutput.side_effect = chunks
+        window._read_process_output()
+        window._read_process_output()
+        window._process = None
+        self.assertIn("Trip 1: \u6771\u4eac", window.log_view.toPlainText())
+        self.assertNotIn("\ufffd", window.log_view.toPlainText())
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:
