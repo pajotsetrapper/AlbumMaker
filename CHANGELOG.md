@@ -2,6 +2,11 @@
 
 All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
 
+## [Unreleased]
+
+### Development
+- **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.
+
 ## [3.2.1] - 2026-11-25
 
 Maintenance release, focussing on GUI performance improvements
