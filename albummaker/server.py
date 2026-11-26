@@ -934,6 +934,10 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def do_GET(self):
         self._begin()
+        # A GET or HEAD with a body is never read here: on a kept-alive connection the
+        # body would be taken for the next request, so this connection ends after it.
+        if self.headers.get("Content-Length", "0").strip() not in ("", "0") or self.headers.get("Transfer-Encoding"):
+            self.close_connection = True
         try:
             self._handle()
         finally:

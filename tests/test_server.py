@@ -51,6 +51,21 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         media = self.server.get(f"/media/{self.ids1[0]}")
         self.assertEqual((media[0], media[1]["x-content-type-options"]), (200, "nosniff"))
 
+    def test_a_get_with_a_body_does_not_spoil_the_next_request(self):
+        import socket as socket_mod
+        conn = socket_mod.create_connection(("127.0.0.1", self.server.port), timeout=10)
+        smuggled = b"GET /nothing-here HTTP/1.1\r\nHost: x\r\n\r\n"
+        conn.sendall(b"GET / HTTP/1.1\r\nHost: 127.0.0.1\r\nContent-Length: %d\r\n\r\n" % len(smuggled) + smuggled)
+        reply = b""
+        while True:
+            chunk = conn.recv(65536)
+            if not chunk:
+                break
+            reply += chunk
+        conn.close()
+        self.assertTrue(reply.startswith(b"HTTP/1.0 200") or reply.startswith(b"HTTP/1.1 200"), reply[:40])
+        self.assertEqual(reply.count(b"HTTP/1."), 1, "the body was not answered as a request of its own")
+
     def test_the_unsorted_page_exists_for_undated_files(self):
         self.assertEqual(self.server.get("/day/unknown")[0], 200)
         self.assertIn("nodate.jpg", self.server.text("/day/unknown"))
