@@ -2579,10 +2579,17 @@ class MainWindow(QMainWindow):
             self.status_label.setText("Stopping…")
             self._append_log("Requesting process shutdown…")
             self._terminate_process()
-            QTimer.singleShot(3000, self._kill_if_running)
+            # bound to this process: by the time the timer fires, the task may have stopped
+            # and a new one (the server started again) may be running, which must not be killed
+            stopping = self._process
+            QTimer.singleShot(3000, lambda: self._kill_if_running(stopping))
             self._update_actions()
 
-    def _kill_if_running(self) -> None:
+    def _kill_if_running(self, process: Optional[QProcess] = None) -> None:
+        """Kill the task if it is still running. With `process`, only if that is still
+        the running task."""
+        if process is not None and process is not self._process:
+            return
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
             self._append_log("Process did not stop in time; terminating it.")
             self._kill_process_tree()

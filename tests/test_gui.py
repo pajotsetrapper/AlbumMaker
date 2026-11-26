@@ -610,6 +610,28 @@ class MainWindowTests(unittest.TestCase):
         self.assertTrue(window._unsaved_changes())
         self.assertEqual(window.status_label.text(), "Settings are not being saved")
 
+    def test_the_stop_timer_only_kills_the_task_it_was_set_for(self):
+        from PySide6.QtCore import QProcess
+        window = self.make_window()
+        running = QProcess.ProcessState.Running
+        stopped_task, new_task = mock.Mock(), mock.Mock()
+        stopped_task.state.return_value = new_task.state.return_value = running
+        window._process = stopped_task
+        timers = []
+        with mock.patch.object(window, "_terminate_process"), \
+                mock.patch("albummaker.gui.app.QTimer.singleShot", lambda ms, f: timers.append(f)):
+            window._stop_process()
+        self.assertEqual(len(timers), 1)
+        # the task stopped quickly, and the server was started again before the timer fired
+        window._process = new_task
+        with mock.patch.object(window, "_kill_process_tree") as kill:
+            timers[0]()
+            kill.assert_not_called()
+            window._process = stopped_task          # still the same task: it is killed
+            timers[0]()
+            kill.assert_called_once()
+        window._process = None
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:
