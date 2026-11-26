@@ -47,6 +47,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 - **Edited videos could get their export time as their date:** When a video's streams carried a different `creation_time` from the file as a whole (common after editing or re-saving), the stream's time won, which is often when the video was exported. The file's own time now wins.
 - **A new photo that failed half-way left files behind:** When a new photo's conversion succeeded but its thumbnail then failed, the converted copy stayed in the output folder, recorded nowhere and never cleaned up. What the build had already made for that photo is now removed.
 - **iPhone zoomed in when editing a caption:** Tapping the viewer's caption box (or the library's template menu) made Safari on iPhone zoom the page, because their text was smaller than 16 px, which broke the full-screen viewer until you pinched back out. On touch screens they now use 16 px text.
+- **The slideshow could stop on a video:** While playing, a video holds the slide until it ends, but a video the browser refuses to start by itself (blocked autoplay, iPhone Low Power Mode) never ends, so the slideshow stopped there. A video that has not started after a few seconds now gets the usual time of a photo.
 
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.

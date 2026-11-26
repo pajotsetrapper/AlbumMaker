@@ -795,6 +795,7 @@ function startProgress(ms){
 // The one timer (playTimer) that moves the slideshow on: pausing, closing or any
 // change of slide cancels it. `videoEvent` is 'ended' or 'error' when a video
 // slide's own event calls this (see renderSlide).
+let VIDEO_START_GRACE_MS = 3000;      // (a let: the tests shorten it)
 function scheduleAdvance(videoEvent){
   clearTimeout(playTimer);
   resetProgress();
@@ -811,7 +812,16 @@ function scheduleAdvance(videoEvent){
     // still playing: it holds the slide until it ends. One that has already
     // ended or failed (Play pressed afterwards) gets the same wait as a photo.
     const v = document.querySelector('#slideshow-media video');
-    if(videoEvent !== 'error' && !(v && (v.ended || v.error))) return;
+    if(videoEvent !== 'error' && !(v && (v.ended || v.error))){
+      // A video the browser would not start (autoplay blocked, iPhone Low Power Mode)
+      // never ends, and would stop the slideshow for good: if it still has not started
+      // after a few seconds, it gets the usual wait of a photo instead.
+      playTimer = setTimeout(() => {
+        if(v && document.querySelector('#slideshow-media video') === v &&
+           v.paused && !v.ended && !v.currentTime) scheduleAdvance('error');
+      }, VIDEO_START_GRACE_MS);
+      return;
+    }
   }
   if(autoBlocked()){ playTimer = setTimeout(scheduleAdvance, 500); return; }
   startProgress(playMs);

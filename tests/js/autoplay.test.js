@@ -165,6 +165,17 @@ test('a video holds the slide until it ends', async (t) => {
   assert.notEqual(w.eval('currentSlide'), vi);
 });
 
+test('a video the browser will not start does not stop the slideshow', async () => {
+  // works without ffmpeg: the first photo is presented as a video; jsdom never plays it,
+  // like a browser that blocks autoplay
+  const { w } = await playing();
+  w.eval("SLIDES[0].type = 'video'; VIDEO_START_GRACE_MS = 400");
+  thumbs(w)[0].click();
+  byId(w, 'slideshow-play').click();
+  await stays(w, 300);
+  await movesOn(w, 1000);
+});
+
 test('a video that ends while the Details panel is open waits for it, then moves on', async () => {
   // works without ffmpeg: the first photo is presented as a video, and its end is announced by hand
   const { w } = await playing();
