@@ -34,6 +34,9 @@ def encode_jpeg(img: Image.Image, quality: int = THUMB_QUALITY, optimize: bool =
     kwargs = {"quality": quality, "optimize": optimize}
     if exif:
         kwargs["exif"] = exif
+    icc = img.info.get("icc_profile")
+    if icc:
+        kwargs["icc_profile"] = icc
     img.save(buf, "JPEG", **kwargs)
     return buf.getvalue()
 
@@ -42,9 +45,19 @@ def placeholder_bytes(thumb_size: int) -> bytes:
     return encode_jpeg(placeholder_thumbnail(thumb_size), optimize=False)
 
 
+def _rgb_icc_profile(img: Image.Image) -> Optional[bytes]:
+    """The photo's colour profile, if it describes RGB colours. iPhone photos are in
+    Display P3: without their profile, browsers take them for sRGB and they look dull.
+    A CMYK or greyscale profile does not fit the RGB copy made from it, so it is dropped."""
+    icc = img.info.get("icc_profile")
+    if isinstance(icc, bytes) and len(icc) >= 20 and icc[16:20] == b"RGB ":
+        return icc
+    return None
+
+
 def open_upright(path: Path, draft_to: int = 0) -> tuple:
     """(image, exif): the photo decoded, rotated upright and in RGB, and its
-    original EXIF. With draft_to, a JPEG is decoded at the smallest 1/2, 1/4
+    original EXIF. An RGB colour profile is kept in the image's info. With draft_to, a JPEG is decoded at the smallest 1/2, 1/4
     or 1/8 scale that still covers draft_to pixels, instead of decoding every
     pixel just to throw most away (a no-op for other formats). Rotation and
     conversion happen in place where possible, so only one full-size copy of
@@ -60,10 +73,15 @@ def open_upright(path: Path, draft_to: int = 0) -> tuple:
             # 16- or 32-bit greyscale: a straight conversion clips every
             # value above 255 to white, so scale down to 8 bits first
             img = _integer_grey_to_8bit(img)
+        icc = _rgb_icc_profile(img)
         if img.mode != "RGB":
             rgb = img.convert("RGB")
             img.close()
             img = rgb
+        if icc:
+            img.info["icc_profile"] = icc
+        else:
+            img.info.pop("icc_profile", None)
         return img, exif
     except Exception:
         img.close()

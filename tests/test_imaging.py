@@ -40,5 +40,26 @@ class DisplayJpegTests(TempDirMixin, unittest.TestCase):
         self.assertIn(700, Image.open(io.BytesIO(data)).getexif())
 
 
+class ColourProfileTests(TempDirMixin, unittest.TestCase):
+    def setUp(self):
+        self.tmp = self.make_tmp()
+
+    def test_thumbnails_and_display_copies_keep_an_rgb_profile(self):
+        from PIL import ImageCms
+        profile = ImageCms.ImageCmsProfile(ImageCms.createProfile("sRGB")).tobytes()
+        path = self.tmp / "p3.tif"
+        Image.new("RGB", (80, 60), (10, 200, 30)).save(path, icc_profile=profile)
+        thumbs = imaging.image_thumbnails(path, [40, 20])
+        for data in thumbs.values():
+            self.assertEqual(Image.open(io.BytesIO(data)).info.get("icc_profile"), profile)
+        display = Image.open(io.BytesIO(imaging.display_jpeg_bytes(path)))
+        self.assertEqual(display.info.get("icc_profile"), profile)
+
+    def test_a_profile_that_is_not_rgb_is_not_put_on_the_rgb_copy(self):
+        img = Image.new("CMYK", (8, 8))
+        img.info["icc_profile"] = b"\0" * 16 + b"CMYK" + b"\0" * 108
+        self.assertIsNone(imaging._rgb_icc_profile(img))
+
+
 if __name__ == "__main__":
     unittest.main()
