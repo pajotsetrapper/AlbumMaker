@@ -673,6 +673,22 @@ class MainWindowTests(unittest.TestCase):
         window._read_process_output()
         self.assertIn("read ''", window.log_view.toPlainText())
 
+    def test_the_server_is_ready_on_the_port_it_was_started_with(self):
+        window = self.make_window()
+        window.port.setValue(8123)
+        reader = "print('Serving at http://127.0.0.1:8123/', flush=True); import time; time.sleep(30)"
+        with mock.patch.object(window, "_show_preparing"), mock.patch.object(window, "_show_server_ready") as ready:
+            window._launch("server", [sys.executable, "-c", reader, "--port", "8123"])
+            window.port.setValue(9000)                     # changed while it starts
+            process = window._process
+            self.assertTrue(process.waitForReadyRead(10000))
+            window._read_process_output()
+            window._stopping = True
+            process.kill()
+            process.waitForFinished(5000)
+        self.assertEqual(window._server_port, "8123")
+        ready.assert_called()
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:
@@ -736,6 +752,7 @@ class MainWindowTests(unittest.TestCase):
         shown = []
         window._present_result = shown.append
         window._server_url = "http://127.0.0.1:8123/"
+        window._server_port = "8123"                         # (as _launch remembers it)
         window._editor_url = "http://192.168.1.20:8123/?key=abc"
         window._server_lan = True
         with mock.patch.object(gui_app, "_lan_ip", return_value="192.168.1.20"):

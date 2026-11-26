@@ -1034,6 +1034,7 @@ class MainWindow(QMainWindow):
         self._server_url = ""
         self._editor_url = ""
         self._server_lan = False            # the running server accepts other devices (--lan)
+        self._server_port = ""              # ... and the port it was started on
         self._server_editor_link_only = False   # ... and only editor-link browsers can edit (--editor-link-only)
         self._stopping = False
         self._last_problem = ""            # the last "! ..." line the task printed, for the problem pop-up
@@ -2271,6 +2272,9 @@ class MainWindow(QMainWindow):
         self._server_url = ""
         self._editor_url = ""
         self._server_lan = "--lan" in arguments
+        # the port the server is started on: the Port setting can be changed while it runs
+        self._server_port = (arguments[arguments.index("--port") + 1]
+                             if "--port" in arguments[:-1] else str(self.port.value()))
         self._server_editor_link_only = "--editor-link-only" in arguments
         self._last_problem = ""
         self.site_link_button.hide()
@@ -2359,7 +2363,7 @@ class MainWindow(QMainWindow):
                     self._last_problem = message.lstrip("! ").strip()
                 if self._progress is not None and self._progress.feed(message) and self._preparing is not None:
                     self._preparing.update_progress(self._progress)
-                expected_url = f"http://127.0.0.1:{self.port.value()}/"
+                expected_url = f"http://127.0.0.1:{self._server_port}/"
                 editor_match = re.search(
                     r"Editor link \(keep it private; it changes every start\):\s*(https?://\S+)",
                     message,
@@ -2511,7 +2515,7 @@ class MainWindow(QMainWindow):
         if self._server_lan:
             ip = _lan_ip()
             if ip:
-                url = f"http://{ip}:{self.port.value()}/"
+                url = f"http://{ip}:{self._server_port}/"
         editor_url = self._editor_url if self._editor_link_needed() else ""
         message = ("The server is running. Click \u201cOpen trip site\u201d to see your trips in your web browser.\n\n"
                    "Keep AlbumMaker open: if you close it or stop the server, your trips go offline.")
