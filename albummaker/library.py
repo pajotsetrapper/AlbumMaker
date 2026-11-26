@@ -278,6 +278,22 @@ def _map_points(days: list) -> list:
     return [[round(lat, 4), round(lon, 4)] for lat, lon in points]
 
 
+def trip_cover(days: list, content: dict):
+    """The photo on a trip's card: the trip cover chosen in trip_content.json, wherever
+    it was taken; if none was chosen, or it is hidden or gone, the first day's cover.
+    None for a trip without photos."""
+    real = [d for d in days if not d.is_unknown]
+    trip_cover = content.get("cover")
+    if isinstance(trip_cover, str) and trip_cover:
+        found = next((it for d in real or days for it in d.items if trip_cover in it.content_keys), None)
+        if found is not None:
+            return found
+    for d in real or days:
+        if d.items:
+            return pick_cover(d, content)
+    return None
+
+
 def trip_summary(name: str, days: list, content: dict, urls, href: str, base: str = "",
                  folder_title: str = "") -> dict:
     """One trip's card and map line on the library page. `days` must already
@@ -288,18 +304,7 @@ def trip_summary(name: str, days: list, content: dict, urls, href: str, base: st
     if title == trip_title({}) and folder_title:
         title = folder_title
     real = [d for d in days if not d.is_unknown]
-    cover = None
-    trip_cover = content.get("cover")
-    if isinstance(trip_cover, str) and trip_cover:
-        # the trip cover chosen in trip_content.json, wherever it was taken
-        cover = next((it for d in real or days for it in d.items
-                      if trip_cover in it.content_keys), None)
-    if cover is None:
-        # none chosen, or it is hidden or gone: the first day's cover
-        for d in real or days:
-            if d.items:
-                cover = pick_cover(d, content)
-                break
+    cover = trip_cover(days, content)
     items = [it for d in days for it in d.items]
     return {
         "name": name,

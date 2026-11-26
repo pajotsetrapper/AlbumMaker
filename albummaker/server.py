@@ -57,7 +57,7 @@ from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
 from .model import MediaItem
 from .offline import DEFAULT_TILE_URL, VENDOR_DIR, fetch_offline_assets, vendor_ready
 from .library import (TripListError, build_library_context, check_library_args, library_title_arg, missing_folder,
-                      read_trip_list, trip_args, trip_summary)
+                      read_trip_list, trip_args, trip_cover, trip_summary)
 from .places import ATTRIBUTION as PLACES_ATTRIBUTION, PlaceCache
 from .render import ASSET_VERSION, PREVIEW_IMAGE_SIZE, SiteUrls, build_day_context, build_index_context, get_template  # noqa: F401
 from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
@@ -679,20 +679,27 @@ class Library:
         self.trips = trips          # name -> App, in list-file order
         self.titles = titles        # name -> its folder's name (for untitled trips)
         self.library_title = library_title
-        self._summaries = {}        # name -> (the content it was made from, summary)
+        # name -> (the content it was made from, its cover photo and that file's version, summary)
+        self._summaries = {}
 
     def summary(self, name: str) -> Optional[dict]:
         """A trip's card, made again only when its trip_content.json changed
-        (ContentStore hands out a new dict for every change)."""
+        (ContentStore hands out a new dict for every change) or its cover photo's
+        file did (rotated or edited: the card's image URL carries the file's version,
+        and browsers keep an image at a versioned URL for good)."""
         app = self.trips[name]
         content = app.content.get()
         cached = self._summaries.get(name)
         if cached is not None and cached[0] is content:
-            return cached[1]
+            cover, version, summary = cached[1:]
+            if cover is None or file_version(cover.path) == version:
+                return summary
         days = visible_days(app.days, content, editable=False)   # the library shows what visitors see
+        cover = trip_cover(days, content) if days else None
+        version = file_version(cover.path) if cover is not None else None
         summary = (trip_summary(name, days, content, app.urls(), href=f"{app.prefix}/",
                                 folder_title=self.titles.get(name, "")) if days else None)
-        self._summaries[name] = (content, summary)
+        self._summaries[name] = (content, cover, version, summary)
         return summary
 
     def render(self, editable: bool = False) -> str:

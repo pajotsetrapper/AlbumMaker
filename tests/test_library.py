@@ -367,6 +367,15 @@ class ServerLibraryTests(TempDirMixin, unittest.TestCase):
         self.assertIn("This trip is left out", log)
         self.assertIn(f"http://127.0.0.1:{self.server.port}/japan/", log)
 
+    def test_a_cover_photo_changed_on_disk_gets_a_new_address_on_the_library_page(self):
+        def cover_url():
+            return re.search(r'(/japan/thumb/[^"\s]+\?v=[0-9a-f]+)', self.server.text("/")).group(1)
+        before = cover_url()
+        kyoto = self.tmp / "Japan" / "kyoto.jpg"
+        st = kyoto.stat()
+        os.utime(kyoto, ns=(st.st_atime_ns, st.st_mtime_ns + 5_000_000_000))   # rotated in a photo app, say
+        self.assertNotEqual(cover_url(), before)
+
     def test_each_trip_lives_under_its_name(self):
         home = self.server.text("/japan/")
         self.assertIn('class="crumb library-link" href="/"', home)
