@@ -21,7 +21,7 @@ def main(argv=None) -> int:
         print(__version__)
         return 0
     tag = args[0].rsplit("/", 1)[-1]          # also accepts refs/tags/v2.0.0
-    if tag.lstrip("v") != __version__:
+    if (tag[1:] if tag.startswith("v") else tag) != __version__:   # one "v", not "vv"
         print(f"Tag {args[0]!r} does not match albummaker.__version__ {__version__!r}. "
               f"Update albummaker/__init__.py or the tag.", file=sys.stderr)
         return 1

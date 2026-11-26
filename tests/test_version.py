@@ -64,6 +64,7 @@ class VersionTests(unittest.TestCase):
             self.assertEqual(check_version.main([f"refs/tags/v{VERSION}"]), 0)
         with contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(check_version.main(["v0.0.1"]), 1)
+            self.assertEqual(check_version.main([f"vv{VERSION}"]), 1)     # a typo in the tag
 
 
 if __name__ == "__main__":

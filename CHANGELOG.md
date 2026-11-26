@@ -54,6 +54,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.
 - **CI runs every test suite before a release:** The test job now installs Node.js and the `tests/js` packages, so the browser tests run instead of being skipped; installs FFmpeg on one leg, so the video tests run; adds an Intel macOS leg (that build is released) and a Python 3.9 leg (the oldest version the README supports); and checks that `CHANGELOG.md` has a section for the tagged version before anything is built.
+- **Release tag check:** `tools/check_version.py` accepted a mistyped tag such as `vv3.2.1`; only one leading `v` is now allowed.
 
 ## [3.2.1] - 2026-11-25
 
