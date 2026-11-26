@@ -460,8 +460,9 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     # it doesn't hold a build record yet
     # without pi-heif, HEIC files built by an earlier run stay in: their
     # existing outputs are reused (or at least kept) instead of being deleted
+    unreadable = []
     candidates = collect_candidates(input_dir, exclude_dirs=(output_dir, *exclude_dirs),
-                                    built_before=set(previous))
+                                    built_before=set(previous), unreadable=unreadable)
     # Duplicates first, THEN hidden photos: a set of identical files is left
     # out as a whole if any of them is hidden (see drop_hidden_groups).
     groups = dedupe_groups(candidates) if dedupe else no_dedupe_groups(candidates)
@@ -495,11 +496,28 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     # (a drive that drops out for a moment must not empty the site).
     carried = {}
 
-    def carry(path):
-        prev = previous.get(rel_paths[path])
+    def carry_rel(rel: str):
+        prev = previous.get(rel)
         outputs = prev.get("outputs") if isinstance(prev, dict) else None
         if isinstance(outputs, list) and all(isinstance(o, str) for o in outputs):   # (a hand-edited record)
-            carried[rel_paths[path]] = prev
+            carried[rel] = prev
+
+    def carry(path):
+        carry_rel(rel_paths[path])
+
+    # A folder that could not be listed this time keeps what the last build made of its
+    # files: they were not seen, which does not mean they were removed.
+    unreadable_rels = []
+    for folder in unreadable:
+        try:
+            unreadable_rels.append(folder.relative_to(input_dir).as_posix())
+        except ValueError:
+            pass
+    if unreadable_rels:
+        seen = set(rel_paths.values())
+        for rel in previous:
+            if rel not in seen and any(top == "." or rel.startswith(top + "/") for top in unreadable_rels):
+                carry_rel(rel)
 
     for path, media_type, dups in groups:
         try:

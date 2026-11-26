@@ -300,6 +300,23 @@ class StaticRebuildTests(TempDirMixin, unittest.TestCase):
         self.assertTrue((self.site / "days" / "2026-05-01.html").exists())
         self.assertIn("Removed", log)
 
+    @unittest.skipIf(os.name == "nt" or (hasattr(os, "geteuid") and os.geteuid() == 0),
+                     "needs a folder this user cannot list")
+    def test_a_folder_that_cannot_be_read_keeps_its_files_from_the_last_build(self):
+        self.build()
+        self.assertTrue((self.site / "media" / "a3.jpg").exists())      # from sub/a3.jpg
+        sub = self.photos / "sub"
+        sub.chmod(0)                                                     # a NAS hiccup, a permission change
+        try:
+            log = self.build()
+        finally:
+            sub.chmod(0o755)
+        self.assertIn("could not read the folder", log)
+        self.assertTrue((self.site / "media" / "a3.jpg").exists())
+        self.assertTrue((self.site / "thumbs" / "a3.jpg").exists())
+        self.build()                                                     # readable again: all as before
+        self.assertTrue((self.site / "media" / "a3.jpg").exists())
+
     def test_files_you_put_in_the_output_folder_yourself_are_never_deleted(self):
         self.build()
         mine = self.site / "media" / "my-own-file.txt"
