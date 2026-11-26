@@ -7,6 +7,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 ### Changed
 - **Download instructions match the releases:** The README and product page listed a Linux x64 download that releases no longer contain (only Windows and macOS are built). They now say that on Linux AlbumMaker runs from source.
 - **Calmer loading spinner and no keyboard hints on phones:** The viewer's loading spinner turns slowly when the system asks for reduced motion, and the list of keyboard shortcuts is no longer shown on touch screens, which have no keyboard.
+- **Sample sites rebuilt:** The four sample trips on the product page (`docs/demo*`) were rebuilt with `tools/build_demo.py`, so they include the fixes above.
 
 ### Fixed
 - **Typing this computer's time zone in the desktop app:** This computer's zone is listed as e.g. `Brussels · UTC+01:00 · Europe · this computer`, so typing its plain label matched nothing and the edit was silently dropped. A typed label now also matches without that suffix, and a city on its own (such as `brussels`) is accepted when only one zone has it.

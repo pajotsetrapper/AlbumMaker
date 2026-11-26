@@ -15,6 +15,36 @@ function isTyping(el){
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
 }
 
+// A key press that only confirms or cancels an input method's composition (Japanese,
+// Chinese, Korean ...): its Enter or Esc belongs to the input method, not to the page.
+function isComposing(e){
+  return !!(e.isComposing || e.keyCode === 229);
+}
+
+// ---------- text typed into the day and trip editors is not lost by accident ----------
+let leavingAfterSave = false;     // set just before a saved form reloads the page
+function formDirty(fields){
+  return fields.some(f => f && f.value !== f.defaultValue);
+}
+// Esc on a form with changed text asks first; the Cancel button itself does not.
+function confirmDiscard(fields){
+  return !formDirty(fields) || window.confirm('Discard the text you changed?');
+}
+// Leaving the page (a link, closing the tab) with changed text asks the browser to confirm.
+function guardUnsavedText(fields){
+  window.addEventListener('beforeunload', (e) => {
+    if(leavingAfterSave || !formDirty(fields)) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
+// Runs a save once at a time: a second click while it is on its way does nothing.
+async function saveOnce(button, save){
+  if(button.disabled) return;
+  button.disabled = true;
+  try { await save(); } finally { button.disabled = false; }
+}
+
 let toastTimer = null;
 function showToast(msg, isError){
   let el = document.getElementById('toast');
@@ -187,6 +217,7 @@ function initHomeNav(libraryHref){
     if(isTyping(e.target)){ e.target.blur(); return; }
     const popupClose = document.querySelector('.leaflet-popup-close-button');
     if(popupClose){ popupClose.click(); return; }
+    if(document.querySelector('.cn-mini.is-open')) return;   // Cinema's enlarged map: Esc closes it first
     navigateTo(libraryHref);
   });
 }
@@ -230,6 +261,7 @@ function initDayNav(prevHref, nextHref, homeHref){
     if(popupClose){ popupClose.click(); return; }
     const editor = document.getElementById('day-editor');
     if(editor && !editor.hidden){
+      if(!confirmDiscard([document.getElementById('edit-title'), document.getElementById('edit-desc')])) return;
       document.getElementById('day-cancel').click();
       if(isTyping(e.target)) e.target.blur();
       return;
@@ -240,6 +272,7 @@ function initDayNav(prevHref, nextHref, homeHref){
 
   document.addEventListener('keydown', (e) => {
     if(e.defaultPrevented) return;                 // the viewer already used this key press
+    if(isComposing(e)) return;                     // the input method's own Esc
     if(e.ctrlKey || e.metaKey || e.altKey) return; // e.g. Alt+Left is the browser's own Back
     if(slideshowOpen()) return;                    // the slideshow has its own key handling
     if(e.key === 'Escape'){
@@ -247,21 +280,33 @@ function initDayNav(prevHref, nextHref, homeHref){
       return;
     }
     if(isTyping(e.target)) return;                 // typing in the title/caption boxes
+    const editor = document.getElementById('day-editor');
+    if(editor && !editor.hidden) return;           // (its Save and Cancel buttons): the text would be lost
     if(inMap(document.activeElement)) return;      // let Leaflet's own keyboard map-panning work
     if(e.key === 'ArrowLeft' && prevHref) navigateTo(prevHref);
     else if(e.key === 'ArrowRight' && nextHref) navigateTo(nextHref);
   });
 
-  let touchStartX = null, touchStartY = null, touchInMap = false;
+  // A swipe is one finger, from touching to letting go. A pinch (two fingers, then
+  // lifted one by one) is the browser zooming, never a swipe; nor is panning a page the
+  // browser has zoomed in on.
+  let touchStartX = null, touchStartY = null, touchInMap = false, multiTouch = false;
   document.addEventListener('touchstart', (e) => {
-    if(slideshowOpen() || e.touches.length !== 1) return;
+    if(e.touches.length > 1){ multiTouch = true; return; }
+    if(slideshowOpen()) return;
+    multiTouch = false;
     touchInMap = inMap(e.target) || !!(e.target.closest && e.target.closest('.day-editor'));
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
   }, {passive: true});
 
   document.addEventListener('touchend', (e) => {
+    if(e.touches.length) return;                   // fingers still down: not over yet
+    const wasPinch = multiTouch;
+    multiTouch = false;
+    if(wasPinch){ touchStartX = null; return; }
     if(slideshowOpen() || touchInMap || touchStartX === null) return;
+    if(window.visualViewport && window.visualViewport.scale > 1.01){ touchStartX = null; return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
@@ -496,7 +541,7 @@ function buildSlideStage(item){
   // the true original is available via the download link where offered.
   const img = document.createElement('img');
   img.src = item.display;
-  img.alt = '';
+  img.alt = item.caption || '';
   return img;
 }
 
@@ -602,6 +647,25 @@ function openSlideshow(index, fromHistory){
   }
   renderSlide();
   document.body.style.overflow = 'hidden';
+  // into the dialog, so a screen reader announces it and Tab stays inside (the dialog
+  // itself, not a button: Space and Enter must stay the viewer's keys)
+  if(!overlay.contains(document.activeElement)){
+    try { overlay.focus({preventScroll: true}); } catch(e){ overlay.focus(); }
+  }
+}
+
+// Tab and Shift+Tab go round the viewer's own controls, never to the page behind it.
+function trapTab(e){
+  const overlay = document.getElementById('slideshow');
+  const focusable = Array.prototype.filter.call(
+    overlay.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+    el => !el.disabled && !el.hidden && !el.closest('[hidden]') &&
+          !(el.closest('.info-panel') && !infoPanelOpen));
+  if(!focusable.length){ e.preventDefault(); overlay.focus(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  const at = focusable.indexOf(document.activeElement);
+  if(e.shiftKey && at <= 0){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && (at < 0 || at === focusable.length - 1)){ e.preventDefault(); first.focus(); }
 }
 
 function closeSlideshow(fromHistory){
@@ -731,6 +795,7 @@ function startProgress(ms){
 // The one timer (playTimer) that moves the slideshow on: pausing, closing or any
 // change of slide cancels it. `videoEvent` is 'ended' or 'error' when a video
 // slide's own event calls this (see renderSlide).
+let VIDEO_START_GRACE_MS = 3000;      // (a let: the tests shorten it)
 function scheduleAdvance(videoEvent){
   clearTimeout(playTimer);
   resetProgress();
@@ -747,7 +812,16 @@ function scheduleAdvance(videoEvent){
     // still playing: it holds the slide until it ends. One that has already
     // ended or failed (Play pressed afterwards) gets the same wait as a photo.
     const v = document.querySelector('#slideshow-media video');
-    if(videoEvent !== 'error' && !(v && (v.ended || v.error))) return;
+    if(videoEvent !== 'error' && !(v && (v.ended || v.error))){
+      // A video the browser would not start (autoplay blocked, iPhone Low Power Mode)
+      // never ends, and would stop the slideshow for good: if it still has not started
+      // after a few seconds, it gets the usual wait of a photo instead.
+      playTimer = setTimeout(() => {
+        if(v && document.querySelector('#slideshow-media video') === v &&
+           v.paused && !v.ended && !v.currentTime) scheduleAdvance('error');
+      }, VIDEO_START_GRACE_MS);
+      return;
+    }
   }
   if(autoBlocked()){ playTimer = setTimeout(scheduleAdvance, 500); return; }
   startProgress(playMs);
@@ -1051,10 +1125,22 @@ function syncEditBar(){
   if(document.activeElement !== cap) cap.value = item.caption || '';
 }
 
-async function saveSlide(fields, idx){
+// One photo's saves go out one after another: each starts from the state the previous
+// one left (so pressing S twice quickly is a toggle and its undo, not "favorite" twice,
+// and a second caption edit is sent with the caption the first one saved). `fields` is
+// an object, or a function that makes it from the photo when its turn comes.
+const slideSaves = {};
+function saveSlide(fields, idx){
   if(idx === undefined) idx = currentSlide;
   const item = SLIDES[idx];
-  if(!item || !item.rel) return null;
+  if(!item || !item.rel) return Promise.resolve(null);
+  const before = slideSaves[item.rel] || Promise.resolve();
+  const save = before.then(() => sendSlide(typeof fields === 'function' ? fields(item) : fields, idx, item));
+  slideSaves[item.rel] = save.catch(() => null);
+  return save;
+}
+
+async function sendSlide(fields, idx, item){
   const body = Object.assign({rel: item.rel}, fields);
   // a caption is saved only over the one this page showed: if it was changed
   // elsewhere meanwhile, the server refuses (409) rather than overwrite it
@@ -1071,13 +1157,13 @@ async function saveSlide(fields, idx){
 
 function toggleFavorite(){
   const item = SLIDES[currentSlide];
-  if(item) saveSlide({favorite: !item.favorite});
+  if(item) saveSlide(it => ({favorite: !it.favorite}));
 }
 
 async function toggleHidden(){
   const item = SLIDES[currentSlide];
   if(!item) return;
-  const res = await saveSlide({hidden: !item.hidden});
+  const res = await saveSlide(it => ({hidden: !it.hidden}));
   if(res && res.photo.hidden){
     showToast('Hidden from visitors. You still see it here, dimmed.');
   }
@@ -1115,7 +1201,7 @@ function initEditBar(){
     // not saved (the toast says why): keep what was typed rather than wiping it
     if(!res && currentSlide === idx && document.activeElement !== cap) cap.value = typed;
   });
-  cap.addEventListener('keydown', (e) => { if(e.key === 'Enter') cap.blur(); });
+  cap.addEventListener('keydown', (e) => { if(e.key === 'Enter' && !isComposing(e)) cap.blur(); });
 }
 
 // Before another photo is shown: finish a caption edit (saving it for its own photo).
@@ -1140,7 +1226,9 @@ function initDayEditor(dateKey){
     box.hidden = true;
     openBtn.hidden = false;
   });
-  document.getElementById('day-save').addEventListener('click', async () => {
+  guardUnsavedText([title, desc]);
+  const saveBtn = document.getElementById('day-save');
+  saveBtn.addEventListener('click', () => saveOnce(saveBtn, async () => {
     // only what was changed is sent, with the text the form started from: the
     // server refuses (409) if that text was changed elsewhere meanwhile, so an
     // untouched field can never overwrite a hand edit in trip_content.json
@@ -1153,8 +1241,41 @@ function initDayEditor(dateKey){
       return;
     }
     const res = await apiPost('/api/day', body);
-    if(res) location.reload();      // not saved: the toast says why, and the typed text stays in the form
-  });
+    if(res){ leavingAfterSave = true; location.reload(); }   // not saved: the toast says why, and the typed text stays
+  }));
+}
+
+// The trip's own title and subtitle, edited from its main page. Same rules as the day
+// editor: only changed fields are sent, with the text the form started from, so the server
+// can refuse (409) if trip_content.json was changed elsewhere meanwhile.
+function initTripEditor(){
+  const openBtn = document.getElementById('trip-edit');
+  const box = document.getElementById('trip-editor');
+  if(!openBtn || !box) return;
+  const title = document.getElementById('trip-edit-title');
+  const subtitle = document.getElementById('trip-edit-subtitle');
+  const fields = [title, subtitle].filter(Boolean);
+  const close = () => { box.hidden = true; openBtn.hidden = false; };
+  openBtn.addEventListener('click', () => { box.hidden = false; openBtn.hidden = true; title.focus(); title.select(); });
+  document.getElementById('trip-cancel').addEventListener('click', () => { fields.forEach(f => { f.value = f.defaultValue; }); close(); });
+  fields.forEach(f => f.addEventListener('keydown', (e) => {
+    if(isComposing(e)) return;                    // the input method's own Enter or Esc
+    if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('trip-save').click(); }
+    else if(e.key === 'Escape'){
+      e.preventDefault();                         // (never also leaves the page)
+      if(confirmDiscard(fields)) document.getElementById('trip-cancel').click();
+    }
+  }));
+  guardUnsavedText(fields);
+  const saveBtn = document.getElementById('trip-save');
+  saveBtn.addEventListener('click', () => saveOnce(saveBtn, async () => {
+    const body = {};
+    if(title.value !== title.defaultValue){ body.title = title.value; body.original_title = title.defaultValue; }
+    if(subtitle && subtitle.value !== subtitle.defaultValue){ body.subtitle = subtitle.value; body.original_subtitle = subtitle.defaultValue; }
+    if(!('title' in body) && !('subtitle' in body)){ close(); return; }
+    const res = await apiPost('/api/trip', body);
+    if(res){ leavingAfterSave = true; location.reload(); }   // not saved: the toast says why, and the typed text stays
+  }));
 }
 
 function initSlideshow(items, opts){
@@ -1203,6 +1324,8 @@ function initSlideshow(items, opts){
 
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
+    if(isComposing(e)) return;                       // the input method's own Esc
+    if(e.key === 'Tab'){ trapTab(e); return; }
     if(isTyping(e.target)){ if(e.key === 'Escape'){ e.preventDefault(); e.target.blur(); } return; }
     if(e.ctrlKey || e.metaKey || e.altKey) return;   // the browser's shortcuts (Ctrl+S, Cmd+F, Alt+Left ...)
     if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }
@@ -1257,12 +1380,15 @@ function initSlideshow(items, opts){
   // finger pans once zoomed in, two fingers pinch to zoom
   let touchStartX = 0, touchStartY = 0, panOrigX = 0, panOrigY = 0;
   let pinchStartDist = 0, pinchStartScale = 1;
+  let viewerMultiTouch = false;     // this gesture used two fingers: a pinch, never a swipe
 
   function touchDist(a, b){
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
 
   stage.addEventListener('touchstart', (e) => {
+    if(e.touches.length > 1) viewerMultiTouch = true;
+    else viewerMultiTouch = false;
     if(e.touches.length === 2){
       pinchStartDist = touchDist(e.touches[0], e.touches[1]);
       pinchStartScale = ZOOM.scale;
@@ -1292,7 +1418,10 @@ function initSlideshow(items, opts){
   }, {passive: false});
 
   stage.addEventListener('touchend', (e) => {
-    if(ZOOM.scale > 1 || e.changedTouches.length !== 1) return;
+    if(e.touches.length) return;                     // fingers still down: not over yet
+    const wasPinch = viewerMultiTouch;
+    viewerMultiTouch = false;
+    if(wasPinch || ZOOM.scale > 1 || e.changedTouches.length !== 1) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
@@ -1330,7 +1459,21 @@ function cnDayPoints(day){
 }
 
 // ---------- the trip homepage ----------
+// The scenes fade in whether or not the map loads: without Leaflet (no internet, a
+// blocked CDN) the days must still be readable, so the map is set up on its own.
 function initCinemaOverview(elId, days){
+  let show = () => {};
+  try { show = cnOverviewMap(elId, days); }
+  catch(e){
+    console.error('Map failed to load (check your internet connection):', e);
+    const mini = document.getElementById('cn-mini');
+    if(mini) mini.hidden = true;
+  }
+  cnScenes(days, i => show(i));
+}
+
+// The mini-map; returns show(i), which flies to day i (-1: the whole trip).
+function cnOverviewMap(elId, days){
   const mini = document.getElementById('cn-mini');
   const toggle = document.getElementById('cn-mini-toggle');
   const map = L.map(elId, {scrollWheelZoom: false, zoomControl: false, dragging: false, touchZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false});
@@ -1393,9 +1536,16 @@ function initCinemaOverview(elId, days){
     setTimeout(() => { map.invalidateSize(); const c = current; current = -2; show(c); }, 480);
   }
   toggle.addEventListener('click', () => mini.classList.contains('is-open') ? closeMap() : openMap());
-  document.addEventListener('keydown', e => { if(e.key === 'Escape') closeMap(); });
+  // Esc closes the enlarged map, and only that: the key press is used up, so it does not
+  // also leave the page (initHomeNav, in a library)
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && mini.classList.contains('is-open')){ e.preventDefault(); closeMap(); }
+  });
+  return show;
+}
 
-  // ---- scenes: fade in, and tell the map and the counters which day is being read
+// Scenes fade in as they are reached, and onReading(i) is told which day is being read.
+function cnScenes(days, onReading){
   const scenes = Array.prototype.slice.call(document.querySelectorAll('.cn-scene[data-index]'));
   const dotLinks = Array.prototype.slice.call(document.querySelectorAll('.cn-dots a'));
   const count = document.getElementById('cn-count');
@@ -1403,7 +1553,7 @@ function initCinemaOverview(elId, days){
   function reading(i){
     dotLinks.forEach(a => a.classList.toggle('is-active', +a.dataset.i === i));
     if(count) count.textContent = i >= 0 ? pad(i + 1) + ' / ' + pad(days.length) : '';
-    show(i);
+    onReading(i);
   }
   if(!('IntersectionObserver' in window)){
     scenes.forEach(s => s.classList.add('in-view'));
