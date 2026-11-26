@@ -442,6 +442,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
     folders to leave out besides output_dir (a library's own folder)."""
     manifest = manifest or {}
     previous = manifest.get("files", {})
+    scan_started = time.time()
     for sub in ("thumbs", "media") + (("thumbs_large",) if large_thumb_size else ()):
         (output_dir / sub).mkdir(parents=True, exist_ok=True)
 
@@ -508,6 +509,26 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
 
     def carry(path):
         carry_rel(rel_paths[path])
+
+    def discard_partial(path, media_type):
+        """A new file failed part-way (its display copy written, then its thumbnail
+        failed, say): remove what this run already made for it. It has no record yet,
+        so nothing would ever clean those files up. Only files written during this run,
+        and never one an earlier build recorded for any file, are removed."""
+        if rel_paths[path] in carried:
+            return
+        recorded = {o for rec in previous.values() if isinstance(rec, dict)
+                    for o in rec.get("outputs", []) if isinstance(o, str)}
+        planned = set()
+        for is_mpo in (False, True):
+            planned.update(output_list(planned_outputs(path, media_type, bases[path], is_mpo), True))
+        for rel in sorted(planned - recorded):
+            target = output_dir / rel
+            try:
+                if target.is_file() and target.stat().st_mtime >= scan_started - 2:
+                    target.unlink()
+            except OSError:
+                pass
 
     # A folder that could not be listed this time keeps what the last build made of its
     # files: they were not seen, which does not mean they were removed.
@@ -611,6 +632,7 @@ def scan_media(input_dir: Path, output_dir: Path, thumb_size: int,
                     except Exception as e:
                         print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}  ! failed: {e}", file=sys.stderr)
                         carry(path)
+                        discard_partial(path, media_type)
                         continue
                     print(f"[{done}/{len(jobs)}] {media_type:5s} {path.name}")
         except BrokenProcessPool:

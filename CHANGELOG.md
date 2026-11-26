@@ -44,6 +44,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 - **Videos built on a laptop that changed time zone:** Without `--timezone` or `--tz-offset`, a video that records only a UTC time is converted with this computer's zone, but the remembered result did not note which zone that was. After travelling, earlier videos kept the old conversion while new ones got the new zone. The remembered times now note the zone, and videos are read again when it changes (once, after this update, for all videos).
 - **Garbled video details on Windows:** ffprobe's output was decoded with the Windows ANSI code page, so non-Latin text in a video's metadata (a title, a place) came out garbled. It is now read as UTF-8 on every system.
 - **Edited videos could get their export time as their date:** When a video's streams carried a different `creation_time` from the file as a whole (common after editing or re-saving), the stream's time won, which is often when the video was exported. The file's own time now wins.
+- **A new photo that failed half-way left files behind:** When a new photo's conversion succeeded but its thumbnail then failed, the converted copy stayed in the output folder, recorded nowhere and never cleaned up. What the build had already made for that photo is now removed.
 
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.

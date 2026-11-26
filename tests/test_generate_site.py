@@ -322,6 +322,18 @@ class StaticRebuildTests(TempDirMixin, unittest.TestCase):
         self.build()                                                     # readable again: all as before
         self.assertTrue((self.site / "media" / "a3.jpg").exists())
 
+    def test_a_new_file_that_fails_half_way_leaves_nothing_behind(self):
+        self.build()
+        Image.new("RGB", (60, 40), (9, 99, 9)).save(self.photos / "scan.tif")
+        (self.site / "thumbs" / "scan.jpg").mkdir()      # its thumbnail cannot be written
+        r = run_script(self.app, "generate_site.py", "-i", self.photos, "-o", self.site, "-c", self.content)
+        self.assertIn("failed", r.stdout + r.stderr)
+        self.assertFalse((self.site / "media" / "scan.jpg").exists(), "its converted copy is not left behind")
+        (self.site / "thumbs" / "scan.jpg").rmdir()
+        self.build()                                      # and the next run makes it properly
+        self.assertTrue((self.site / "media" / "scan.jpg").exists())
+        self.assertTrue((self.site / "thumbs" / "scan.jpg").is_file())
+
     def test_files_you_put_in_the_output_folder_yourself_are_never_deleted(self):
         self.build()
         mine = self.site / "media" / "my-own-file.txt"
