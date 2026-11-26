@@ -16,7 +16,7 @@ from datetime import datetime
 from pathlib import Path
 from unittest import mock
 
-from .helpers import (TempDirMixin, AlbumMaker, install_app, make_jpeg, read_json, run_script, slides_of,
+from .helpers import (TempDirMixin, AlbumMaker, free_port, install_app, make_jpeg, read_json, run_script, slides_of,
                       standard_trip, write_json)
 
 from albummaker import build, content as content_mod, library, server  # noqa: E402
@@ -471,7 +471,8 @@ class ServerLibraryStartupTests(TempDirMixin, unittest.TestCase):
         tmp = self.make_tmp()
         app = install_app(tmp / "app")
         trips = trip_list(tmp / "trips.txt", "/Volumes/NotPluggedIn/A\n")
-        r = subprocess.run([sys.executable, str(app / "album_server.py"), "--library", str(trips), "--port", "0"],
+        r = subprocess.run([sys.executable, str(app / "album_server.py"), "--library", str(trips),
+                            "--port", str(free_port())],
                            capture_output=True, text=True, timeout=60)
         self.assertEqual(r.returncode, 1)
         self.assertIn("None of the trips could be loaded", r.stderr)

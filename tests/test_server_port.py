@@ -19,5 +19,20 @@ class PortSharingTests(unittest.TestCase):
                 TripHTTPServer(("127.0.0.1", port), RequestHandler, None).server_close()
 
 
+
+class PortArgumentTests(unittest.TestCase):
+    def test_only_real_port_numbers_are_accepted(self):
+        import contextlib
+        import io
+        from albummaker.server import build_parser
+        parser = build_parser()
+        self.assertEqual(parser.parse_args(["-i", ".", "--port", "8080"]).port, 8080)
+        for bad in ("0", "70000", "-1", "http"):
+            with self.subTest(bad), contextlib.redirect_stderr(io.StringIO()) as err, \
+                    self.assertRaises(SystemExit):
+                parser.parse_args(["-i", ".", "--port", bad])
+            self.assertIn("--port", err.getvalue())
+
+
 if __name__ == "__main__":
     unittest.main()

@@ -44,7 +44,7 @@ from markupsafe import Markup
 
 from . import __version__
 
-from .cli import (add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_template_arg, add_timezone_arg,
+from .cli import (port_number, add_content_arg, add_date_check_args, add_location_args, add_offline_args, add_template_arg, add_timezone_arg,
                   large_thumb_size_arg, positive_thumb_size, resolve_date_range)
 from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, hidden_rels, is_hidden,
                       load_or_init_content, photo_entry, parse_content_file, report_unknown_photo_keys,
@@ -1536,7 +1536,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--library-title", type=library_title_arg, default="Trips", metavar="TITLE",
                         help="Title shown on the overview page created with --library (default: Trips).")
     add_content_arg(parser)
-    parser.add_argument("--port", type=int, default=8000)
+    parser.add_argument("--port", type=port_number, default=8000,
+                        help="the port to listen on, 1 to 65535 (default: 8000)")
     parser.add_argument("--lan", action="store_true",
                         help="Allow other devices on your network to connect (binds 0.0.0.0 instead "
                              "of localhost-only). Anyone on your network can then open the site — "

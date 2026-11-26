@@ -21,6 +21,18 @@ def large_thumb_size_arg(value: str) -> int:
     return positive_thumb_size(value)
 
 
+def port_number(value: str) -> int:
+    """argparse type for --port: 1 to 65535. (0 would bind a random port, but the
+    printed addresses and the editor link are made from the number given.)"""
+    try:
+        n = int(value)
+    except ValueError:
+        raise argparse.ArgumentTypeError(f"not a whole number: {value!r}")
+    if not 1 <= n <= 65535:
+        raise argparse.ArgumentTypeError("must be between 1 and 65535")
+    return n
+
+
 def positive_thumb_size(value: str) -> int:
     try:
         n = int(value)

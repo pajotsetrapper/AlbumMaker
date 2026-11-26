@@ -12,7 +12,7 @@ from pathlib import Path
 from PIL import Image
 import io
 
-from .helpers import (TempDirMixin, AlbumMaker, day_nav_args, install_app, item_ids, make_jpeg, make_video,
+from .helpers import (TempDirMixin, AlbumMaker, day_nav_args, free_port, install_app, item_ids, make_jpeg, make_video,
                       needs_ffmpeg, read_json, run_script, size_toggle, slide_for, slides_of, standard_trip, tc,
                       write_json)
 
@@ -317,7 +317,8 @@ class ServerStartupTests(TempDirMixin, unittest.TestCase):
     def test_a_broken_content_file_stops_the_server_with_a_clear_message(self):
         bad = self.tmp / "bad.json"
         bad.write_text('{"title": }')
-        r = run_script(self.app, "album_server.py", "-i", self.photos, "-c", bad, "--port", "0", timeout=30)
+        r = run_script(self.app, "album_server.py", "-i", self.photos, "-c", bad, "--port", str(free_port()),
+                       timeout=30)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("bad.json", r.stdout + r.stderr)
         self.assertEqual(bad.read_text(), '{"title": }')
