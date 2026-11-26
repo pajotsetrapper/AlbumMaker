@@ -312,6 +312,14 @@ def sniff_image(data: bytes) -> Optional[str]:
     return None
 
 
+def tile_url(template: str, z: int, x: int, y: int) -> str:
+    """The address of one tile, filled in the way Leaflet does it: {z}/{x}/{y}; {s} is one
+    of the subdomains a, b, c, picked from the tile so each tile always comes from the
+    same one; {r} (for high-resolution "@2x" tiles) is left empty."""
+    return (template.replace("{s}", "abc"[(x + y) % 3]).replace("{r}", "")
+            .replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y)))
+
+
 class TileCache:
     """Map tiles kept on disk, downloaded on first use. At most two downloads
     at once (as OSM asks), one download per tile however many requests
@@ -339,7 +347,7 @@ class TileCache:
     def download(self, z: int, x: int, y: int) -> Optional[bytes]:
         if self._blocked():
             return None
-        url = self.upstream.replace("{z}", str(z)).replace("{x}", str(x)).replace("{y}", str(y))
+        url = tile_url(self.upstream, z, x, y)
         request = urllib.request.Request(url, headers={"User-Agent": TILE_UA})
         with self._gate:
             if self._blocked():   # someone else just found out

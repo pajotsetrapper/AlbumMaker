@@ -829,6 +829,13 @@ class TileAttributionTests(TempDirTest):
         app = self.make_app(None)
         self.assertIn("window.TILE_ATTRIBUTION = null;", app.render_homepage())
 
+    def test_a_tile_address_with_a_subdomain_is_filled_in_as_leaflet_does(self):
+        url = "https://{s}.tiles.example.com/{z}/{x}/{y}{r}.png?key=K"
+        self.assertEqual(server.tile_url(url, 3, 4, 2), "https://a.tiles.example.com/3/4/2.png?key=K")
+        self.assertEqual(server.tile_url(url, 3, 4, 3), "https://b.tiles.example.com/3/4/3.png?key=K")
+        self.assertEqual(server.tile_url("https://tile.openstreetmap.org/{z}/{x}/{y}.png", 1, 0, 1),
+                         "https://tile.openstreetmap.org/1/0/1.png")
+
     def test_a_custom_tile_url_is_credited_to_its_host(self):
         self.assertEqual(server.tile_host_credit("https://{s}.tiles.example.com/{z}/{x}/{y}.png?key=SECRET"),
                          "Map tiles: tiles.example.com")
