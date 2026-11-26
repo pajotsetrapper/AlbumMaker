@@ -1080,16 +1080,25 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", f"{content_type}; charset=utf-8")
         self.send_header("Content-Length", str(len(data)))
         self.send_header("Cache-Control", cache_control)
+        self.send_header("X-Content-Type-Options", "nosniff")
+        if content_type == "text/html":
+            self.send_header("Vary", "Cookie")      # the editor's view and a visitor's differ
         if self._set_cookie:
             self.send_header("Set-Cookie", self._set_cookie)
         self.end_headers()
         if self.command != "HEAD":
             self.wfile.write(data)
 
+    def _page_cache_control(self) -> str:
+        """The editor's view of a page shows hidden photos and file paths: it is never
+        to be kept by a cache (a tunnel's or a CDN's) that could hand it to a visitor."""
+        return "private, no-store" if self._editor_view() else CACHE_REVALIDATE
+
     def _send_bytes(self, data: bytes, content_type: str, cache_control: Optional[str] = None):
         self.send_response(200)
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(len(data)))
+        self.send_header("X-Content-Type-Options", "nosniff")
         if cache_control:
             self.send_header("Cache-Control", cache_control)
         self.end_headers()
@@ -1143,6 +1152,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", content_type)
         self.send_header("Content-Length", str(length))
         self.send_header("Accept-Ranges", "bytes")
+        self.send_header("X-Content-Type-Options", "nosniff")
         self.send_header("Last-Modified", self.date_time_string(int(stat.st_mtime)))
         self.send_header("Cache-Control", cache_control)
         if status == 206:
@@ -1391,7 +1401,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                     if (not self.app.args.read_only and self._direct_local()
                             and not self._has_editor_cookie()):
                         self._set_cookie = self._cookie_header()
-                    self._send_text(self.server.library.render(editable=self._editor_view()), "text/html")
+                    self._send_text(self.server.library.render(editable=self._editor_view()), "text/html",
+                                    cache_control=self._page_cache_control())
                 else:
                     self.send_error(404, "No such trip")
                 return
@@ -1405,13 +1416,14 @@ class RequestHandler(BaseHTTPRequestHandler):
                     # its requests keep working if they later arrive another way
                     self._set_cookie = self._cookie_header()
                 if raw_path in ("/", ""):
-                    self._send_text(self.app.render_homepage(self._editor_view(), self._origin()), "text/html")
+                    self._send_text(self.app.render_homepage(self._editor_view(), self._origin()), "text/html",
+                                    cache_control=self._page_cache_control())
                 else:
                     html = self.app.render_day(raw_path[len("/day/"):].strip("/"), self._editor_view(), self._origin())
                     if html is None:
                         self.send_error(404, "No such day")
                     else:
-                        self._send_text(html, "text/html")
+                        self._send_text(html, "text/html", cache_control=self._page_cache_control())
             elif raw_path.startswith("/thumb/"):
                 item = self._lookup_item(raw_path, "/thumb/")
                 if item is not None:

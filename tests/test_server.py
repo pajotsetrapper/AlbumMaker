@@ -41,6 +41,16 @@ class ServerBasicsTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(self.server.get("/day/2026-05-01")[0], 200)
         self.assertIn("Canals", self.server.text("/day/2026-05-01"))
 
+    def test_the_editors_pages_are_never_cached_and_nothing_is_sniffed(self):
+        # this computer is the owner, so it gets the editor's view (hidden photos, paths)
+        headers = self.server.get("/day/2026-05-01")[1]
+        self.assertEqual(headers["cache-control"], "private, no-store")
+        self.assertEqual(headers["vary"], "Cookie")
+        self.assertEqual(headers["x-content-type-options"], "nosniff")
+        self.assertEqual(self.server.get("/day/2026-05-01?preview=1")[1]["cache-control"], "no-cache")
+        media = self.server.get(f"/media/{self.ids1[0]}")
+        self.assertEqual((media[0], media[1]["x-content-type-options"]), (200, "nosniff"))
+
     def test_the_unsorted_page_exists_for_undated_files(self):
         self.assertEqual(self.server.get("/day/unknown")[0], 200)
         self.assertIn("nodate.jpg", self.server.text("/day/unknown"))
