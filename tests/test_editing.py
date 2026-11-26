@@ -124,9 +124,17 @@ class EditApiSavingTests(EditingTestCase):
         self.assertEqual((slide["caption"], slide["favorite"]), ("Visible now", True))
 
     def test_a_missing_content_file_is_recreated_by_the_first_edit(self):
+        self.reset({"title": "Belgium", "days": {"2026-05-01": {"description": "Long text"}},
+                    "photos": {A3: {"caption": "Kept"}}})
+        self.assertEqual(self.server.get("/")[0], 200)            # the server has loaded it
         self.server.content.unlink()
         self.assertEqual(self.post("/api/photo", {"rel": A1, "favorite": True})[0], 200)
-        self.assertEqual(self.saved()["photos"][A1], {"favorite": True})
+        saved = self.saved()
+        self.assertEqual(saved["photos"][A1], {"favorite": True})
+        # what the server still had of the file is kept, not replaced by defaults
+        self.assertEqual(saved["title"], "Belgium")
+        self.assertEqual(saved["days"]["2026-05-01"]["description"], "Long text")
+        self.assertEqual(saved["photos"][A3], {"caption": "Kept"})
 
 
 class EditApiValidationTests(EditingTestCase):

@@ -18,6 +18,7 @@ import argparse
 import errno
 import hashlib
 import hmac
+import copy
 import http.client
 import ipaddress
 import json
@@ -446,7 +447,13 @@ class ContentStore:
         if not self.write:
             raise ContentFileError("editing is switched off (--read-only)")
         with self._lock:
-            content = parse_content_file(self.path) if self.path.exists() else default_content()
+            if self.path.exists():
+                content = parse_content_file(self.path)
+            else:
+                # gone (deleted, or a sync client or editor replacing it): start from the
+                # last version that loaded, which is still being served, not from nothing
+                self._refresh()
+                content = copy.deepcopy(self._cache)
             mutate(content)
             write_content(self.path, content)
             self._set(content)
