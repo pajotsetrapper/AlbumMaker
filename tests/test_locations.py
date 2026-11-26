@@ -325,6 +325,15 @@ class OffsetMetadataTests(TempDirMixin, unittest.TestCase):
             metadata.read_video_metadata(Path("video.mp4"))
         self.assertEqual(run.call_args.kwargs.get("encoding"), "utf-8")
 
+    def test_the_containers_time_wins_over_a_streams(self):
+        payload = {"format": {"tags": {"creation_time": "2026-07-15T10:00:00Z"}},
+                   "streams": [{"codec_type": "video", "tags": {"creation_time": "2026-09-01T18:00:00Z"}},
+                               {"codec_type": "audio", "tags": {"creation_time": "2026-09-02T18:00:00Z"}}]}
+        result = SimpleNamespace(returncode=0, stdout=json.dumps(payload))
+        with mock.patch("albummaker.metadata.subprocess.run", return_value=result):
+            found = metadata.read_video_metadata(Path("video.mp4"), tz_offset_hours=0)
+        self.assertEqual(found["dt"], datetime(2026, 7, 15, 10, 0))
+
     def test_video_metadata_cache_is_specific_to_named_zone(self):
         found = {"dt": datetime(2026, 7, 15, 12, 0)}
         cached = metadata.meta_to_json(found, timezone_name="Europe/Paris")

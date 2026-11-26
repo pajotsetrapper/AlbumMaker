@@ -368,7 +368,10 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
     tags = dict(fmt.get("tags", {}) or {})
     video_stream = None
     for s in data.get("streams", []):
-        tags.update(s.get("tags", {}) or {})
+        # the container's tags win, then the first stream's: an edited or remuxed file can
+        # carry its export time as a stream's creation_time, after the real one
+        for key, value in (s.get("tags", {}) or {}).items():
+            tags.setdefault(key, value)
         if s.get("codec_type") == "video" and video_stream is None:
             video_stream = s
 
