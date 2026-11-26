@@ -287,16 +287,26 @@ function initDayNav(prevHref, nextHref, homeHref){
     else if(e.key === 'ArrowRight' && nextHref) navigateTo(nextHref);
   });
 
-  let touchStartX = null, touchStartY = null, touchInMap = false;
+  // A swipe is one finger, from touching to letting go. A pinch (two fingers, then
+  // lifted one by one) is the browser zooming, never a swipe; nor is panning a page the
+  // browser has zoomed in on.
+  let touchStartX = null, touchStartY = null, touchInMap = false, multiTouch = false;
   document.addEventListener('touchstart', (e) => {
-    if(slideshowOpen() || e.touches.length !== 1) return;
+    if(e.touches.length > 1){ multiTouch = true; return; }
+    if(slideshowOpen()) return;
+    multiTouch = false;
     touchInMap = inMap(e.target) || !!(e.target.closest && e.target.closest('.day-editor'));
     touchStartX = e.touches[0].clientX;
     touchStartY = e.touches[0].clientY;
   }, {passive: true});
 
   document.addEventListener('touchend', (e) => {
+    if(e.touches.length) return;                   // fingers still down: not over yet
+    const wasPinch = multiTouch;
+    multiTouch = false;
+    if(wasPinch){ touchStartX = null; return; }
     if(slideshowOpen() || touchInMap || touchStartX === null) return;
+    if(window.visualViewport && window.visualViewport.scale > 1.01){ touchStartX = null; return; }
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;
@@ -1328,12 +1338,15 @@ function initSlideshow(items, opts){
   // finger pans once zoomed in, two fingers pinch to zoom
   let touchStartX = 0, touchStartY = 0, panOrigX = 0, panOrigY = 0;
   let pinchStartDist = 0, pinchStartScale = 1;
+  let viewerMultiTouch = false;     // this gesture used two fingers: a pinch, never a swipe
 
   function touchDist(a, b){
     return Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY);
   }
 
   stage.addEventListener('touchstart', (e) => {
+    if(e.touches.length > 1) viewerMultiTouch = true;
+    else viewerMultiTouch = false;
     if(e.touches.length === 2){
       pinchStartDist = touchDist(e.touches[0], e.touches[1]);
       pinchStartScale = ZOOM.scale;
@@ -1363,7 +1376,10 @@ function initSlideshow(items, opts){
   }, {passive: false});
 
   stage.addEventListener('touchend', (e) => {
-    if(ZOOM.scale > 1 || e.changedTouches.length !== 1) return;
+    if(e.touches.length) return;                     // fingers still down: not over yet
+    const wasPinch = viewerMultiTouch;
+    viewerMultiTouch = false;
+    if(wasPinch || ZOOM.scale > 1 || e.changedTouches.length !== 1) return;
     const t = e.changedTouches[0];
     const dx = t.clientX - touchStartX;
     const dy = t.clientY - touchStartY;

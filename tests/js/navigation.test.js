@@ -164,3 +164,28 @@ test("in a library, Esc on a trip's homepage goes back to the list of trips", as
   key(w, 'Escape');
   assert.deepEqual(went(), ['/']);
 });
+
+// A touch event with the given fingers still down (`touches`) and the ones that moved.
+function touch(w, type, touches, changed, target) {
+  const e = new w.Event(type, { bubbles: true, cancelable: true });
+  const pts = (list) => list.map(([x, y]) => ({ clientX: x, clientY: y }));
+  Object.defineProperty(e, 'touches', { value: pts(touches) });
+  Object.defineProperty(e, 'changedTouches', { value: pts(changed) });
+  (target || w.document.body).dispatchEvent(e);
+}
+
+test('a one-finger swipe goes to the next day, a pinch never does', async () => {
+  const { w, went } = await page(fixture.server, DAY1);
+  // a pinch-zoom on the thumbnails: two fingers, then lifted one at a time
+  touch(w, 'touchstart', [[300, 300]], [[300, 300]]);
+  touch(w, 'touchstart', [[300, 300], [320, 320]], [[320, 320]]);
+  // the first finger lifts 200 px to the left of where it began, then the other one
+  touch(w, 'touchend', [[340, 320]], [[100, 300]]);
+  touch(w, 'touchend', [], [[340, 320]]);
+  assert.deepEqual(went(), []);
+  // a swipe
+  touch(w, 'touchstart', [[300, 300]], [[300, 300]]);
+  touch(w, 'touchend', [], [[100, 305]]);
+  assert.equal(went().length, 1);
+  assert.match(went()[0], /2026-05-02/);
+});
