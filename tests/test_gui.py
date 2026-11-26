@@ -632,6 +632,23 @@ class MainWindowTests(unittest.TestCase):
             kill.assert_called_once()
         window._process = None
 
+    def test_closing_the_window_stops_a_task_without_reporting_a_problem(self):
+        from PySide6.QtCore import QProcess
+        window = self.make_window()
+        process = QProcess(window)
+        process.finished.connect(window._on_finished)
+        process.start(sys.executable, ["-c", "import time; time.sleep(30)"])
+        self.assertTrue(process.waitForStarted(5000))
+        window._process, window._process_kind = process, "offline assets"
+        window._pending_server_start = True          # the server was to start once it finished
+        with mock.patch.object(window, "_save_from_ui", return_value=True), \
+                mock.patch.object(window, "_show_problem") as problem, \
+                mock.patch.object(window, "_start_server") as start:
+            window.close()
+        self.assertEqual(process.state(), QProcess.ProcessState.NotRunning)
+        problem.assert_not_called()
+        start.assert_not_called()
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:

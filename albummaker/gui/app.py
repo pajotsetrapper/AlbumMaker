@@ -2716,10 +2716,16 @@ class MainWindow(QMainWindow):
                 event.ignore()
                 return
         if self._process and self._process.state() != QProcess.ProcessState.NotRunning:
+            # Stopped on purpose: waitForFinished delivers `finished` right here, and the
+            # task must not be reported as failed, nor a waiting server started, while
+            # the window closes.
+            self._stopping = True
+            self._pending_server_start = False
+            process = self._process
             self._terminate_process()
-            if not self._process.waitForFinished(2500):
+            if not process.waitForFinished(2500):
                 self._kill_process_tree()
-                self._process.waitForFinished(1000)
+                process.waitForFinished(1000)
         event.accept()
 
 
