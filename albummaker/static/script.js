@@ -1115,10 +1115,22 @@ function syncEditBar(){
   if(document.activeElement !== cap) cap.value = item.caption || '';
 }
 
-async function saveSlide(fields, idx){
+// One photo's saves go out one after another: each starts from the state the previous
+// one left (so pressing S twice quickly is a toggle and its undo, not "favorite" twice,
+// and a second caption edit is sent with the caption the first one saved). `fields` is
+// an object, or a function that makes it from the photo when its turn comes.
+const slideSaves = {};
+function saveSlide(fields, idx){
   if(idx === undefined) idx = currentSlide;
   const item = SLIDES[idx];
-  if(!item || !item.rel) return null;
+  if(!item || !item.rel) return Promise.resolve(null);
+  const before = slideSaves[item.rel] || Promise.resolve();
+  const save = before.then(() => sendSlide(typeof fields === 'function' ? fields(item) : fields, idx, item));
+  slideSaves[item.rel] = save.catch(() => null);
+  return save;
+}
+
+async function sendSlide(fields, idx, item){
   const body = Object.assign({rel: item.rel}, fields);
   // a caption is saved only over the one this page showed: if it was changed
   // elsewhere meanwhile, the server refuses (409) rather than overwrite it
@@ -1135,13 +1147,13 @@ async function saveSlide(fields, idx){
 
 function toggleFavorite(){
   const item = SLIDES[currentSlide];
-  if(item) saveSlide({favorite: !item.favorite});
+  if(item) saveSlide(it => ({favorite: !it.favorite}));
 }
 
 async function toggleHidden(){
   const item = SLIDES[currentSlide];
   if(!item) return;
-  const res = await saveSlide({hidden: !item.hidden});
+  const res = await saveSlide(it => ({hidden: !it.hidden}));
   if(res && res.photo.hidden){
     showToast('Hidden from visitors. You still see it here, dimmed.');
   }

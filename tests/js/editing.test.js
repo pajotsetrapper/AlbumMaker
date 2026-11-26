@@ -75,6 +75,24 @@ test('S toggles the favorite star and saves it', async () => {
   assert.equal(readContent().photos['a2.jpg'], undefined, 'back to defaults: the entry is gone');
 });
 
+test('pressing S twice quickly favorites and then unfavorites, in that order', async () => {
+  const { w } = await load(fixture.server, DAY);
+  thumbs(w)[1].click();                                  // a2: not a favorite yet
+  press(w, 's');
+  press(w, 's');                                         // before the first save has answered
+  await sleep(600);
+  assert.equal(thumbs(w)[1].classList.contains('is-fav'), false);
+  assert.equal(readContent().photos['a2.jpg'], undefined);
+  press(w, 's');
+  press(w, 's');
+  press(w, 's');
+  await sleep(800);
+  assert.equal(thumbs(w)[1].classList.contains('is-fav'), true);
+  assert.equal(readContent().photos['a2.jpg'].favorite, true);
+  press(w, 's');
+  await sleep(400);
+});
+
 test('Hide dims the photo, labels the button Unhide, and Unhide undoes it', async () => {
   const { w } = await load(fixture.server, DAY);
   thumbs(w)[0].click();
