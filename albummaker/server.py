@@ -521,6 +521,20 @@ def read_library_settings(path: Optional[Path]) -> dict:
     return data if isinstance(data, dict) else {}
 
 
+def _library_settings_to_update(path: Path) -> dict:
+    """library_settings.json as it is now, to change one setting in. Unlike
+    read_library_settings, a file that cannot be read is an error, not {}."""
+    try:
+        data = json.loads(Path(path).read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        return {}
+    except (OSError, ValueError) as e:
+        raise ContentFileError(f"{path} cannot be read ({e}). Fix or remove it, then try again.") from e
+    if not isinstance(data, dict):
+        raise ContentFileError(f"{path} does not hold a JSON object. Fix or remove it, then try again.")
+    return data
+
+
 class Shared:
     """What every trip on one server shares: the settings that aren't per trip,
     the editor link, the map tiles, and one memory budget and render limiter
@@ -560,11 +574,13 @@ class Shared:
 
     def set_template(self, name: str) -> str:
         """Switch every page to another template and remember it (library mode). The
-        choice is written first, so a failed write changes nothing."""
+        choice is written first, so a failed write changes nothing. A settings file that
+        cannot be read is never overwritten (it may hold other settings, or be half-way
+        through a hand edit): ContentFileError, and nothing changes."""
         info = template_info(name)
         with self._template_lock:
             if self.settings_path is not None:
-                settings = read_library_settings(self.settings_path)
+                settings = _library_settings_to_update(self.settings_path)
                 settings["template"] = info.name
                 atomic_write_bytes(self.settings_path, (json.dumps(settings, indent=2) + "\n").encode("utf-8"))
             self.template = get_template(info.name)

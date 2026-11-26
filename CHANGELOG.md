@@ -34,6 +34,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 - **Unusual `Range` headers on the live server:** A `Range` header with thousands of digits made the server answer with an error and print a traceback, and a reversed range such as `bytes=500-100` was refused (416) instead of being ignored as the HTTP standard asks. Both now get the whole file.
 - **`--port` accepted numbers that are not ports:** `--port 70000` stopped the live server with a traceback, and `--port 0` started it on a random port while printing addresses and an editor link for port 0. `--port` now has to be between 1 and 65535.
 - **The private editor link could end up in logs:** With `--verbose`, or for any request that was slow or failed, the live server logged the full address including the editor link's secret `?key=`, so the key could land in a terminal, log file or service log. The key is now blanked out in every logged line.
+- **Picking a template could overwrite a damaged `library_settings.json`:** When the file could not be read (a typo while editing it by hand), picking a template on the live library page replaced it with just the template, losing everything else in it. The pick is now refused with a message saying which file to fix, and the file is left as it is.
 
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.

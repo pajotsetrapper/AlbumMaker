@@ -390,6 +390,19 @@ class LibraryPickerTests(TempDirMixin, unittest.TestCase):
         self.assertIn("tpl-journal" if before and "journal" in before else "tpl-cinema", server.text("/"))
         self.assertEqual(self.settings.read_text() if self.settings.exists() else None, before)
 
+    def test_a_settings_file_that_cannot_be_read_is_not_overwritten(self):
+        server = self.serve()
+        broken = '{"template": "journal", "my_note": "half-way through an edit",'
+        self.settings.write_text(broken, encoding="utf-8")
+        try:
+            status, reply = server.post_json("/api/library-template", {"template": "scrapbook"})
+            self.assertEqual(status, 409)
+            self.assertIn("library_settings.json", reply["error"])
+            self.assertEqual(self.settings.read_text(encoding="utf-8"), broken)
+            self.assertNotIn("tpl-scrapbook", server.text("/"))
+        finally:
+            self.settings.unlink()
+
     def test_visitors_and_read_only_servers_see_the_picker_but_cannot_switch(self):
         owner = self.serve()
         self.assertNotRegex(owner.text("/"), r'id="template-select"[^>]*disabled')   # the owner can use it
