@@ -37,13 +37,15 @@
 </div>
 {% endif %}
 
-<div class="description {{ 'empty' if not description else '' }}">
-  {% if description %}
-    {% for para in description %}<p>{{ para }}</p>{% endfor %}
-  {% else %}
-    <p>No description yet — add one for {{ date_key }} in trip_content.json{{ edit_hint }}</p>
-  {% endif %}
+{% if description %}
+<div class="description">
+  {% for para in description %}<p>{{ para }}</p>{% endfor %}
 </div>
+{% elif editable %}
+<div class="description empty">
+  <p>No description yet. Use &ldquo;Edit title &amp; description&rdquo; to write one.</p>
+</div>
+{% endif %}
 
 {% if route or track %}
 <div class="map-wrap">

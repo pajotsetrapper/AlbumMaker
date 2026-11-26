@@ -140,6 +140,11 @@ class StaticBuildTests(TempDirMixin, unittest.TestCase):
         self.assertIn("&lt;script&gt;alert(1)&lt;/script&gt;", day)
         self.assertNotIn("<script>alert(1)</script>", day)
 
+    def test_a_day_without_a_description_shows_visitors_no_instructions(self):
+        page = self.page("days/2026-05-02.html")
+        self.assertNotIn("No description yet", page)
+        self.assertNotIn("trip_content.json", page)
+
     def test_trip_title_and_subtitle(self):
         index = self.page("index.html")
         self.assertIn("Belgium 2026", index)

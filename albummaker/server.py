@@ -665,7 +665,6 @@ class LiveUrls(SiteUrls):
     file_version). One instance per page render, so each file is only
     stat()ed once per page."""
     footer = Markup(f"Served live by album_server.py, version {__version__}")
-    edit_hint = ", then refresh this page."
 
     def __init__(self, app: App, origin: Optional[str] = None):
         self.app = app

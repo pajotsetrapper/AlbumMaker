@@ -637,7 +637,6 @@ class StaticUrls(SiteUrls):
     Filenames are URL-encoded, since output names keep the original's
     characters ('#', '%', spaces, ...)."""
     footer = f"Generated with generate_site.py, version {__version__}"
-    edit_hint = " and re-run the generator."
     has_vendor = False    # local copies of Leaflet and the fonts are bundled in assets/vendor
     large_thumbs = False  # --large-thumb-size was used, so thumbs_large/ exists
     in_library = False    # built by --library: the library page is one folder up

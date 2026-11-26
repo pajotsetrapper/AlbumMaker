@@ -80,7 +80,6 @@ class SiteUrls:
     `from_index` is True for links on the homepage rather than a day page,
     which matters for relative paths."""
     footer = ""     # the line at the bottom of every page
-    edit_hint = ""  # completes "add one for <date> in trip_content.json..."
     tile_url = DEFAULT_TILE_URL   # what the maps ask for; {z}/{x}/{y} are filled in by Leaflet
     api_base = ""                 # put before /api/... when the pages save an edit
     template = get_template(DEFAULT_TEMPLATE)   # the look of the pages (see site_templates.py)
@@ -391,7 +390,6 @@ def build_day_context(days: list, i: int, content: dict, urls: SiteUrls,
         vendor=urls.vendor_url(from_index=False),
         tile_url_json=script_json(urls.tile_url),
         footer=urls.footer,
-        edit_hint=urls.edit_hint,
         trip_title=trip_title(content),
         day_number=ranks.get(d.date_key),
         day_total=len(ranks),
