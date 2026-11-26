@@ -13,7 +13,7 @@ permissions:
 
 jobs:
   test:
-    name: Tests (${{ matrix.platform }})
+    name: Tests (${{ matrix.platform }}, Python ${{ matrix.python }})
     runs-on: ${{ matrix.runner }}
     strategy:
       fail-fast: false
@@ -21,23 +21,53 @@ jobs:
         include:
           - runner: windows-latest
             platform: windows-x64
+            python: "3.14"
           - runner: macos-15
             platform: macos-arm64
+            python: "3.14"
+            ffmpeg: true
+          - runner: macos-15-intel
+            platform: macos-intel
+            python: "3.14"
+          # the oldest Python the README promises to support
+          - runner: macos-15
+            platform: macos-arm64
+            python: "3.9"
     # Every matrix leg reads the same version from the code, so it does not
     # matter which leg's output the other jobs end up using.
     outputs:
       version: ${{ steps.version.outputs.version }}
+    env:
+      QT_QPA_PLATFORM: offscreen
     steps:
       - uses: actions/checkout@v7
       - uses: actions/setup-python@v7
         with:
-          python-version: "3.14"
+          python-version: ${{ matrix.python }}
           cache: pip
           cache-dependency-path: requirements-packaging.txt
+      # The browser tests (tests/js, run by tests/test_viewer_js.py) are skipped
+      # without Node.js and their npm packages.
+      - uses: actions/setup-node@v6
+        with:
+          node-version: "22"
+      - name: Install the browser-test packages
+        working-directory: tests/js
+        run: npm install --no-audit --no-fund
+      # The video tests are skipped without FFmpeg; one leg is enough to run them.
+      - name: Install FFmpeg
+        if: matrix.ffmpeg
+        run: brew install ffmpeg
       - name: Check the tag matches the version in the code
         if: github.ref_type == 'tag'
         shell: bash
         run: python tools/check_version.py "$GITHUB_REF_NAME"
+      - name: Check CHANGELOG.md has a section for this version
+        if: github.ref_type == 'tag'
+        shell: bash
+        run: |
+          v="$(python tools/check_version.py)"
+          grep -Eq "^## \[?${v//./\\.}\]?( |$)" CHANGELOG.md || { echo "CHANGELOG.md has no section for $v" >&2; exit 1; }
       - name: Read version
         id: version
         shell: bash
