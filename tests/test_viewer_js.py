@@ -94,11 +94,23 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
         cls.addClassCleanup(cls.large_httpd.server_close)
         cls.addClassCleanup(cls.large_httpd.shutdown)
 
+        # the same site in the Cinema template (the default), for the template tests
+        cinema_site = cls.tmp / "site-cinema"
+        built = run_script(cls.app, "generate_site.py", "-i", cls.photos, "-o", cinema_site,
+                           "-c", cls.tmp / "static-content-cinema.json", "--tz-offset", "0",
+                           "--template", "cinema")
+        assert built.returncode == 0, built.stdout + built.stderr
+        cls.cinema_httpd = QuietHTTPServer(("127.0.0.1", 0), functools.partial(_QuietHandler, directory=str(cinema_site)))
+        threading.Thread(target=cls.cinema_httpd.serve_forever, daemon=True).start()
+        cls.addClassCleanup(cls.cinema_httpd.server_close)
+        cls.addClassCleanup(cls.cinema_httpd.shutdown)
+
     def run_js(self, name):
         write_json(self.server.content, {**INITIAL_CONTENT, "_test_reset": name})     # a known starting point
         fixture = {"server": self.server.url,
                    "staticSite": f"http://127.0.0.1:{self.static_httpd.server_address[1]}",
                    "staticLargeSite": f"http://127.0.0.1:{self.large_httpd.server_address[1]}",
+                   "cinemaSite": f"http://127.0.0.1:{self.cinema_httpd.server_address[1]}",
                    "contentFile": str(self.server.content), "initialContent": INITIAL_CONTENT,
                    "hasLeaflet": self.has_leaflet, "hasVideo": HAVE_FFMPEG,
                    "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
@@ -130,6 +142,9 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
 
     def test_sharper_thumbnails(self):
         self.run_js("sharp.test.js")
+
+    def test_the_other_templates(self):
+        self.run_js("templates.test.js")
 
     def test_maps_with_real_leaflet(self):
         if not self.has_leaflet:

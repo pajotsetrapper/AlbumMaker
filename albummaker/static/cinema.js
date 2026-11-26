@@ -24,7 +24,21 @@ function cnDayPoints(day){
 }
 
 // ---------- the trip homepage ----------
+// The scenes fade in whether or not the map loads: without Leaflet (no internet, a
+// blocked CDN) the days must still be readable, so the map is set up on its own.
 function initCinemaOverview(elId, days){
+  let show = () => {};
+  try { show = cnOverviewMap(elId, days); }
+  catch(e){
+    console.error('Map failed to load (check your internet connection):', e);
+    const mini = document.getElementById('cn-mini');
+    if(mini) mini.hidden = true;
+  }
+  cnScenes(days, i => show(i));
+}
+
+// The mini-map; returns show(i), which flies to day i (-1: the whole trip).
+function cnOverviewMap(elId, days){
   const mini = document.getElementById('cn-mini');
   const toggle = document.getElementById('cn-mini-toggle');
   const map = L.map(elId, {scrollWheelZoom: false, zoomControl: false, dragging: false, touchZoom: false, doubleClickZoom: false, boxZoom: false, keyboard: false});
@@ -88,8 +102,11 @@ function initCinemaOverview(elId, days){
   }
   toggle.addEventListener('click', () => mini.classList.contains('is-open') ? closeMap() : openMap());
   document.addEventListener('keydown', e => { if(e.key === 'Escape') closeMap(); });
+  return show;
+}
 
-  // ---- scenes: fade in, and tell the map and the counters which day is being read
+// Scenes fade in as they are reached, and onReading(i) is told which day is being read.
+function cnScenes(days, onReading){
   const scenes = Array.prototype.slice.call(document.querySelectorAll('.cn-scene[data-index]'));
   const dotLinks = Array.prototype.slice.call(document.querySelectorAll('.cn-dots a'));
   const count = document.getElementById('cn-count');
@@ -97,7 +114,7 @@ function initCinemaOverview(elId, days){
   function reading(i){
     dotLinks.forEach(a => a.classList.toggle('is-active', +a.dataset.i === i));
     if(count) count.textContent = i >= 0 ? pad(i + 1) + ' / ' + pad(days.length) : '';
-    show(i);
+    onReading(i);
   }
   if(!('IntersectionObserver' in window)){
     scenes.forEach(s => s.classList.add('in-view'));

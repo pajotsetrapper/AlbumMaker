@@ -13,10 +13,12 @@ const opened = [];
 after(() => { opened.forEach((w) => { try { w.close(); } catch (e) { /* already closed */ } }); });
 
 // Only the test server's own files are loaded; anything else (a CDN) is "unreachable".
+// `block` lists parts of URLs that are unreachable too (to imitate a missing Leaflet, say).
 class Loader extends ResourceLoader {
-  constructor(base) { super(); this.base = base; }
+  constructor(base, block = []) { super(); this.base = base; this.block = block; }
   fetch(url, options) {
-    return url.startsWith(this.base) ? super.fetch(url, options) : Promise.resolve(Buffer.from(''));
+    const reachable = url.startsWith(this.base) && !this.block.some((part) => url.includes(part));
+    return reachable ? super.fetch(url, options) : Promise.resolve(Buffer.from(''));
   }
 }
 
@@ -72,11 +74,11 @@ function installLayoutStubs(w, stubs) {
 
 // Loads a page and lets its scripts run. jsdom has no layout engine and no SVG
 // measuring, so the few things Leaflet needs from a real browser are supplied.
-async function load(base, path, { settle = 900, storage = null, breakStorage = false, stubs = null } = {}) {
+async function load(base, path, { settle = 900, storage = null, breakStorage = false, stubs = null, block = [] } = {}) {
   const errors = [];
   const dom = await JSDOM.fromURL(base + path, {
     runScripts: 'dangerously',
-    resources: new Loader(base),
+    resources: new Loader(base, block),
     pretendToBeVisual: true,
     beforeParse(w) {
       Object.defineProperty(w.HTMLElement.prototype, 'clientWidth', { get() { return 800; } });
