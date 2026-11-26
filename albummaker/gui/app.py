@@ -976,19 +976,36 @@ class TimeZoneDelegate(QStyledItemDelegate):
         found = editor.findData(index.data(ZONE_ROLE) or "")
         editor.setCurrentIndex(found if found >= 0 else 0)
 
+    @staticmethod
+    def _zone_for_text(editor, text: str) -> Optional[str]:
+        """The zone that typed `text` names, or None. It may be a row's label in any case
+        (also without a suffix such as "· this computer"), a zone name such as
+        Asia/Bangkok, or just a city such as "brussels" when only one zone has it."""
+        folded = text.casefold()
+        cities = set()
+        for row in range(editor.count()):
+            zone = editor.itemData(row)
+            if zone is None:
+                continue                                # a separator
+            if folded == editor.itemText(row).casefold():
+                return zone or ""
+            if zone and folded in (timezone_label(zone).casefold(), zone.casefold()):
+                return zone
+            if zone and folded == zone.rsplit("/", 1)[-1].replace("_", " ").casefold():
+                cities.add(zone)
+        if len(cities) == 1:
+            return cities.pop()
+        if text in known_timezones():                   # a full name the list leaves out
+            return text
+        return None
+
     def setModelData(self, editor, model, index) -> None:
         text = editor.currentText().strip()
         if not text:
             zone = ""                                   # cleared: back to Automatic
         else:
-            found = editor.findText(text, Qt.MatchFlag.MatchFixedString)   # the label, any case
-            if found < 0:
-                found = editor.findData(text)                              # or a typed zone name
-            if found >= 0:
-                zone = editor.itemData(found) or ""
-            elif text in known_timezones():             # a full name the list leaves out
-                zone = text
-            else:
+            zone = self._zone_for_text(editor, text)
+            if zone is None:
                 return                                  # not a zone: the cell keeps what it had
         if zone and zone != (index.data(ZONE_ROLE) or ""):
             self._remember_zone(zone)                   # only a real change counts as "recent"

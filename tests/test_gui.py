@@ -802,10 +802,17 @@ class MainWindowTests(unittest.TestCase):
         delegate.setEditorData(editor, index)
         self.assertEqual(editor.currentData(), "Europe/Paris")
         brussels, bangkok = timezone_label("Europe/Brussels"), timezone_label("Asia/Bangkok")
-        self.assertEqual(edit(text=brussels.lower()), ("Europe/Brussels", brussels))
-        self.assertEqual(edit(text="Asia/Bangkok"), ("Asia/Bangkok", bangkok))
-        self.assertEqual(edit(text="not a zone"), ("Asia/Bangkok", bangkok))   # unchanged
-        self.assertEqual(edit(text=""), ("", "Automatic"))
+        tokyo = timezone_label("Asia/Tokyo")
+        # (the list does not depend on where the computer running the tests is)
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value="Asia/Tokyo"):
+            self.assertEqual(edit(text=brussels.lower()), ("Europe/Brussels", brussels))
+            self.assertEqual(edit(text="Asia/Bangkok"), ("Asia/Bangkok", bangkok))
+            self.assertEqual(edit(text="not a zone"), ("Asia/Bangkok", bangkok))   # unchanged
+            self.assertEqual(edit(text="brussels"), ("Europe/Brussels", brussels))  # just the city
+            # this computer's zone is listed as "... · this computer"; its plain label works too
+            self.assertEqual(edit(text=tokyo), ("Asia/Tokyo", tokyo))
+            self.assertEqual(edit(text="automatic"), ("", "Automatic"))
+            self.assertEqual(edit(text=""), ("", "Automatic"))
 
     def test_the_time_zone_list_has_pinned_zones_separators_and_remembers_picks(self):
         from PySide6.QtCore import Qt
