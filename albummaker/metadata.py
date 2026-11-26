@@ -480,6 +480,20 @@ def read_video_metadata(path: Path, tz_offset_hours: Optional[float] = None,
 META_FORMAT = 2   # bump when read_*_metadata start returning something new (2: utc_offset)
 
 
+def video_zone_key(tz_offset: Optional[float] = None, timezone_name: Optional[str] = None):
+    """What a video's cached time depends on: the zone or offset given, or else this
+    computer's zone (a video that records only UTC is converted with it). A cached video
+    read under another key is read again, so a laptop that moved to another zone does
+    not mix videos converted with the old zone and the new one."""
+    if timezone_name:
+        return timezone_name
+    if tz_offset is not None:
+        return tz_offset
+    from .timezones import local_timezone_name
+    local = local_timezone_name() or str(datetime.now().astimezone().utcoffset())
+    return f"local:{local}"
+
+
 def meta_to_json(meta: dict, tz_offset: Optional[float] = None,
                  timezone_name: Optional[str] = None) -> dict:
     out = {}
@@ -491,7 +505,7 @@ def meta_to_json(meta: dict, tz_offset: Optional[float] = None,
         else:
             out[k] = v
     out["_format"] = META_FORMAT
-    out["_tz"] = timezone_name if timezone_name else tz_offset
+    out["_tz"] = video_zone_key(tz_offset, timezone_name)
     return out
 
 
@@ -504,7 +518,7 @@ def meta_from_json(data, tz_offset: Optional[float] = None, media_type: str = "i
         return None
     if data.get("probe_failed"):
         return None   # ffprobe couldn't run that time: read the video again
-    if media_type == "video" and data.get("_tz") != (timezone_name if timezone_name else tz_offset):
+    if media_type == "video" and data.get("_tz") != video_zone_key(tz_offset, timezone_name):
         return None
     meta = {}
     try:

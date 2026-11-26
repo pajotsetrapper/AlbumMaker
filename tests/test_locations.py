@@ -327,6 +327,16 @@ class OffsetMetadataTests(TempDirMixin, unittest.TestCase):
         self.assertIsNone(metadata.meta_from_json(cached, media_type="video",
                                                   timezone_name="Asia/Tokyo"))
 
+    def test_video_metadata_cache_is_specific_to_this_computers_zone(self):
+        found = {"dt": datetime(2026, 7, 15, 12, 0)}
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value="Europe/Brussels"):
+            cached = metadata.meta_to_json(found)
+            self.assertEqual(metadata.meta_from_json(cached, media_type="video"), found)
+        # the laptop is now in Japan: a video read in Brussels must be read again
+        with mock.patch("albummaker.timezones.local_timezone_name", return_value="Asia/Tokyo"):
+            self.assertIsNone(metadata.meta_from_json(cached, media_type="video"))
+            self.assertEqual(metadata.meta_from_json(cached, media_type="image"), found)   # photos: no zone
+
     def test_exif_offset_and_gps_time_stamp(self):
         tmp = self.make_tmp()
         stated = metadata.read_image_metadata(make_jpeg(tmp / "a.jpg", "2026:05:01 10:00:00", offset="+09:00"))
