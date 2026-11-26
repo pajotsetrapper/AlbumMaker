@@ -61,5 +61,29 @@ class ColourProfileTests(TempDirMixin, unittest.TestCase):
         self.assertIsNone(imaging._rgb_icc_profile(img))
 
 
+class TransparencyTests(TempDirMixin, unittest.TestCase):
+    def setUp(self):
+        self.tmp = self.make_tmp()
+
+    def corner_colour(self, img):
+        path = self.tmp / "logo.png"
+        img.save(path)
+        data = imaging.image_thumbnails(path, [20])[20]
+        return Image.open(io.BytesIO(data)).convert("RGB").getpixel((0, 0))
+
+    def test_transparent_parts_are_white_not_black(self):
+        rgba = Image.new("RGBA", (40, 40), (0, 0, 0, 0))          # fully transparent
+        rgba.paste((200, 0, 0, 255), (10, 10, 30, 30))
+        self.assertGreater(min(self.corner_colour(rgba)), 245)
+        la = Image.new("LA", (40, 40), (0, 0))
+        self.assertGreater(min(self.corner_colour(la)), 245)
+        palette = Image.new("P", (40, 40), 0)
+        palette.info["transparency"] = 0
+        self.assertGreater(min(self.corner_colour(palette)), 245)
+
+    def test_an_opaque_image_keeps_its_colours(self):
+        self.assertLess(max(self.corner_colour(Image.new("RGBA", (40, 40), (0, 0, 0, 255)))), 10)
+
+
 if __name__ == "__main__":
     unittest.main()

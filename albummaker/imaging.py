@@ -75,7 +75,7 @@ def open_upright(path: Path, draft_to: int = 0) -> tuple:
             img = _integer_grey_to_8bit(img)
         icc = _rgb_icc_profile(img)
         if img.mode != "RGB":
-            rgb = img.convert("RGB")
+            rgb = _flatten_to_rgb(img)
             img.close()
             img = rgb
         if icc:
@@ -86,6 +86,19 @@ def open_upright(path: Path, draft_to: int = 0) -> tuple:
     except Exception:
         img.close()
         raise
+
+
+def _flatten_to_rgb(img: Image.Image) -> Image.Image:
+    """An RGB copy of `img`. Transparent parts (a PNG or WebP with an alpha channel, or
+    a palette with a transparent colour) are shown on white, as a browser shows them on
+    a light page: a plain conversion drops the alpha and leaves them black."""
+    if img.mode in ("RGBA", "LA", "PA", "RGBa", "La") or (img.mode == "P" and "transparency" in img.info):
+        rgba = img.convert("RGBA")
+        flat = Image.new("RGB", rgba.size, (255, 255, 255))
+        flat.paste(rgba, mask=rgba.getchannel("A"))
+        rgba.close()
+        return flat
+    return img.convert("RGB")
 
 
 def _integer_grey_to_8bit(img: Image.Image) -> Image.Image:
