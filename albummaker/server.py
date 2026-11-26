@@ -808,6 +808,15 @@ def _check_unchanged(current: str, original: str, what: str, single_line: bool =
                            f"page to see the current version, then edit that.")
 
 
+_EDITOR_KEY_IN_URL = re.compile(r"([?&]key=)[^&\s\"]*")
+
+
+def redact_editor_key(text: str) -> str:
+    """`text` (a logged request) with the private editor link's ?key=... blanked out:
+    logs end up in terminals, files and service logs, where the key does not belong."""
+    return _EDITOR_KEY_IN_URL.sub(r"\1(hidden)", text)
+
+
 class RequestHandler(BaseHTTPRequestHandler):
     server_version = "AlbumMaker/2.0"
     protocol_version = "HTTP/1.1"
@@ -841,7 +850,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 
     def log_message(self, fmt, *args):
         if self.app.args.verbose:
-            sys.stderr.write(f"{self.address_string()} - {fmt % args}\n")
+            sys.stderr.write(f"{self.address_string()} - {redact_editor_key(fmt % args)}\n")
 
     def log_request(self, code="-", size="-"):
         self._status = code
@@ -858,7 +867,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         except (TypeError, ValueError):
             status_n = 0
         if status_n >= 500 or (status_n >= 400 and status_n != 404) or elapsed > SLOW_REQUEST_SECONDS:
-            sys.stderr.write(f"{self.address_string()} - {self.command} {self.path} -> {status} "
+            sys.stderr.write(f"{self.address_string()} - {self.command} {redact_editor_key(self.path)} -> {status} "
                              f"({elapsed:.1f}s)\n")
 
     def send_response(self, code, message=None):

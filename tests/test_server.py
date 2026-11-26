@@ -350,9 +350,6 @@ class ServerStartupTests(TempDirMixin, unittest.TestCase):
         self.assertEqual(server.get("/", {"Host": "other.home"})[0], 403)
 
 
-if __name__ == "__main__":
-    unittest.main()
-
 
 class SendFileTests(TempDirMixin, unittest.TestCase):
     """RequestHandler._send_file on its own, with a stand-in for the connection."""
@@ -406,3 +403,16 @@ class SendFileTests(TempDirMixin, unittest.TestCase):
             with self.subTest(header[:30]):
                 got = self.send({"Range": header})
                 self.assertEqual((got["status"], len(got["body"])), (200, size))
+
+
+class LogTests(unittest.TestCase):
+    def test_the_editor_key_never_reaches_the_log(self):
+        from albummaker.server import redact_editor_key
+        self.assertEqual(redact_editor_key('"GET /?key=s3cr3t-T0ken HTTP/1.1" 302 -'),
+                         '"GET /?key=(hidden) HTTP/1.1" 302 -')
+        self.assertEqual(redact_editor_key("GET /day/x?a=1&key=abc&b=2"), "GET /day/x?a=1&key=(hidden)&b=2")
+        self.assertEqual(redact_editor_key("GET /media/monkey=1.jpg"), "GET /media/monkey=1.jpg")
+
+
+if __name__ == "__main__":
+    unittest.main()

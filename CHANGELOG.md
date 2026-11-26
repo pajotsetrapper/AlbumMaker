@@ -33,6 +33,7 @@ All notable changes to AlbumMaker (formerly TripServer) are documented in this f
 - **Tracebacks in the server log for ordinary browsing:** A video paused for longer than 30 seconds, or (on Windows) a cancelled video or image download, printed a full error traceback in the live server's output. Every way a browser can go away mid-reply is now treated as normal.
 - **Unusual `Range` headers on the live server:** A `Range` header with thousands of digits made the server answer with an error and print a traceback, and a reversed range such as `bytes=500-100` was refused (416) instead of being ignored as the HTTP standard asks. Both now get the whole file.
 - **`--port` accepted numbers that are not ports:** `--port 70000` stopped the live server with a traceback, and `--port 0` started it on a random port while printing addresses and an editor link for port 0. `--port` now has to be between 1 and 65535.
+- **The private editor link could end up in logs:** With `--verbose`, or for any request that was slow or failed, the live server logged the full address including the editor link's secret `?key=`, so the key could land in a terminal, log file or service log. The key is now blanked out in every logged line.
 
 ### Development
 - **Map tests follow the 250 km long-hop limit:** The `splitLongHops` browser tests still used hops (Bangkok to Phuket, Los Angeles to Las Vegas) that the 3.2.0 change from 1000 km to 250 km turned into jumps, so two of them failed.
