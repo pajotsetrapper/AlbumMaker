@@ -479,12 +479,19 @@ class GuiCommandTests(unittest.TestCase):
         )
 
     def test_zipapp_launches_its_bundled_cli(self):
-        with mock.patch("albummaker.gui.commands.sys.argv", ["/tmp/albummaker.pyz"]):
-            command = offline_assets_command("python")
-        self.assertEqual(
-            command,
-            ["python", "-u", str(Path("/tmp/albummaker.pyz")), "serve", "--fetch-offline-assets"],
-        )
+        from albummaker.gui import commands
+        with tempfile.TemporaryDirectory() as tmp:
+            archive = Path(tmp) / "albummaker.pyz"
+            archive.touch()
+            inside = str(archive / "albummaker" / "gui" / "commands.py")
+            # `python albummaker.pyz gui` has replaced argv[0] by the time the window starts
+            with mock.patch.object(commands, "_MODULE_FILE", inside), \
+                    mock.patch("albummaker.gui.commands.sys.argv", ["albummaker gui"]):
+                command = offline_assets_command("python")
+            self.assertEqual(command, ["python", "-u", str(archive), "serve", "--fetch-offline-assets"])
+            with mock.patch("albummaker.gui.commands.sys.argv", [str(archive)]):   # started some other way
+                self.assertEqual(commands._zipapp_archive(), archive)
+        self.assertIsNone(commands._zipapp_archive())
 
     def test_frozen_gui_launches_its_bundled_cli_helper(self):
         with tempfile.TemporaryDirectory() as tmp:

@@ -24,10 +24,26 @@ def _command_prefix(python: str, subcommand: str) -> list[str]:
         if not cli.is_file():
             raise ValueError(f"The packaged command runner is missing: {cli}")
         return [str(cli), subcommand]
-    launcher = Path(sys.argv[0])
-    if launcher.suffix.lower() in (".pyz", ".zip"):
-        return [python, "-u", str(launcher), subcommand]
+    archive = _zipapp_archive()
+    if archive is not None:
+        return [python, "-u", str(archive), subcommand]
     return [python, "-u", "-m", "albummaker", subcommand]
+
+
+_MODULE_FILE = __file__
+
+
+def _zipapp_archive() -> Optional[Path]:
+    """The .pyz (or .zip) this code is running from, or None. It is told from where this
+    module was loaded, not from sys.argv[0]: `python albummaker.pyz gui` replaces argv[0]
+    with "albummaker gui" before the window starts."""
+    for parent in Path(_MODULE_FILE).parents:
+        if parent.suffix.lower() in (".pyz", ".zip") and parent.is_file():
+            return parent
+    launcher = Path(sys.argv[0])
+    if launcher.suffix.lower() in (".pyz", ".zip") and launcher.is_file():
+        return launcher
+    return None
 
 
 def _validate_common(build: dict, large_thumb_size: Optional[int] = None) -> None:
