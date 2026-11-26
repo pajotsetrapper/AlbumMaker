@@ -62,7 +62,7 @@ from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, relative_namer,
                    visible_days)
 from .site_templates import LIBRARY_SETTINGS_NAME, template_choices, template_info
-from .util import atomic_write_bytes, script_json
+from .util import atomic_write_bytes, script_json, setup_console_output
 
 # mimetypes' built-in table is inconsistent across OS/Python installs for a
 # few formats that matter a lot here (HEIC especially) — pin the ones we
@@ -1584,8 +1584,7 @@ def main(argv=None):
     # the server runs until stopped, so when its output goes to a file or a
     # pipe (a log, a service manager), each message must appear as it is printed,
     # not when a block buffer happens to fill (the editor link would never show)
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
+    setup_console_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     print(f"AlbumMaker {__version__} (live server)")

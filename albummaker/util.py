@@ -17,6 +17,25 @@ from pathlib import Path
 from markupsafe import Markup
 
 
+def setup_console_output() -> None:
+    """Make printed progress safe to read through a pipe. Each line appears as it is
+    printed (also in a log file or the desktop app). A pipe is written as UTF-8, which
+    is what the desktop app reads: on Windows it would otherwise use the ANSI code page
+    (cp1252), where printing a folder called Москва or 東京 raises UnicodeEncodeError
+    and stops the build or server. A character the output cannot show is written as
+    an escape instead of raising."""
+    for stream in (sys.stdout, sys.stderr):
+        if not hasattr(stream, "reconfigure"):
+            continue
+        options = {"line_buffering": True, "errors": "backslashreplace"}
+        try:
+            if not stream.isatty():
+                options["encoding"] = "utf-8"
+            stream.reconfigure(**options)
+        except (OSError, ValueError):
+            pass
+
+
 def external_tool_env():
     """The environment for running another program (ffprobe, ffmpeg, brew).
     The packaged Linux app points LD_LIBRARY_PATH at its own bundled libraries,

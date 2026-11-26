@@ -165,6 +165,8 @@ def manual_instructions() -> str:
 
 def main(argv: Optional[list[str]] = None) -> int:
     import argparse
+    from .util import setup_console_output
+    setup_console_output()
     parser = argparse.ArgumentParser(
         prog="albummaker install-ffmpeg",
         description="Install FFmpeg with your system's package manager. "

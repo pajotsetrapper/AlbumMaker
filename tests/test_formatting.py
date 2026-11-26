@@ -148,5 +148,22 @@ class DistanceTests(unittest.TestCase):
                                tc._route_distance_km([a, b]) + tc._route_distance_km([b, c]))
 
 
+
+class ConsoleOutputTests(unittest.TestCase):
+    def test_a_pipe_is_written_as_utf8_and_never_raises(self):
+        import io
+        from unittest import mock
+        from albummaker.util import setup_console_output
+        # a Windows pipe before Python 3.15: the ANSI code page, strict errors
+        out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+        err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+        with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
+            setup_console_output()
+            print("=== Trip 1: \u6771\u4eac / \u041c\u043e\u0441\u043a\u0432\u0430 \u2014 Caf\u00e9")
+        self.assertEqual(out.buffer.getvalue().decode("utf-8"),
+                         "=== Trip 1: \u6771\u4eac / \u041c\u043e\u0441\u043a\u0432\u0430 \u2014 Caf\u00e9\n")
+        self.assertTrue(out.line_buffering)
+        self.assertEqual(err.encoding, "utf-8")
+
 if __name__ == "__main__":
     unittest.main()

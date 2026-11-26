@@ -48,7 +48,7 @@ from .places import ATTRIBUTION as PLACES_ATTRIBUTION
 from .render import SiteUrls, build_day_context, build_index_context, get_template
 from .scan import (LIBRARY_MARKER, SITE_MARKER, apply_date_check, assign_rel_paths, build_media_item, collect_candidates,
                    dedupe_groups, drop_hidden_groups, group_by_day, no_dedupe_groups, pair_live_photos)
-from .util import atomic_write_bytes, atomic_write_text
+from .util import atomic_write_bytes, atomic_write_text, setup_console_output
 
 # --------------------------------------------------------------------------
 # Output names
@@ -755,9 +755,8 @@ def build_parser() -> argparse.ArgumentParser:
 
 
 def main(argv=None):
-    # progress appears as it happens, also when the output goes to a log file
-    if hasattr(sys.stdout, "reconfigure"):
-        sys.stdout.reconfigure(line_buffering=True)
+    # progress appears as it happens, as UTF-8 when the output is a pipe or a log file
+    setup_console_output()
     parser = build_parser()
     args = parser.parse_args(argv)
     print(f"AlbumMaker {__version__} (site builder)")

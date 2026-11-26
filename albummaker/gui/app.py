@@ -2234,6 +2234,8 @@ class MainWindow(QMainWindow):
         process.setWorkingDirectory(str(working_dir if working_dir.is_dir() else Path.home()))
         environment = QProcessEnvironment.systemEnvironment()
         environment.insert("PYTHONUNBUFFERED", "1")
+        # the output is read as UTF-8 (the task also sets this itself; see setup_console_output)
+        environment.insert("PYTHONIOENCODING", "utf-8:backslashreplace")
         if frozen:
             # The helper is another PyInstaller program. Variables the packaged
             # app set for itself must not leak into it, or it can mistake itself
