@@ -124,6 +124,20 @@ test('the day title and description can be edited and saved', async () => {
   assert.equal(day.description, 'First.\n\nSecond.');
 });
 
+test('a double click on Save sends the edit once', async () => {
+  const { w } = await load(fixture.server, DAY);
+  const posts = [];
+  const realFetch = w.fetch;
+  w.fetch = (u, o) => { if(o && o.method === 'POST') posts.push(String(u)); return realFetch(u, o); };
+  byId(w, 'day-edit').click();
+  byId(w, 'edit-title').value = 'Clicked twice';
+  byId(w, 'day-save').click();
+  byId(w, 'day-save').click();
+  await sleep(500);
+  assert.equal(posts.length, 1);              // (a second one would be refused: its original text is out of date)
+  assert.equal(readContent().days['2026-05-01'].title, 'Clicked twice');
+});
+
 test('saving only the title leaves a description changed in the file meanwhile alone', async () => {
   const { w } = await load(fixture.server, DAY);
   try {

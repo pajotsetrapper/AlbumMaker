@@ -15,6 +15,36 @@ function isTyping(el){
   return tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || !!el.isContentEditable;
 }
 
+// A key press that only confirms or cancels an input method's composition (Japanese,
+// Chinese, Korean ...): its Enter or Esc belongs to the input method, not to the page.
+function isComposing(e){
+  return !!(e.isComposing || e.keyCode === 229);
+}
+
+// ---------- text typed into the day and trip editors is not lost by accident ----------
+let leavingAfterSave = false;     // set just before a saved form reloads the page
+function formDirty(fields){
+  return fields.some(f => f && f.value !== f.defaultValue);
+}
+// Esc on a form with changed text asks first; the Cancel button itself does not.
+function confirmDiscard(fields){
+  return !formDirty(fields) || window.confirm('Discard the text you changed?');
+}
+// Leaving the page (a link, closing the tab) with changed text asks the browser to confirm.
+function guardUnsavedText(fields){
+  window.addEventListener('beforeunload', (e) => {
+    if(leavingAfterSave || !formDirty(fields)) return;
+    e.preventDefault();
+    e.returnValue = '';
+  });
+}
+// Runs a save once at a time: a second click while it is on its way does nothing.
+async function saveOnce(button, save){
+  if(button.disabled) return;
+  button.disabled = true;
+  try { await save(); } finally { button.disabled = false; }
+}
+
 let toastTimer = null;
 function showToast(msg, isError){
   let el = document.getElementById('toast');
@@ -230,6 +260,7 @@ function initDayNav(prevHref, nextHref, homeHref){
     if(popupClose){ popupClose.click(); return; }
     const editor = document.getElementById('day-editor');
     if(editor && !editor.hidden){
+      if(!confirmDiscard([document.getElementById('edit-title'), document.getElementById('edit-desc')])) return;
       document.getElementById('day-cancel').click();
       if(isTyping(e.target)) e.target.blur();
       return;
@@ -240,6 +271,7 @@ function initDayNav(prevHref, nextHref, homeHref){
 
   document.addEventListener('keydown', (e) => {
     if(e.defaultPrevented) return;                 // the viewer already used this key press
+    if(isComposing(e)) return;                     // the input method's own Esc
     if(e.ctrlKey || e.metaKey || e.altKey) return; // e.g. Alt+Left is the browser's own Back
     if(slideshowOpen()) return;                    // the slideshow has its own key handling
     if(e.key === 'Escape'){
@@ -247,6 +279,8 @@ function initDayNav(prevHref, nextHref, homeHref){
       return;
     }
     if(isTyping(e.target)) return;                 // typing in the title/caption boxes
+    const editor = document.getElementById('day-editor');
+    if(editor && !editor.hidden) return;           // (its Save and Cancel buttons): the text would be lost
     if(inMap(document.activeElement)) return;      // let Leaflet's own keyboard map-panning work
     if(e.key === 'ArrowLeft' && prevHref) navigateTo(prevHref);
     else if(e.key === 'ArrowRight' && nextHref) navigateTo(nextHref);
@@ -1115,7 +1149,7 @@ function initEditBar(){
     // not saved (the toast says why): keep what was typed rather than wiping it
     if(!res && currentSlide === idx && document.activeElement !== cap) cap.value = typed;
   });
-  cap.addEventListener('keydown', (e) => { if(e.key === 'Enter') cap.blur(); });
+  cap.addEventListener('keydown', (e) => { if(e.key === 'Enter' && !isComposing(e)) cap.blur(); });
 }
 
 // Before another photo is shown: finish a caption edit (saving it for its own photo).
@@ -1140,7 +1174,9 @@ function initDayEditor(dateKey){
     box.hidden = true;
     openBtn.hidden = false;
   });
-  document.getElementById('day-save').addEventListener('click', async () => {
+  guardUnsavedText([title, desc]);
+  const saveBtn = document.getElementById('day-save');
+  saveBtn.addEventListener('click', () => saveOnce(saveBtn, async () => {
     // only what was changed is sent, with the text the form started from: the
     // server refuses (409) if that text was changed elsewhere meanwhile, so an
     // untouched field can never overwrite a hand edit in trip_content.json
@@ -1153,8 +1189,8 @@ function initDayEditor(dateKey){
       return;
     }
     const res = await apiPost('/api/day', body);
-    if(res) location.reload();      // not saved: the toast says why, and the typed text stays in the form
-  });
+    if(res){ leavingAfterSave = true; location.reload(); }   // not saved: the toast says why, and the typed text stays
+  }));
 }
 
 // The trip's own title and subtitle, edited from its main page. Same rules as the day
@@ -1171,17 +1207,23 @@ function initTripEditor(){
   openBtn.addEventListener('click', () => { box.hidden = false; openBtn.hidden = true; title.focus(); title.select(); });
   document.getElementById('trip-cancel').addEventListener('click', () => { fields.forEach(f => { f.value = f.defaultValue; }); close(); });
   fields.forEach(f => f.addEventListener('keydown', (e) => {
+    if(isComposing(e)) return;                    // the input method's own Enter or Esc
     if(e.key === 'Enter'){ e.preventDefault(); document.getElementById('trip-save').click(); }
-    else if(e.key === 'Escape'){ e.preventDefault(); document.getElementById('trip-cancel').click(); }
+    else if(e.key === 'Escape'){
+      e.preventDefault();                         // (never also leaves the page)
+      if(confirmDiscard(fields)) document.getElementById('trip-cancel').click();
+    }
   }));
-  document.getElementById('trip-save').addEventListener('click', async () => {
+  guardUnsavedText(fields);
+  const saveBtn = document.getElementById('trip-save');
+  saveBtn.addEventListener('click', () => saveOnce(saveBtn, async () => {
     const body = {};
     if(title.value !== title.defaultValue){ body.title = title.value; body.original_title = title.defaultValue; }
     if(subtitle && subtitle.value !== subtitle.defaultValue){ body.subtitle = subtitle.value; body.original_subtitle = subtitle.defaultValue; }
     if(!('title' in body) && !('subtitle' in body)){ close(); return; }
     const res = await apiPost('/api/trip', body);
-    if(res) location.reload();      // not saved: the toast says why, and the typed text stays in the form
-  });
+    if(res){ leavingAfterSave = true; location.reload(); }   // not saved: the toast says why, and the typed text stays
+  }));
 }
 
 function initSlideshow(items, opts){
@@ -1230,6 +1272,7 @@ function initSlideshow(items, opts){
 
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
+    if(isComposing(e)) return;                       // the input method's own Esc
     if(isTyping(e.target)){ if(e.key === 'Escape'){ e.preventDefault(); e.target.blur(); } return; }
     if(e.ctrlKey || e.metaKey || e.altKey) return;   // the browser's shortcuts (Ctrl+S, Cmd+F, Alt+Left ...)
     if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }

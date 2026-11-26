@@ -92,12 +92,43 @@ test('in the day text editor, arrows move the cursor and Esc cancels the form be
   key(w, 'ArrowLeft', {}, title);
   key(w, 'ArrowRight', {}, title);
   assert.deepEqual(went(), []);
+  // Esc on changed text asks first: "keep editing" keeps it
+  const asked = [];
+  w.confirm = (q) => { asked.push(q); return false; };
+  key(w, 'Escape', {}, title);
+  assert.equal(asked.length, 1);
+  assert.equal(d.getElementById('day-editor').hidden, false);
+  assert.equal(title.value, saved + ' (draft)');
+  w.confirm = () => true;                                   // "discard"
   key(w, 'Escape', {}, title);
   assert.equal(d.getElementById('day-editor').hidden, true);
   assert.equal(title.value, saved);
   assert.deepEqual(went(), []);
   key(w, 'Escape');
   assert.equal(went().length, 1);
+});
+
+test('the day text editor keeps its text from stray keys', async () => {
+  const { w, went } = await page(fixture.server, '/day/2026-05-01');
+  const d = w.document;
+  d.getElementById('day-edit').click();
+  const title = d.getElementById('edit-title');
+  title.value = 'half typed';
+  // an input method (Japanese, Chinese ...) uses Esc to cancel what it is composing
+  key(w, 'Escape', { isComposing: true }, title);
+  assert.equal(d.getElementById('day-editor').hidden, false);
+  assert.equal(title.value, 'half typed');
+  // arrows with the focus on Save or Cancel do not go to another day
+  const save = d.getElementById('day-save');
+  save.focus();
+  key(w, 'ArrowRight', {}, save);
+  key(w, 'ArrowLeft', {}, save);
+  assert.deepEqual(went(), []);
+  // leaving the page asks the browser to confirm, as long as the text is changed
+  const leaving = () => { const e = new w.Event('beforeunload', { cancelable: true }); w.dispatchEvent(e); return e.defaultPrevented; };
+  assert.equal(leaving(), true);
+  d.getElementById('day-cancel').click();
+  assert.equal(leaving(), false);
 });
 
 test('the static site uses relative links for the same keys', async () => {
