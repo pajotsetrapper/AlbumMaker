@@ -150,7 +150,6 @@ Download the file for your computer from the
 | Windows 10 or 11 (64-bit) | `AlbumMaker-<version>-windows-x64.zip` | Unzip it, open the `AlbumMaker` folder and run `AlbumMaker.exe`. Keep the folder together. |
 | Mac with Apple silicon (M1 or later) | `AlbumMaker-<version>-macos-arm64.zip` | Unzip it and drag `AlbumMaker.app` to your Applications folder. |
 | Mac with an Intel processor | `AlbumMaker-<version>-macos-intel.zip` | As above. |
-| Linux x64 (Ubuntu 22.04 or newer) | `AlbumMaker-<version>-linux-x64.tar.gz` | Unzip and run `AlbumMaker/AlbumMaker` inside. |
 
 Each download contains the app, its background command runner and
 everything it needs, including the map library and fonts; installing Python is not required.
@@ -159,7 +158,7 @@ FFmpeg is not included (see [Installing FFmpeg](#installing-ffmpeg)); the app of
 **The first time you open it:**
 - **macOS:** Close warning, open **System Settings → Privacy & Security**, and click **Open Anyway**. Or run: `xattr -dr com.apple.quarantine /Applications/AlbumMaker.app`
 - **Windows:** Choose **More info**, then **Run anyway**.
-- **Linux:** If it doesn't start, ensure desktop libraries are installed (e.g., `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1`).
+- **Linux:** There is no ready-made download; [run it from source](#run-from-source-gui). If the desktop app doesn't start, install the desktop libraries Qt needs (e.g., `sudo apt install libxcb-cursor0 libxkbcommon-x11-0 libegl1`).
 
 ### Run from source (GUI)
 ```bash
