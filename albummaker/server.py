@@ -78,7 +78,9 @@ MIME_OVERRIDES = {
 VENDOR_MIME = {".js": "application/javascript", ".css": "text/css", ".woff2": "font/woff2",
                ".png": "image/png", ".txt": "text/plain; charset=utf-8"}
 
-RANGE_RE = re.compile(r"bytes=(\d*)-(\d*)")   # one range only; others get the whole file
+# One range only; anything else gets the whole file. At most 18 digits (no file is that
+# big): int() refuses strings of thousands of digits, which would be an error, not a range.
+RANGE_RE = re.compile(r"bytes=(\d{0,18})-(\d{0,18})")
 KEY_RE = re.compile(r"^[0-9a-f]{10,40}$")
 # private: browsers keep it, but a shared cache (a proxy, or a tunnel such as
 # Cloudflare's in front of the server) must not. Hiding a photo doesn't change
@@ -1083,24 +1085,26 @@ class RequestHandler(BaseHTTPRequestHandler):
         start, end = 0, file_size - 1
         status = 200
         range_header = self.headers.get("Range")
-        if range_header:
-            m = RANGE_RE.fullmatch(range_header.strip())
-            if m and (m.group(1) or m.group(2)):
-                if m.group(1):
-                    start = int(m.group(1))
-                    end = int(m.group(2)) if m.group(2) else file_size - 1
-                else:
-                    suffix = int(m.group(2))
-                    start = max(0, file_size - suffix)
-                    end = file_size - 1
-                end = min(end, file_size - 1)
-                if start > end or start >= file_size:
+        m = RANGE_RE.fullmatch(range_header.strip()) if range_header else None
+        if m and (m.group(1) or m.group(2)):
+            if m.group(1):
+                first = int(m.group(1))
+                last = int(m.group(2)) if m.group(2) else file_size - 1
+            else:                                   # "bytes=-500": the last 500 bytes
+                first, last = max(0, file_size - int(m.group(2))), file_size - 1
+                if int(m.group(2)) == 0:
+                    first = file_size               # the last 0 bytes: nothing to send
+            # "bytes=500-100" (last before first) is not a valid range (RFC 9110): it is
+            # ignored, and the whole file is sent. A range starting past the end cannot
+            # be satisfied.
+            if not (m.group(1) and m.group(2) and last < first):
+                if first >= file_size:
                     self.send_response(416)
                     self.send_header("Content-Range", f"bytes */{file_size}")
                     self.send_header("Content-Length", "0")
                     self.end_headers()
                     return
-                status = 206
+                start, end, status = first, min(last, file_size - 1), 206
 
         length = end - start + 1
         self.send_response(status)

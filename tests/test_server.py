@@ -384,3 +384,24 @@ class SendFileTests(TempDirMixin, unittest.TestCase):
                 raise gone()
             with self.subTest(gone.__name__):
                 self.assertTrue(self.send(write=write)["closed"])    # raised nothing, connection dropped
+
+    def test_range_requests(self):
+        size = self.file.stat().st_size
+        got = self.send({"Range": "bytes=100-199"})
+        self.assertEqual((got["status"], len(got["body"])), (206, 100))
+        self.assertEqual(got["headers"]["Content-Range"], f"bytes 100-199/{size}")
+        got = self.send({"Range": "bytes=-10"})                  # the last 10 bytes
+        self.assertEqual((got["status"], bytes(got["body"])), (206, self.file.read_bytes()[-10:]))
+        got = self.send({"Range": f"bytes={size - 5}-{size + 1000}"})   # cut at the end
+        self.assertEqual((got["status"], len(got["body"])), (206, 5))
+        self.assertEqual(self.send({"Range": f"bytes={size}-"})["status"], 416)    # past the end
+        self.assertEqual(self.send({"Range": "bytes=-0"})["status"], 416)
+
+    def test_a_range_that_is_not_valid_gets_the_whole_file(self):
+        size = self.file.stat().st_size
+        for header in ("bytes=500-100",                         # last before first (RFC 9110: ignored)
+                       "bytes=" + "9" * 5000 + "-",             # thousands of digits: not an error
+                       "bytes=0-10,20-30", "items=0-10"):
+            with self.subTest(header[:30]):
+                got = self.send({"Range": header})
+                self.assertEqual((got["status"], len(got["body"])), (200, size))
