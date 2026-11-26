@@ -541,7 +541,7 @@ function buildSlideStage(item){
   // the true original is available via the download link where offered.
   const img = document.createElement('img');
   img.src = item.display;
-  img.alt = '';
+  img.alt = item.caption || '';
   return img;
 }
 
@@ -647,6 +647,25 @@ function openSlideshow(index, fromHistory){
   }
   renderSlide();
   document.body.style.overflow = 'hidden';
+  // into the dialog, so a screen reader announces it and Tab stays inside (the dialog
+  // itself, not a button: Space and Enter must stay the viewer's keys)
+  if(!overlay.contains(document.activeElement)){
+    try { overlay.focus({preventScroll: true}); } catch(e){ overlay.focus(); }
+  }
+}
+
+// Tab and Shift+Tab go round the viewer's own controls, never to the page behind it.
+function trapTab(e){
+  const overlay = document.getElementById('slideshow');
+  const focusable = Array.prototype.filter.call(
+    overlay.querySelectorAll('button, a[href], input, select, textarea, [tabindex]:not([tabindex="-1"])'),
+    el => !el.disabled && !el.hidden && !el.closest('[hidden]') &&
+          !(el.closest('.info-panel') && !infoPanelOpen));
+  if(!focusable.length){ e.preventDefault(); overlay.focus(); return; }
+  const first = focusable[0], last = focusable[focusable.length - 1];
+  const at = focusable.indexOf(document.activeElement);
+  if(e.shiftKey && at <= 0){ e.preventDefault(); last.focus(); }
+  else if(!e.shiftKey && (at < 0 || at === focusable.length - 1)){ e.preventDefault(); first.focus(); }
 }
 
 function closeSlideshow(fromHistory){
@@ -1284,6 +1303,7 @@ function initSlideshow(items, opts){
   document.addEventListener('keydown', (e) => {
     if(!document.getElementById('slideshow').classList.contains('open')) return;
     if(isComposing(e)) return;                       // the input method's own Esc
+    if(e.key === 'Tab'){ trapTab(e); return; }
     if(isTyping(e.target)){ if(e.key === 'Escape'){ e.preventDefault(); e.target.blur(); } return; }
     if(e.ctrlKey || e.metaKey || e.altKey) return;   // the browser's shortcuts (Ctrl+S, Cmd+F, Alt+Left ...)
     if(e.key === ' ' && e.target.tagName !== 'BUTTON'){ e.preventDefault(); togglePlaying(); }

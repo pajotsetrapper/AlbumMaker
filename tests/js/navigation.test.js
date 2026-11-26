@@ -189,3 +189,36 @@ test('a one-finger swipe goes to the next day, a pinch never does', async () => 
   assert.equal(went().length, 1);
   assert.match(went()[0], /2026-05-02/);
 });
+
+test('the viewer is a modal dialog: it takes the focus, keeps Tab inside and gives it back', async () => {
+  const { w } = await page(fixture.server, DAY1);
+  const d = w.document;
+  const thumb = thumbs(w)[0];
+  thumb.focus();
+  thumb.click();
+  const viewer = d.getElementById('slideshow');
+  assert.equal(d.activeElement, viewer);
+  for (const id of ['slideshow-prev', 'slideshow-next']) {
+    const b = d.getElementById(id);
+    assert.equal(b.tagName, 'BUTTON');
+    assert.ok(b.getAttribute('aria-label'));
+  }
+  assert.equal(d.getElementById('slideshow-caption').getAttribute('aria-live'), 'polite');
+  // Tab past the last control comes back to the first; the closed details panel is skipped
+  const close = d.getElementById('slideshow-close');
+  const play = d.getElementById('slideshow-play');
+  const tab = (target, shiftKey) => {
+    const e = new w.KeyboardEvent('keydown', { key: 'Tab', shiftKey, bubbles: true, cancelable: true });
+    target.dispatchEvent(e);
+    return e.defaultPrevented;
+  };
+  const last = d.getElementById('slideshow-next');
+  last.focus();
+  assert.ok(tab(last, false));
+  assert.equal(d.activeElement, play);
+  assert.ok(tab(play, true));
+  assert.equal(d.activeElement, last);
+  assert.ok(!d.getElementById('info-close').matches(':focus'));
+  close.click();
+  assert.equal(d.activeElement, thumb);
+});
