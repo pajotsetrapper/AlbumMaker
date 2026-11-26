@@ -21,3 +21,18 @@ test('the Cinema homepage with its map works as before', async () => {
   assert.ok(d.querySelector('#overview-map.leaflet-container'));
   d.querySelectorAll('.cn-scene[data-index]').forEach((s) => assert.ok(s.classList.contains('in-view')));
 });
+
+test('in a library, Esc on the Cinema homepage closes the enlarged map before leaving', async () => {
+  const { w, d } = await load(fixture.cinemaSite, '/index.html');
+  if (typeof w.L === 'undefined') return;           // Leaflet is not installed
+  w.eval("window.__went = []; navigateTo = (href) => { __went.push(href); }; initHomeNav('../index.html');");
+  const went = () => JSON.parse(w.eval('JSON.stringify(__went)'));
+  const esc = () => d.dispatchEvent(new w.KeyboardEvent('keydown', { key: 'Escape', bubbles: true, cancelable: true }));
+  d.getElementById('cn-mini-toggle').click();
+  assert.ok(d.getElementById('cn-mini').classList.contains('is-open'));
+  esc();
+  assert.ok(!d.getElementById('cn-mini').classList.contains('is-open'));
+  assert.deepEqual(went(), []);
+  esc();                                              // now it leaves
+  assert.equal(went().length, 1);
+});

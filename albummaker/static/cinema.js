@@ -101,7 +101,11 @@ function cnOverviewMap(elId, days){
     setTimeout(() => { map.invalidateSize(); const c = current; current = -2; show(c); }, 480);
   }
   toggle.addEventListener('click', () => mini.classList.contains('is-open') ? closeMap() : openMap());
-  document.addEventListener('keydown', e => { if(e.key === 'Escape') closeMap(); });
+  // Esc closes the enlarged map, and only that: the key press is used up, so it does not
+  // also leave the page (initHomeNav, in a library)
+  document.addEventListener('keydown', e => {
+    if(e.key === 'Escape' && mini.classList.contains('is-open')){ e.preventDefault(); closeMap(); }
+  });
   return show;
 }
 

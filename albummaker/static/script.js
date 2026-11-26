@@ -217,6 +217,7 @@ function initHomeNav(libraryHref){
     if(isTyping(e.target)){ e.target.blur(); return; }
     const popupClose = document.querySelector('.leaflet-popup-close-button');
     if(popupClose){ popupClose.click(); return; }
+    if(document.querySelector('.cn-mini.is-open')) return;   // Cinema's enlarged map: Esc closes it first
     navigateTo(libraryHref);
   });
 }
