@@ -125,7 +125,7 @@ from .commands import (
     offline_assets_command,
     server_command,
 )
-from .settings import (LoadedSettings, SettingsError, default_settings, load_settings_or_recover,
+from .settings import (LoadedSettings, expand_user, SettingsError, default_settings, load_settings_or_recover,
                        prepare_metadata_cache, prepare_tile_cache, save_settings, settings_path,
                        validate_settings, write_library_file)
 from ..site_templates import DEFAULT_TEMPLATE, TEMPLATES
@@ -1689,7 +1689,7 @@ class MainWindow(QMainWindow):
         self._insert_trip_item(self.trip_table.rowCount(), path, timezone_name)
 
     def _insert_trip_item(self, row: int, path: str, timezone_name: str = "") -> None:
-        folder = Path(path).expanduser()
+        folder = expand_user(path)
         self.trip_table.insertRow(row)
         trip_item = QTableWidgetItem(folder.name or str(folder))
         trip_item.setFlags(trip_item.flags() & ~Qt.ItemFlag.ItemIsEditable)
@@ -1750,7 +1750,7 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         selected_paths = dialog.selectedFiles()
-        existing = {str(Path(path).expanduser().resolve()) for path in self._trip_paths()}
+        existing = {str(expand_user(path).resolve()) for path in self._trip_paths()}
         added = 0
         skipped = 0
         for selected in selected_paths:

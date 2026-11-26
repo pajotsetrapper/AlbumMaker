@@ -10,6 +10,7 @@ import sys
 from typing import Optional
 
 from ..site_templates import DEFAULT_TEMPLATE
+from .settings import expand_user
 
 
 def _command_prefix(python: str, subcommand: str) -> list[str]:
@@ -85,7 +86,7 @@ def _shared_options(build: dict) -> list[str]:
     if not no_gpx:
         for gpx in build.get("gpx_files", []):
             if str(gpx).strip():
-                args.extend(("--gpx", str(Path(gpx).expanduser())))
+                args.extend(("--gpx", str(expand_user(gpx))))
     return args
 
 
@@ -176,7 +177,7 @@ def build_command(python: str, library_file: Path, output_dir: str, settings: di
     date_range = _validate_date_range(build)
     library = _library_with_date_range(library_file, date_range)
     args = _command_prefix(python, "build") + [
-        "--library", str(library), "--output", str(Path(output_dir).expanduser())
+        "--library", str(library), "--output", str(expand_user(output_dir))
     ]
     args.extend(("--library-title", settings["library"]["title"].strip() or "Trips"))
     args.extend(("--template", settings["library"].get("template") or DEFAULT_TEMPLATE))

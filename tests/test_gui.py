@@ -544,6 +544,20 @@ class SettingsRecoveryTests(unittest.TestCase):
         self.assertEqual(loaded.settings["library"]["title"], "Holidays")
         self.assertTrue(self.path.exists())
 
+    def test_a_value_of_the_wrong_type_is_recovered_from_like_damage(self):
+        settings = default_settings()
+        settings["library"]["template"] = 5                 # hand-edited: not text
+        self.path.write_text(json.dumps(settings), encoding="utf-8")
+        loaded = load_settings_or_recover(self.path, now=self.NOW)
+        self.assertTrue(loaded.recovered)
+        self.assertIn("template", loaded.problem)
+        self.assertEqual(loaded.settings, default_settings())
+
+    def test_a_home_folder_of_an_unknown_user_does_not_raise(self):
+        from albummaker.gui.settings import expand_user
+        self.assertEqual(expand_user("~no-such-user-here/photos"), Path("~no-such-user-here/photos"))
+        self.assertEqual(expand_user("~/photos"), Path.home() / "photos")
+
     def test_damaged_file_is_moved_aside_and_defaults_are_used(self):
         self.path.write_text('{"version": 1, "trips": [', encoding="utf-8")
         loaded = load_settings_or_recover(self.path, now=self.NOW)

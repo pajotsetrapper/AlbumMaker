@@ -82,6 +82,8 @@ def template_names() -> list:
 
 def template_info(name: Optional[str]) -> TemplateInfo:
     """The template called `name` (None: the default). Raises ValueError listing the choices."""
+    if name is not None and not isinstance(name, str):     # a hand-edited settings file
+        raise ValueError(f"unknown template {name!r}; choose one of: {', '.join(TEMPLATES)}")
     key = (name or DEFAULT_TEMPLATE).strip().lower()
     if key not in TEMPLATES:
         raise ValueError(f"unknown template {name!r}; choose one of: {', '.join(TEMPLATES)}")

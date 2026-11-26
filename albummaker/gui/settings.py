@@ -63,6 +63,16 @@ def default_settings() -> dict:
     }
 
 
+def expand_user(path: str) -> Path:
+    """`path` with a leading ~ or ~user expanded. A ~user that does not exist on this
+    computer (a settings file copied from another one) is kept as written instead of
+    raising RuntimeError."""
+    try:
+        return Path(path).expanduser()
+    except RuntimeError:
+        return Path(path)
+
+
 def _merge_defaults(saved: object) -> dict:
     if not isinstance(saved, dict):
         raise SettingsError("Settings file must contain a JSON object.")
@@ -171,7 +181,10 @@ def load_settings(path: Optional[Path] = None) -> dict:
         return default_settings()
     try:
         return _merge_defaults(json.loads(path.read_text(encoding="utf-8")))
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as exc:
+    # (TypeError and friends: a value of a type nothing checked for, in a hand-edited
+    # file; it must be recovered from like any damaged file, not stop the app starting)
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError, TypeError, AttributeError,
+            KeyError, ValueError) as exc:
         raise SettingsError(f"Could not read settings from {path}: {exc}") from exc
 
 
@@ -265,7 +278,7 @@ def write_library_file(trips: list, path: Path) -> Path:
             raw_path, timezone_name = entry, ""
         else:
             raw_path, timezone_name = entry["path"], entry.get("timezone", "")
-        trip = Path(raw_path).expanduser()
+        trip = expand_user(raw_path)
         if not trip.is_dir():
             raise SettingsError(f"Trip folder does not exist: {trip}")
         if "|" in str(trip) or "\n" in str(trip) or "\r" in str(trip):
@@ -290,7 +303,7 @@ def _prepare_cache_folder(path: str, label: str) -> Path:
     value = str(path).strip()
     if not value:
         raise SettingsError(f"Choose a {label} folder before starting the live server.")
-    folder = Path(value).expanduser()
+    folder = expand_user(value)
     try:
         folder.mkdir(parents=True, exist_ok=True)
     except OSError as exc:

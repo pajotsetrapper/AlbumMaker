@@ -442,6 +442,18 @@ class SharedResourceTests(unittest.TestCase):
             self.assertEqual(b.thumbnail(item, 100, False, "v1"), b"B", "same key in another trip: its own image")
 
 
+class LibrarySettingsTests(TempDirMixin, unittest.TestCase):
+    def test_a_template_that_is_not_text_is_reported_not_a_crash(self):
+        tmp = self.make_tmp()
+        (tmp / "library_settings.json").write_text('{"template": 5}', encoding="utf-8")
+        shared = server.Shared(argparse.Namespace(memory_cache_mb=64, render_threads=2, port=0, template=None))
+        shared.settings_path = tmp / "library_settings.json"
+        with mock.patch("sys.stderr") as err:
+            shared.use_saved_template()
+        self.assertIn("unknown template 5", "".join(str(c.args[0]) for c in err.write.call_args_list))
+        self.assertEqual(shared.template.name, server.get_template(None).name)
+
+
 class ServerLibraryStartupTests(TempDirMixin, unittest.TestCase):
     def test_settings_that_cant_apply_to_every_trip_are_refused(self):
         tmp = self.make_tmp()

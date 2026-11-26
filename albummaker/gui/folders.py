@@ -45,7 +45,7 @@ class FolderChecker:
                 return
             try:
                 found = Path(path).expanduser().is_dir()
-            except OSError:
+            except (OSError, RuntimeError):         # RuntimeError: ~user that does not exist
                 found = False
             self._results.put((path, found))
 
