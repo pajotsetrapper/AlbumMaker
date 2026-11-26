@@ -1754,16 +1754,18 @@ class MainWindow(QMainWindow):
         if dialog.exec() != QDialog.DialogCode.Accepted:
             return
         selected_paths = dialog.selectedFiles()
-        existing = {str(expand_user(path).resolve()) for path in self._trip_paths()}
+        # Compared by their written form, not resolve()d: resolving asks the disk about
+        # every trip already listed, and a sleeping network drive freezes the window.
+        existing = {_same_path_key(str(expand_user(path))) for path in self._trip_paths()}
         added = 0
         skipped = 0
         for selected in selected_paths:
-            selected_path = str(Path(selected).resolve())
-            if selected_path in existing:
+            selected_path = os.path.abspath(selected)
+            if _same_path_key(selected_path) in existing:
                 skipped += 1
                 continue
             self._add_trip_item(selected_path)
-            existing.add(selected_path)
+            existing.add(_same_path_key(selected_path))
             added += 1
         self._update_trip_count()
         self._schedule_save()
@@ -2739,6 +2741,13 @@ class MainWindow(QMainWindow):
                 self._kill_process_tree()
                 process.waitForFinished(1000)
         event.accept()
+
+
+def _same_path_key(path: str) -> str:
+    """`path` in a form that compares equal for the same folder written the same way,
+    without asking the disk (case is ignored where the file system usually does)."""
+    key = os.path.normpath(os.path.abspath(path))
+    return key.casefold() if sys.platform in ("win32", "darwin") else key
 
 
 def _lan_ip() -> Optional[str]:

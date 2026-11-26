@@ -701,6 +701,20 @@ class MainWindowTests(unittest.TestCase):
         self.assertIn("Trip 1: \u6771\u4eac", window.log_view.toPlainText())
         self.assertNotIn("\ufffd", window.log_view.toPlainText())
 
+    def test_adding_trips_skips_ones_already_listed_without_asking_the_disk(self):
+        from PySide6.QtWidgets import QDialog
+        window = self.make_window()
+        home = str(Path.home())
+        window._add_trip_item(home)
+        dialog = mock.MagicMock()
+        dialog.exec.return_value = QDialog.DialogCode.Accepted
+        dialog.selectedFiles.return_value = [home + os.sep, str(Path.home() / "Pictures")]
+        with mock.patch("albummaker.gui.app.QFileDialog", return_value=dialog), \
+                mock.patch("albummaker.gui.app.QMessageBox"), \
+                mock.patch.object(Path, "resolve", side_effect=AssertionError("asked the disk")):
+            window._add_trip()
+        self.assertEqual(window._trip_paths(), [home, str(Path.home() / "Pictures")])
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:
