@@ -258,6 +258,10 @@ def save_settings(settings: dict, path: Optional[Path] = None) -> None:
             temporary = Path(stream.name)
             json.dump(payload, stream, indent=2, ensure_ascii=False)
             stream.write("\n")
+            # on disk before it replaces the old file: after a power cut the file is
+            # either the old settings or the new ones, never empty
+            stream.flush()
+            os.fsync(stream.fileno())
         os.replace(temporary, path)
     except OSError as exc:
         if temporary is not None:

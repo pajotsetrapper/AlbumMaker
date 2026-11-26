@@ -64,7 +64,7 @@ from .scan import (apply_date_check, assign_rel_paths, build_media_item, collect
                    dedupe_groups, group_by_day, no_dedupe_groups, pair_live_photos, relative_namer,
                    visible_days)
 from .site_templates import LIBRARY_SETTINGS_NAME, template_choices, template_info
-from .util import atomic_write_bytes, script_json, setup_console_output
+from .util import atomic_write_bytes, atomic_write_text, script_json, setup_console_output
 
 # mimetypes' built-in table is inconsistent across OS/Python installs for a
 # few formats that matter a lot here (HEIC especially) — pin the ones we
@@ -582,7 +582,7 @@ class Shared:
             if self.settings_path is not None:
                 settings = _library_settings_to_update(self.settings_path)
                 settings["template"] = info.name
-                atomic_write_bytes(self.settings_path, (json.dumps(settings, indent=2) + "\n").encode("utf-8"))
+                atomic_write_text(self.settings_path, json.dumps(settings, indent=2) + "\n")   # (fsynced)
             self.template = get_template(info.name)
         return info.name
 
