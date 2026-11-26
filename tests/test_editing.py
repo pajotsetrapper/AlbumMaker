@@ -157,6 +157,15 @@ class EditApiValidationTests(EditingTestCase):
         self.assert_refused("/api/day", {"date": "2026-05-01", "description": "x" * 20001})
         self.assertEqual(self.post("/api/photo", {"rel": A1, "caption": "x" * tc.CAPTION_MAX})[0], 200)
 
+    def test_a_long_description_in_any_script_fits_in_one_request(self):
+        # 20,000 characters of Japanese, sent with the text it replaces: about 240 KB of JSON
+        text = "\u65c5" * tc.DAY_DESCRIPTION_MAX
+        self.assertEqual(self.post("/api/day", {"date": "2026-05-01", "description": text})[0], 200)
+        status, _ = self.post("/api/day", {"date": "2026-05-01", "description": "\u6c34" * tc.DAY_DESCRIPTION_MAX,
+                                           "original_description": text})
+        self.assertEqual(status, 200)
+        self.assertEqual(self.saved()["days"]["2026-05-01"]["description"], "\u6c34" * tc.DAY_DESCRIPTION_MAX)
+
     def test_days_and_covers_must_exist(self):
         self.assert_refused("/api/day", {"date": "1999-01-01", "title": "x"})
         self.assert_refused("/api/day", {"date": None, "title": "x"})
@@ -186,7 +195,9 @@ class EditApiValidationTests(EditingTestCase):
         self.assertEqual(status, 200)
 
     def test_oversized_requests_are_refused(self):
-        status, _, _ = self.server.request("POST", "/api/photo", {"Content-Type": "application/json"}, b"x" * 70000)
+        from albummaker.server import MAX_REQUEST_BYTES
+        status, _, _ = self.server.request("POST", "/api/photo", {"Content-Type": "application/json"},
+                                           b"x" * (MAX_REQUEST_BYTES + 1))
         self.assertEqual(status, 413)
 
     def test_unknown_api_paths_and_methods(self):

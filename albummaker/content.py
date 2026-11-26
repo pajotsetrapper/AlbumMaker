@@ -201,6 +201,8 @@ def set_trip_cover(content: dict, rel: Optional[str]):
 
 TRIP_TITLE_MAX = 200
 TRIP_SUBTITLE_MAX = 300
+DAY_TITLE_MAX = 200
+DAY_DESCRIPTION_MAX = 20000
 
 
 def set_trip_text(content: dict, title=None, subtitle=None):

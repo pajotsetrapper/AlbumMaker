@@ -48,7 +48,8 @@ from .cli import (add_content_arg, add_date_check_args, add_location_args, add_o
 from .content import (CAPTION_MAX, ContentFileError, day_text, default_content, hidden_rels, is_hidden,
                       load_or_init_content, photo_entry, parse_content_file, report_unknown_photo_keys,
                       resolve_content_path, set_cover, set_day_text, set_photo_fields, set_trip_cover, set_trip_text,
-                      trip_subtitle, trip_title, write_content, TRIP_SUBTITLE_MAX, TRIP_TITLE_MAX)
+                      trip_subtitle, trip_title, write_content, DAY_DESCRIPTION_MAX, DAY_TITLE_MAX,
+                      TRIP_SUBTITLE_MAX, TRIP_TITLE_MAX)
 from .imaging import display_jpeg_bytes, image_thumbnails, video_thumbnails
 from .locations import describe_days, localize_items, locate_items
 from .metadata import HEIF_SUPPORT, MetadataCache, check_ffmpeg, read_metadata
@@ -200,6 +201,11 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
 # --------------------------------------------------------------------------
 # In-memory caches and the render limiter
 # --------------------------------------------------------------------------
+
+# The largest edit request accepted. The biggest is a day's title and description, each
+# sent twice (the new text and the text the form started from); in JSON a character can
+# take up to 6 bytes ("\u00e9" when escaped, 3 bytes for most non-Latin text as UTF-8).
+MAX_REQUEST_BYTES = 2 * 6 * (DAY_TITLE_MAX + DAY_DESCRIPTION_MAX) + 4096
 
 class ByteLRU:
     """Least-recently-used cache limited by the total size of its values in
@@ -1132,7 +1138,7 @@ class RequestHandler(BaseHTTPRequestHandler):
             length = int(self.headers.get("Content-Length", ""))
         except ValueError:
             return self._fail(411, "Content-Length required")
-        if not 0 <= length <= 65536:
+        if not 0 <= length <= MAX_REQUEST_BYTES:
             return self._fail(413, "Request too large")
         try:
             body = json.loads(self.rfile.read(length).decode("utf-8"))
@@ -1272,7 +1278,7 @@ class RequestHandler(BaseHTTPRequestHandler):
         if not isinstance(date, str) or date not in self.app.day_keys:
             raise ValueError("Unknown day")
         fields, originals = {}, {}
-        for key, limit in (("title", 200), ("description", 20000)):
+        for key, limit in (("title", DAY_TITLE_MAX), ("description", DAY_DESCRIPTION_MAX)):
             original = _original_text(body, key)
             if key in body:
                 if not isinstance(body[key], str):

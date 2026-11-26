@@ -34,6 +34,7 @@ from albummaker import cli, content, metadata, model, offline, render, scan, uti
 
 tc = SimpleNamespace(
     CAPTION_MAX=content.CAPTION_MAX,
+    DAY_DESCRIPTION_MAX=content.DAY_DESCRIPTION_MAX,
     ContentFileError=content.ContentFileError,
     DayGroup=model.DayGroup,
     LIVE_CLIP_MAX_SECONDS=metadata.LIVE_CLIP_MAX_SECONDS,
