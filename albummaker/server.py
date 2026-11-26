@@ -1868,6 +1868,7 @@ def load_library(args, shared: "Shared") -> "Library":
     list_dir = Path(args.library).expanduser().resolve().parent
     check_ffmpeg()
     trips, titles = {}, {}
+    content_files = {}      # each trip's trip_content.json (resolved) -> the trip using it
     for n, entry in enumerate(entries, 1):
         print(f"\n=== Trip {n} of {len(entries)}: {entry.path}  ->  /{entry.name}/ ===")
         try:
@@ -1875,10 +1876,21 @@ def load_library(args, shared: "Shared") -> "Library":
             if problem:
                 raise TripLoadError(problem)
             trip, date_range = trip_args(args, entry, args.library)
-            trips[entry.name] = load_trip(
+            app = load_trip(
                 trip, date_range, shared, prefix=f"/{entry.name}",
                 index_cache=args.index_cache / f"{entry.name}.json" if args.index_cache else None,
                 content_fallback=list_dir / f"trip_content-{entry.name}.json", title=entry.path.name)
+            # Two trips editing one file would each lock only their own copy, so their
+            # edits could overwrite each other, and their days would be mixed in it.
+            try:
+                content_key = str(app.content.path.resolve())
+            except OSError:
+                content_key = str(app.content.path)
+            if content_key in content_files:
+                raise TripLoadError(f"! {app.content.path} is already the content file of the trip "
+                                    f"'{content_files[content_key]}'. Give each trip its own -c file.")
+            content_files[content_key] = entry.name
+            trips[entry.name] = app
             titles[entry.name] = entry.path.name
         except TripListError as e:
             print(f"! {args.library}, line {entry.line}: {e}\n  This trip is left out.", file=sys.stderr)

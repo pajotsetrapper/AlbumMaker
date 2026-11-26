@@ -487,5 +487,17 @@ class ServerLibraryStartupTests(TempDirMixin, unittest.TestCase):
         self.assertIn("None of the trips could be loaded", r.stderr)
 
 
+    def test_two_trips_cannot_share_one_content_file(self):
+        tmp = self.make_tmp()
+        app = install_app(tmp / "app")
+        make_jpeg(tmp / "A" / "a.jpg", "2026:05:01 09:00:00")
+        make_jpeg(tmp / "B" / "b.jpg", "2026:06:01 09:00:00")
+        trips = trip_list(tmp / "trips.txt", "A | a | -c shared.json\nB | b | -c ./shared.json\n")
+        server = AlbumMaker(app, None, tmp, "--library", trips).start()
+        self.addCleanup(server.stop)
+        self.assertEqual(server.get("/a/")[0], 200)
+        self.assertEqual(server.get("/b/")[0], 404)                 # left out, and the log says why
+        self.assertIn("is already the content file of the trip 'a'", server.log())
+
 if __name__ == "__main__":
     unittest.main()
