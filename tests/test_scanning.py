@@ -171,6 +171,16 @@ class OutputNameTests(unittest.TestCase):
         self.assertEqual(len({b.lower() for b in got.values()}), 3)
         self.assertEqual(got["IMG_1.HEIC"], "IMG_1")      # photos sort by path: "IMG_1.HEIC" < "IMG_1.jpg"
 
+    def test_names_that_differ_only_in_how_accents_are_spelled_do_not_share_a_file(self):
+        nfc, nfd = "a/Caf\u00e9.jpg", "b/Cafe\u0301.jpg"     # look the same; macOS sees one file
+        got = self.names([nfc, nfd])
+        self.assertEqual(got[nfc], "Caf\u00e9")
+        self.assertEqual(got[nfd], "Caf\u00e9_2")
+        # an earlier build's name is kept, and still claims its spelling
+        got = self.names([nfc, nfd], previous={nfd: {"base": "Cafe\u0301"}})
+        self.assertEqual(got[nfd], "Cafe\u0301")
+        self.assertEqual(got[nfc], "Caf\u00e9_2")
+
     def test_a_photo_keeps_the_plain_name_over_its_live_clip(self):
         got = self.names(["IMG_1.MOV", "IMG_1.HEIC"])
         self.assertEqual(got["IMG_1.HEIC"], "IMG_1")

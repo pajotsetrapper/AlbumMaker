@@ -68,18 +68,22 @@ MANIFEST_VERSION = 1
 
 def _natural_stem(path: Path, rel_path: str = "") -> str:
     original_stem = PurePosixPath(rel_path).stem if rel_path else path.stem
+    # one spelling for "é" (a name copied from an HFS+ disk or over SMB can spell it as
+    # "e" plus a combining accent), so equal-looking names are seen as equal
+    original_stem = unicodedata.normalize("NFC", original_stem)
     stem = ILLEGAL_FILENAME_CHARS.sub("_", original_stem).rstrip(" .") or "file"
     return stem[:180]  # defensive cap well under filesystem limits
 
 
 def _claims(path: Path, base: str) -> set:
-    """The (lower-case) names a file with this base may occupy in media/:
-    its own, and for a .jpg also '<base>_display', the name its display copy
-    gets if it turns out to be a multi-image JPEG. Claiming both up front
-    means no other file can ever be given a clashing name."""
-    names = {base.lower()}
+    """The names a file with this base may occupy in media/, folded the way a
+    case- and normalization-insensitive disk (macOS, Windows) compares them
+    (see _fold): its own, and for a .jpg also '<base>_display', the name its
+    display copy gets if it turns out to be a multi-image JPEG. Claiming both
+    up front means no other file can ever be given a clashing name."""
+    names = {_fold(base)}
     if path.suffix.lower() in JPEG_EXTS:
-        names.add(f"{base}_display".lower())
+        names.add(_fold(f"{base}_display"))
     return names
 
 
