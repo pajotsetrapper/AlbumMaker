@@ -123,7 +123,8 @@ def install_plan() -> Optional[list[str]]:
     if sys.platform == "win32":
         winget = shutil.which("winget")
         if winget:
-            return [winget, "install", "--id", WINGET_PACKAGE_ID, "-e",
+            # --disable-interactivity: never stop to ask (the desktop app cannot answer)
+            return [winget, "install", "--id", WINGET_PACKAGE_ID, "-e", "--disable-interactivity",
                     "--accept-package-agreements", "--accept-source-agreements"]
         return None
     brew = _brew()

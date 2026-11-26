@@ -15,6 +15,7 @@ class InstallPlanTests(unittest.TestCase):
         ):
             plan = ffmpeg_setup.install_plan()
         self.assertEqual(plan[:4], ["C:/winget.exe", "install", "--id", "Gyan.FFmpeg"])
+        self.assertIn("--disable-interactivity", plan)
 
     def test_windows_without_winget_has_no_plan(self):
         with mock.patch.object(ffmpeg_setup.sys, "platform", "win32"), mock.patch.object(

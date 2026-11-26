@@ -2256,6 +2256,9 @@ class MainWindow(QMainWindow):
                     environment.remove("LD_LIBRARY_PATH")
         process.setProcessEnvironment(environment)
         process.setProcessChannelMode(QProcess.ProcessChannelMode.MergedChannels)
+        # Nothing is ever typed into a task: a question it (or a package manager it runs)
+        # asks gets "no input" at once, instead of waiting for an answer that never comes.
+        process.setStandardInputFile(QProcess.nullDevice())
         self._process_group = _start_in_own_session(process)
         process.readyReadStandardOutput.connect(self._read_process_output)
         process.started.connect(lambda: self._on_started(kind))

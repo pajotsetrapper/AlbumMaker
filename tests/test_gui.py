@@ -663,6 +663,16 @@ class MainWindowTests(unittest.TestCase):
         problem.assert_not_called()
         start.assert_not_called()
 
+    def test_a_task_that_asks_a_question_gets_no_input_instead_of_waiting(self):
+        window = self.make_window()
+        reader = "import sys; print('read', repr(sys.stdin.read()))"
+        with mock.patch.object(window, "_update_ffmpeg_button"):
+            window._launch("ffmpeg setup", [sys.executable, "-c", reader])
+            process = window._process
+            self.assertTrue(process.waitForFinished(10000), "the task waited for input")
+        window._read_process_output()
+        self.assertIn("read ''", window.log_view.toPlainText())
+
     def test_settings_are_saved_normally(self):
         window = self.make_window()
         with mock.patch("albummaker.gui.app.save_settings") as save:
