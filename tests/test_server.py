@@ -351,3 +351,36 @@ class ServerStartupTests(TempDirMixin, unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main()
+
+
+class SendFileTests(TempDirMixin, unittest.TestCase):
+    """RequestHandler._send_file on its own, with a stand-in for the connection."""
+
+    @classmethod
+    def setUpClass(cls):
+        cls.tmp = cls.make_tmp()
+        cls.file = cls.tmp / "clip.mp4"
+        cls.file.write_bytes(bytes(range(256)) * 1024)          # 256 KB
+
+    def send(self, headers=None, write=None):
+        import socket  # noqa: F401  (used by the callers' stand-ins)
+        from albummaker import server
+        h = server.RequestHandler.__new__(server.RequestHandler)
+        h.command, h.request_version, h.close_connection = "GET", "HTTP/1.1", False
+        h.headers = dict(headers or {})
+        sent = {"status": None, "headers": {}, "body": bytearray()}
+        h.send_response = lambda code, *a: sent.__setitem__("status", code)
+        h.send_header = lambda k, v: sent["headers"].__setitem__(k, v)
+        h.end_headers = lambda: None
+        h.wfile = type("W", (), {"write": staticmethod(write or sent["body"].extend)})()
+        h._send_file(self.file, "video/mp4")
+        sent["closed"] = h.close_connection
+        return sent
+
+    def test_a_browser_that_goes_away_mid_stream_is_not_an_error(self):
+        import socket
+        for gone in (ConnectionAbortedError, ConnectionResetError, BrokenPipeError, socket.timeout, TimeoutError):
+            def write(_data, gone=gone):
+                raise gone()
+            with self.subTest(gone.__name__):
+                self.assertTrue(self.send(write=write)["closed"])    # raised nothing, connection dropped

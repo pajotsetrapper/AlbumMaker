@@ -203,6 +203,12 @@ def build_index(input_dir: Path, tz_offset: Optional[float], dedupe: bool,
 # In-memory caches and the render limiter
 # --------------------------------------------------------------------------
 
+# How a browser that went away shows up while a reply is being sent: it closed the
+# connection (a cancelled video or image fetch; ConnectionAbortedError on Windows), or
+# it stopped reading (a paused video) until the socket timeout ran out. Normal, so it is
+# not printed as an error.
+CLIENT_GONE = (ConnectionError, TimeoutError, socket.timeout)
+
 # The largest edit request accepted. The biggest is a day's title and description, each
 # sent twice (the new text and the text the form started from); in JSON a character can
 # take up to 6 bytes ("\u00e9" when escaped, 3 bytes for most non-Latin text as UTF-8).
@@ -883,8 +889,8 @@ class RequestHandler(BaseHTTPRequestHandler):
         self._begin()
         try:
             self._handle_post()
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+        except CLIENT_GONE:
+            self.close_connection = True
         except Exception:
             traceback.print_exc()
             self.close_connection = True
@@ -1125,8 +1131,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                 # file shrank mid-send: the promised Content-Length can't be
                 # met, so the connection can't be reused
                 self.close_connection = True
-        except (BrokenPipeError, ConnectionResetError):
-            pass  # normal when a browser cancels a video/image fetch mid-stream
+        except CLIENT_GONE:
+            self.close_connection = True   # normal when a browser cancels a video/image fetch mid-stream
 
     # -- editing API ----------------------------------------------------
 
@@ -1405,8 +1411,8 @@ class RequestHandler(BaseHTTPRequestHandler):
                                 cache_control=self._cache_control(template.asset_version))
             else:
                 self.send_error(404, "Not found")
-        except (BrokenPipeError, ConnectionResetError):
-            pass
+        except CLIENT_GONE:
+            self.close_connection = True
         except Exception:
             traceback.print_exc()
             if not self._response_started:
