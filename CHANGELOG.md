@@ -2,9 +2,9 @@
 
 All notable changes to AlbumMaker (formerly TripServer) are documented in this file.
 
-## [3.2.1] - 2026-11-27 
+## [3.2.2] - 2026-11-27 
 
-Maintenance release, focus on fixes
+Fixes fixes fixes :-)
 
 ### Changed
 - **Download instructions match the releases:** The README and product page listed a Linux x64 download that releases no longer contain (only Windows and macOS are built). They now say that on Linux AlbumMaker runs from source.
