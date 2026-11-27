@@ -17,8 +17,8 @@ import threading
 import unittest
 from pathlib import Path
 
-from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, AlbumMaker, install_app, make_gpx, make_jpeg,
-                      make_video, run_script, standard_trip, write_json)
+from .helpers import (HAVE_FFMPEG, QuietHTTPServer, ROOT, TempDirMixin, AlbumMaker, install_app, local_env,
+                      make_gpx, make_jpeg, make_video, run_script, standard_trip, write_json)
 
 JS_DIR = Path(__file__).resolve().parent / "js"
 NODE = shutil.which("node")
@@ -114,8 +114,9 @@ class ViewerJsTests(TempDirMixin, unittest.TestCase):
                    "contentFile": str(self.server.content), "initialContent": INITIAL_CONTENT,
                    "hasLeaflet": self.has_leaflet, "hasVideo": HAVE_FFMPEG,
                    "tileUrl": "https://tile.openstreetmap.org/{z}/{x}/{y}.png"}
-        env = {"PATH": __import__("os").environ.get("PATH", ""), "TRIP_FIXTURE": json.dumps(fixture),
-               "no_proxy": "127.0.0.1,localhost", "NO_PROXY": "127.0.0.1,localhost"}
+        # the whole environment, not just PATH: on Windows Node cannot open a socket without
+        # SystemRoot ("connect UNKNOWN 127.0.0.1:port")
+        env = {**local_env(), "TRIP_FIXTURE": json.dumps(fixture)}
         r = subprocess.run([NODE, "--test", str(JS_DIR / name)], capture_output=True, text=True,
                            env=env, cwd=str(JS_DIR), timeout=150)
         noise = ("Not implemented", "Could not load")
