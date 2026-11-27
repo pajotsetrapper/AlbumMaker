@@ -155,8 +155,8 @@ class ConsoleOutputTests(unittest.TestCase):
         from unittest import mock
         from albummaker.util import setup_console_output
         # a Windows pipe before Python 3.15: the ANSI code page, strict errors
-        out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
-        err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict")
+        out = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict", newline="\n")
+        err = io.TextIOWrapper(io.BytesIO(), encoding="cp1252", errors="strict", newline="\n")
         with mock.patch("sys.stdout", out), mock.patch("sys.stderr", err):
             setup_console_output()
             print("=== Trip 1: \u6771\u4eac / \u041c\u043e\u0441\u043a\u0432\u0430 \u2014 Caf\u00e9")

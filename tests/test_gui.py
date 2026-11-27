@@ -555,7 +555,12 @@ class SettingsRecoveryTests(unittest.TestCase):
 
     def test_a_home_folder_of_an_unknown_user_does_not_raise(self):
         from albummaker.gui.settings import expand_user
-        self.assertEqual(expand_user("~no-such-user-here/photos"), Path("~no-such-user-here/photos"))
+        unknown = expand_user("~no-such-user-here/photos")
+        if os.name != "nt":
+            # POSIX looks the user up and keeps the path as written when it is missing.
+            # Windows never looks it up: it just swaps the last part of the home folder.
+            self.assertEqual(unknown, Path("~no-such-user-here/photos"))
+        self.assertIsInstance(unknown, Path)
         self.assertEqual(expand_user("~/photos"), Path.home() / "photos")
 
     def test_damaged_file_is_moved_aside_and_defaults_are_used(self):
