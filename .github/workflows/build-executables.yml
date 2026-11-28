@@ -29,10 +29,9 @@ jobs:
           - runner: macos-15-intel
             platform: macos-intel
             python: "3.14"
-          # the oldest Python the README promises to support
           - runner: macos-15
             platform: macos-arm64
-            python: "3.9"
+            python: "3.14"
     # Every matrix leg reads the same version from the code, so it does not
     # matter which leg's output the other jobs end up using.
     outputs:

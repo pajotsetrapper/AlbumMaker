@@ -172,7 +172,7 @@ python album_gui.py
 
 ## Step by step
 
-1. **Get the programs ready (once):** Install Python 3.9+ and run `python -m pip install -r requirements.txt`. Install FFmpeg via `python -m albummaker install-ffmpeg` (only needed for videos).
+1. **Get the programs ready (once):** Install Python 3.14+ and run `python -m pip install -r requirements.txt`. Install FFmpeg via `python -m albummaker install-ffmpeg` (only needed for videos).
 2. **Put a trip in one folder:** Copy photos/videos into one folder. Optionally drop a `.gpx` track file there.
 3. **Look at it:** Run `python album_server.py -i "/path/to/your/photos"` and open <http://127.0.0.1:8000/>. Add `--template journal` (or `scrapbook`, `cinema`) for another look.
 4. **Tell the story:** Use the in-browser live editor to write titles, descriptions, captions, pick covers, mark favorites, or hide photos.
