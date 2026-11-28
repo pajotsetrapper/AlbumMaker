@@ -805,7 +805,10 @@ class DirectEditApiTests(TempDirTest):
 
     def test_json_nested_too_deeply_is_a_400_not_a_500(self):
         status, reply = self.post("/api/day", None, raw=b"[" * 30000 + b"]" * 30000)
-        self.assertEqual((status, reply), (400, {"ok": False, "error": "Invalid JSON"}))
+        # Where json.loads hits the recursion limit this is "Invalid JSON"; where the limit is
+        # higher (macOS, Python 3.14) it parses to a list and is refused as not an object.
+        self.assertEqual(status, 400)
+        self.assertIs(reply["ok"], False)
 
 
 class TileAttributionTests(TempDirTest):

@@ -27,6 +27,7 @@ import os
 import re
 import secrets
 import socket
+import socketserver
 import sys
 import threading
 import time
@@ -806,6 +807,14 @@ class TripHTTPServer(ThreadingHTTPServer):
         self.library = library
         self._connection_slots = threading.BoundedSemaphore(self.max_connections)
         super().__init__(address, handler)
+
+    def server_bind(self):
+        # HTTPServer.server_bind calls socket.getfqdn(host), a reverse DNS lookup that can
+        # hang for a long time on some machines (e.g. CI runners). server_name is never used.
+        socketserver.TCPServer.server_bind(self)
+        host, port = self.server_address[:2]
+        self.server_name = host
+        self.server_port = port
 
     def process_request(self, request, client_address):
         if not self._connection_slots.acquire(blocking=False):
